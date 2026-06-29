@@ -1,0 +1,579 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=LXGW+WenKai:wght@400;500;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --sect-ink: #1a2e2a;
+  --sect-ink-light: #2a4a42;
+  --sect-ink-dark: #0f1c1a;
+  --sect-gold: #d4a857;
+  --sect-gold-light: #e8c77a;
+  --sect-gold-dark: #b8913e;
+  --sect-jade: #e8e4d9;
+  --sect-jade-dark: #c9c4b5;
+  --sect-spirit: #9b7ed4;
+  --sect-herb: #5a8a6a;
+  --sect-pill: #c26a4a;
+
+  /* 灵气颜色 */
+  --spirit-gold: #ffd700;
+  --spirit-jade: #50c878;
+  --spirit-azure: #4169e1;
+  --spirit-crimson: #dc143c;
+  --spirit-violet: #9400d3;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+}
+
+body {
+  font-family: 'Noto Serif SC', 'Source Han Serif SC', serif;
+  background-color: var(--sect-ink-dark);
+  color: var(--sect-jade);
+  overflow: hidden;
+}
+
+/* 宣纸纹理背景 */
+.paper-bg {
+  background-color: var(--sect-ink);
+  background-image:
+    radial-gradient(ellipse at top left, rgba(212, 168, 87, 0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at bottom right, rgba(155, 126, 212, 0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at center, rgba(80, 200, 120, 0.03) 0%, transparent 70%),
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%' height='100%' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+  position: relative;
+}
+
+/* 宣纸纹理背景 - 带云纹 */
+.paper-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M20,50 Q30,30 50,40 T80,50' fill='none' stroke='rgba(212,168,87,0.03)' stroke-width='0.5'/%3E%3Cpath d='M10,70 Q25,55 40,65 T70,70' fill='none' stroke='rgba(155,126,212,0.02)' stroke-width='0.5'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+  pointer-events: none;
+}
+
+/* 仙门边框装饰 */
+.mystical-border {
+  position: relative;
+  background: linear-gradient(180deg, rgba(42, 74, 66, 0.9) 0%, rgba(15, 28, 26, 0.95) 100%);
+  border: 1px solid rgba(212, 168, 87, 0.25);
+}
+
+.mystical-border::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  background: linear-gradient(135deg,
+    rgba(212, 168, 87, 0.4) 0%,
+    transparent 30%,
+    transparent 70%,
+    rgba(155, 126, 212, 0.3) 100%);
+  border-radius: inherit;
+  z-index: -1;
+  opacity: 0.5;
+}
+
+/* 四角装饰 - 仙门纹样 */
+.corner-decor::before,
+.corner-decor::after {
+  content: '◈';
+  position: absolute;
+  color: var(--sect-gold);
+  opacity: 0.4;
+  font-size: 12px;
+}
+
+.corner-decor::before {
+  top: 4px;
+  left: 4px;
+}
+
+.corner-decor::after {
+  bottom: 4px;
+  right: 4px;
+}
+
+/* 弟子头像框 - 玉石质感 */
+.avatar-frame {
+  position: relative;
+  border-radius: 50%;
+  padding: 3px;
+  background: linear-gradient(135deg, var(--sect-gold-dark), var(--sect-gold-light), var(--sect-gold-dark));
+  box-shadow:
+    0 0 10px rgba(212, 168, 87, 0.3),
+    inset 0 0 10px rgba(0, 0, 0, 0.3);
+}
+
+.avatar-frame::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: linear-gradient(135deg, transparent 40%, rgba(255, 255, 255, 0.2) 50%, transparent 60%);
+  animation: shimmer 3s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0%, 100% { opacity: 0; transform: translateX(-100%) rotate(45deg); }
+  50% { opacity: 1; transform: translateX(100%) rotate(45deg); }
+}
+
+/* 境界光晕 */
+.realm-glow {
+  position: relative;
+}
+
+.realm-glow::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  background: radial-gradient(circle, currentColor 0%, transparent 70%);
+  opacity: 0.2;
+  filter: blur(8px);
+  z-index: -1;
+  animation: realm-pulse 2s ease-in-out infinite;
+}
+
+@keyframes realm-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.15; }
+  50% { transform: scale(1.1); opacity: 0.25; }
+}
+
+/* 仙门按钮 */
+.btn-immortal {
+  background: linear-gradient(180deg,
+    rgba(212, 168, 87, 0.15) 0%,
+    rgba(212, 168, 87, 0.08) 100%);
+  border: 1px solid rgba(212, 168, 87, 0.4);
+  color: var(--sect-gold);
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.btn-immortal::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg,
+    transparent,
+    rgba(212, 168, 87, 0.2),
+    transparent);
+  transition: left 0.5s ease;
+}
+
+.btn-immortal:hover::before {
+  left: 100%;
+}
+
+.btn-immortal:hover {
+  background: linear-gradient(180deg,
+    rgba(212, 168, 87, 0.25) 0%,
+    rgba(212, 168, 87, 0.15) 100%);
+  border-color: var(--sect-gold);
+  box-shadow: 0 0 20px rgba(212, 168, 87, 0.3);
+  transform: translateY(-1px);
+}
+
+/* 鎏金按钮 */
+.btn-gold {
+  background: linear-gradient(135deg, var(--sect-gold-dark) 0%, var(--sect-gold) 50%, var(--sect-gold-light) 100%);
+  color: var(--sect-ink-dark);
+  font-weight: 600;
+  padding: 0.5rem 1.5rem;
+  border-radius: 4px;
+  border: 1px solid var(--sect-gold-light);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-gold::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg,
+    transparent,
+    rgba(255, 255, 255, 0.3),
+    transparent);
+  transition: left 0.5s ease;
+}
+
+.btn-gold:hover::before {
+  left: 100%;
+}
+
+.btn-gold:hover {
+  box-shadow: 0 0 30px rgba(212, 168, 87, 0.6);
+  transform: translateY(-2px);
+}
+
+.btn-gold:active {
+  transform: translateY(0);
+}
+
+.btn-gold:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* 幽灵按钮 */
+.btn-ghost {
+  background: transparent;
+  color: var(--sect-gold);
+  border: 1px solid rgba(212, 168, 87, 0.4);
+  padding: 0.5rem 1.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.btn-ghost:hover {
+  background: rgba(212, 168, 87, 0.15);
+  border-color: var(--sect-gold);
+  box-shadow: 0 0 15px rgba(212, 168, 87, 0.2);
+}
+
+/* 古风卡片 - 带装饰边框 */
+.card-ancient {
+  background: linear-gradient(180deg,
+    rgba(42, 74, 66, 0.7) 0%,
+    rgba(26, 46, 42, 0.85) 100%);
+  border: 1px solid rgba(212, 168, 87, 0.2);
+  border-radius: 4px;
+  position: relative;
+  transition: all 0.3s ease;
+  overflow: hidden;
+}
+
+/* 卡片顶部装饰线 */
+.card-ancient::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 10%;
+  right: 10%;
+  height: 1px;
+  background: linear-gradient(90deg,
+    transparent,
+    rgba(212, 168, 87, 0.5),
+    transparent);
+}
+
+.card-ancient:hover {
+  border-color: rgba(212, 168, 87, 0.45);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.4),
+    0 0 20px rgba(212, 168, 87, 0.1);
+  transform: translateY(-2px);
+}
+
+/* 重要卡片 - 带金色边框 */
+.card-precious {
+  background: linear-gradient(180deg,
+    rgba(212, 168, 87, 0.1) 0%,
+    rgba(26, 46, 42, 0.9) 100%);
+  border: 1px solid rgba(212, 168, 87, 0.4);
+  box-shadow: 0 0 20px rgba(212, 168, 87, 0.1);
+}
+
+.card-precious:hover {
+  border-color: rgba(212, 168, 87, 0.6);
+  box-shadow: 0 0 30px rgba(212, 168, 87, 0.2);
+}
+
+/* 灵气光晕 */
+.spirit-aura {
+  position: relative;
+}
+
+.spirit-aura::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  background: linear-gradient(45deg, var(--sect-spirit), var(--sect-gold), var(--sect-herb));
+  opacity: 0;
+  z-index: -1;
+  filter: blur(10px);
+  transition: opacity 0.5s ease;
+}
+
+.spirit-aura.active::before {
+  opacity: 0.4;
+  animation: aura-pulse 3s ease-in-out infinite;
+}
+
+@keyframes aura-pulse {
+  0%, 100% { opacity: 0.2; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(1.02); }
+}
+
+/* 境界颜色 - 增强版 */
+.realm-mortal { color: #9ca3af; text-shadow: 0 0 10px rgba(156, 163, 175, 0.3); }
+.realm-qi { color: #60a5fa; text-shadow: 0 0 10px rgba(96, 165, 250, 0.4); }
+.realm-foundation { color: #34d399; text-shadow: 0 0 10px rgba(52, 211, 153, 0.4); }
+.realm-golden { color: #fbbf24; text-shadow: 0 0 15px rgba(251, 191, 36, 0.5); }
+.realm-nascent { color: #a78bfa; text-shadow: 0 0 15px rgba(167, 139, 250, 0.5); }
+.realm-spirit { color: #f472b6; text-shadow: 0 0 15px rgba(244, 114, 182, 0.5); }
+
+/* 灵根品质发光效果 */
+.spirit-root-legendary {
+  color: #ff4444;
+  text-shadow: 0 0 10px rgba(255, 68, 68, 0.5);
+  font-weight: bold;
+}
+
+.spirit-root-epic {
+  color: #a855f7;
+  text-shadow: 0 0 8px rgba(168, 85, 247, 0.5);
+}
+
+.spirit-root-rare {
+  color: #3b82f6;
+  text-shadow: 0 0 6px rgba(59, 130, 246, 0.4);
+}
+
+.spirit-root-uncommon {
+  color: #22c55e;
+  text-shadow: 0 0 5px rgba(34, 197, 94, 0.4);
+}
+
+/* 滚动条样式 - 精致版 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(26, 46, 42, 0.5);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg,
+    rgba(212, 168, 87, 0.4),
+    rgba(212, 168, 87, 0.2));
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg,
+    rgba(212, 168, 87, 0.6),
+    rgba(212, 168, 87, 0.3));
+}
+
+/* 进度条 - 水墨风格 */
+.progress-bar {
+  height: 6px;
+  background: rgba(212, 168, 87, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+
+.progress-bar::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent,
+    transparent 4px,
+    rgba(212, 168, 87, 0.05) 4px,
+    rgba(212, 168, 87, 0.05) 8px
+  );
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg,
+    var(--sect-gold-dark),
+    var(--sect-gold),
+    var(--sect-gold-light));
+  border-radius: 3px;
+  transition: width 0.5s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.progress-fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg,
+    transparent,
+    rgba(255, 255, 255, 0.3),
+    transparent);
+  animation: progress-shine 2s ease-in-out infinite;
+}
+
+@keyframes progress-shine {
+  0% { left: -100%; }
+  100% { left: 100%; }
+}
+
+/* 分割线 - 传统云纹 */
+.divider-gold {
+  height: 1px;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(212, 168, 87, 0.5) 20%,
+    rgba(212, 168, 87, 0.7) 50%,
+    rgba(212, 168, 87, 0.5) 80%,
+    transparent 100%);
+  position: relative;
+}
+
+.divider-gold::before {
+  content: '☯';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--sect-ink-dark);
+  padding: 0 10px;
+  color: var(--sect-gold);
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+/* 文字渐变 */
+.text-gold-gradient {
+  background: linear-gradient(135deg, var(--sect-gold-dark), var(--sect-gold-light));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* 悬浮提示 - 仙气效果 */
+.tooltip-immortal {
+  background: linear-gradient(180deg,
+    rgba(42, 74, 66, 0.98) 0%,
+    rgba(26, 46, 42, 0.98) 100%);
+  border: 1px solid rgba(212, 168, 87, 0.4);
+  box-shadow:
+    0 10px 40px rgba(0, 0, 0, 0.5),
+    0 0 20px rgba(212, 168, 87, 0.1);
+}
+
+/* 标签页切换动画 */
+.tab-transition {
+  transition: all 0.3s ease;
+}
+
+.tab-transition:hover {
+  background: rgba(212, 168, 87, 0.1);
+}
+
+/* 列表项悬浮效果 */
+.list-item-hover {
+  transition: all 0.2s ease;
+}
+
+.list-item-hover:hover {
+  background: rgba(212, 168, 87, 0.08);
+  transform: translateX(4px);
+}
+
+/* 数字跳动动画 */
+.number-pop {
+  animation: number-pop 0.3s ease-out;
+}
+
+@keyframes number-pop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
+
+/* 背景云雾效果 */
+.cloud-mist {
+  position: relative;
+  overflow: hidden;
+}
+
+.cloud-mist::before {
+  content: '';
+  position: absolute;
+  width: 200%;
+  height: 200%;
+  top: -50%;
+  left: -50%;
+  background:
+    radial-gradient(ellipse at 20% 30%, rgba(212, 168, 87, 0.05) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 70%, rgba(155, 126, 212, 0.05) 0%, transparent 50%);
+  animation: cloud-drift 20s ease-in-out infinite;
+}
+
+@keyframes cloud-drift {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  50% { transform: translate(5%, 5%) rotate(2deg); }
+}
+
+/* 装饰性祥云 */
+.auspicious-cloud {
+  position: relative;
+}
+
+.auspicious-cloud::before {
+  content: '☁';
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  font-size: 24px;
+  color: rgba(212, 168, 87, 0.2);
+  animation: float 4s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+/* 淡入动画 */
+.fade-in {
+  animation: fade-in 0.5s ease-out;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* 弹跳动画 */
+.bounce-in {
+  animation: bounce-in 0.5s ease-out;
+}
+
+@keyframes bounce-in {
+  0% { transform: scale(0.8); opacity: 0; }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); opacity: 1; }
+}
