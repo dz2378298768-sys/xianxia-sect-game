@@ -49,6 +49,9 @@ import {
 } from '@/utils/saveSlots';
 import { SHOP_ITEMS } from '@/data/shop';
 import type { ShopItem } from '@/types/shop';
+import { PILL_CONFIGS } from '@/data/pills';
+import { ARTIFACT_CONFIGS } from '@/data/artifacts';
+import { TALISMAN_CONFIGS } from '@/data/talismans';
 
 interface GameState {
   year: number;
@@ -136,6 +139,93 @@ function addItem<T extends string>(inv: { type: T; quantity: number }[], type: T
     return inv.map(i => i.type === type ? { ...i, quantity: i.quantity + 1 } : i);
   }
   return [...inv, { type, quantity: 1 }];
+}
+
+// 工作建筑按配方生产成品：返回产出类型、数量、消耗的材料
+// - building: 当前建筑（含 productionTarget 与 assignedDisciples）
+// - state: 用于校验配方是否已解锁（unlockedPillRecipes/...）
+// - mats: 当前材料累加余额（来自 nextMonth 闭包，多建筑共享同一份）
+//
+// 材料名适配实际 data 文件：丹方用「灵草」、图谱用「玄铁」、符谱用「灵纸」。
+function produceWorkBuilding(
+  building: Building,
+  state: GameState,
+  mats: { herbs: number; iron: number; paper: number },
+): {
+  pillType?: PillType; artifactType?: ArtifactType; talismanType?: TalismanType;
+  quantity: number; herbsConsumed: number; ironConsumed: number; paperConsumed: number;
+} {
+  const empty = { quantity: 0, herbsConsumed: 0, ironConsumed: 0, paperConsumed: 0 };
+  const target = building.productionTarget;
+  if (!target) return empty;
+
+  // 丹堂
+  if (building.type === 'pill_hall' && target.pillType) {
+    if (!state.unlockedPillRecipes.includes(target.pillType)) return empty;
+    const recipe = PILL_CONFIGS[target.pillType];
+    if (!recipe) return empty;
+    const herbsPerUnit = recipe.materials.find(m => m.name === '灵草')?.amount ?? 0;
+    if (herbsPerUnit <= 0) return empty;
+    const workerCount = building.assignedDisciples.length;
+    const maxUnits = Math.min(
+      workerCount,
+      Math.floor(mats.herbs / herbsPerUnit),
+    );
+    if (maxUnits <= 0) return empty;
+    return {
+      pillType: target.pillType,
+      quantity: maxUnits,
+      herbsConsumed: maxUnits * herbsPerUnit,
+      ironConsumed: 0,
+      paperConsumed: 0,
+    };
+  }
+
+  // 炼器堂（sutra_hall）
+  if (building.type === 'sutra_hall' && target.artifactType) {
+    if (!state.unlockedArtifactRecipes.includes(target.artifactType)) return empty;
+    const recipe = ARTIFACT_CONFIGS[target.artifactType];
+    if (!recipe) return empty;
+    const ironPerUnit = recipe.materials.find(m => m.name === '玄铁' || m.name === '灵铁' || m.name === '矿石')?.amount ?? 2;
+    if (ironPerUnit <= 0) return empty;
+    const workerCount = building.assignedDisciples.length;
+    const maxUnits = Math.min(
+      Math.max(1, Math.floor(workerCount / 2)), // 炼器较慢，2人产1件
+      Math.floor(mats.iron / ironPerUnit),
+    );
+    if (maxUnits <= 0) return empty;
+    return {
+      artifactType: target.artifactType,
+      quantity: maxUnits,
+      herbsConsumed: 0,
+      ironConsumed: maxUnits * ironPerUnit,
+      paperConsumed: 0,
+    };
+  }
+
+  // 符堂（artifact_hall）
+  if (building.type === 'artifact_hall' && target.talismanType) {
+    if (!state.unlockedTalismanRecipes.includes(target.talismanType)) return empty;
+    const recipe = TALISMAN_CONFIGS[target.talismanType];
+    if (!recipe) return empty;
+    const paperPerUnit = recipe.materials.find(m => m.name === '灵纸' || m.name === '符纸')?.amount ?? 1;
+    if (paperPerUnit <= 0) return empty;
+    const workerCount = building.assignedDisciples.length;
+    const maxUnits = Math.min(
+      workerCount,
+      Math.floor(mats.paper / paperPerUnit),
+    );
+    if (maxUnits <= 0) return empty;
+    return {
+      talismanType: target.talismanType,
+      quantity: maxUnits,
+      herbsConsumed: 0,
+      ironConsumed: 0,
+      paperConsumed: maxUnits * paperPerUnit,
+    };
+  }
+
+  return empty;
 }
 
 const createInitialState = () => {
@@ -348,6 +438,14 @@ export const useGameStore = create<GameState>()(
         let totalMaintenance = 0;
         let totalHerbIncome = 0;
 
+        // 工作建筑生产累加器：以当前库存为基底，按配方消耗材料、产出成品
+        let accHerbs = state.herbInventory;
+        let accIron = state.ironInventory;
+        let accPaper = state.paperInventory;
+        const accPillInventory: PillInventory[] = state.pillInventory.map(p => ({ ...p }));
+        const accArtifactInventory: ArtifactInventory[] = state.artifactInventory.map(a => ({ ...a }));
+        const accTalismanInventory: TalismanInventory[] = state.talismanInventory.map(t => ({ ...t }));
+
         // 灵兽库存：以当前库存为基底，累加本月灵兽原产出
         const newBeastInventory: BeastInventory[] = state.beastInventory.map(b => ({ ...b }));
         
@@ -360,17 +458,21 @@ export const useGameStore = create<GameState>()(
         
         buildings.forEach(building => {
           if (building.status !== 'active') return;
-          
+
           const assignedDisciples = disciples.filter(d => building.assignedDisciples.includes(d.id));
           const output = calculateBuildingOutput(building, assignedDisciples);
-          
+
           if (output.spiritStones > 0) {
             totalSpiritStoneIncome += output.spiritStones;
             spiritStoneIncome.push({ source: building.name, amount: output.spiritStones });
           }
           if (output.herbs > 0) {
             totalHerbIncome += output.herbs;
+            accHerbs += output.herbs;
           }
+          // 材料产出累加（杂役堂）
+          if (output.iron > 0) accIron += output.iron;
+          if (output.paper > 0) accPaper += output.paper;
 
           // 灵兽产出：按品阶权重随机抽取种类累加到库存
           if (output.beasts && output.beasts > 0) {
@@ -399,6 +501,27 @@ export const useGameStore = create<GameState>()(
           const maintenance = calculateBuildingMaintenance(building);
           totalMaintenance += maintenance;
           spiritStoneExpense.push({ source: `${building.name}维护`, amount: maintenance });
+
+          // 工作建筑按配方生产成品：消耗材料、产出丹药/法器/符箓
+          const prod = produceWorkBuilding(building, state, { herbs: accHerbs, iron: accIron, paper: accPaper });
+          if (prod.quantity > 0) {
+            if (prod.pillType) {
+              const existing = accPillInventory.find(p => p.type === prod.pillType);
+              if (existing) existing.quantity += prod.quantity;
+              else accPillInventory.push({ type: prod.pillType, quantity: prod.quantity });
+              accHerbs -= prod.herbsConsumed;
+            } else if (prod.artifactType) {
+              const existing = accArtifactInventory.find(a => a.type === prod.artifactType);
+              if (existing) existing.quantity += prod.quantity;
+              else accArtifactInventory.push({ type: prod.artifactType, quantity: prod.quantity });
+              accIron -= prod.ironConsumed;
+            } else if (prod.talismanType) {
+              const existing = accTalismanInventory.find(t => t.type === prod.talismanType);
+              if (existing) existing.quantity += prod.quantity;
+              else accTalismanInventory.push({ type: prod.talismanType, quantity: prod.quantity });
+              accPaper -= prod.paperConsumed;
+            }
+          }
         });
         
         const servantCount = disciples.filter(d => d.status === 'servant').length;
@@ -584,7 +707,7 @@ export const useGameStore = create<GameState>()(
               };
               const pillType = pillMap[nextRealm];
               if (pillType) {
-                const pill = pillInventory.find(p => p.type === pillType);
+                const pill = accPillInventory.find(p => p.type === pillType);
                 return pill && pill.quantity > 0;
               }
               return false;
@@ -627,9 +750,9 @@ export const useGameStore = create<GameState>()(
                 };
                 const pillType = pillMap[nextRealm];
                 if (pillType) {
-                  const idx = pillInventory.findIndex(p => p.type === pillType);
+                  const idx = accPillInventory.findIndex(p => p.type === pillType);
                   if (idx >= 0) {
-                    pillInventory[idx] = { ...pillInventory[idx], quantity: pillInventory[idx].quantity - 1 };
+                    accPillInventory[idx] = { ...accPillInventory[idx], quantity: accPillInventory[idx].quantity - 1 };
                   }
                 }
               }
@@ -839,7 +962,6 @@ export const useGameStore = create<GameState>()(
         currentBuildings = managerResult.buildings;
 
         spiritStones += totalSpiritStoneIncome - totalMaintenance;
-        herbInventory += totalHerbIncome;
         reputation += reputationChange;
         
         // 声望上限检查
@@ -899,7 +1021,7 @@ export const useGameStore = create<GameState>()(
         const interSectYears = { ...state.lastInterSectTournamentYears };
         let finalSpiritStones = spiritStones;
         let finalReputation = reputation;
-        let finalPillInventory = [...pillInventory];
+        let finalPillInventory = [...accPillInventory];
         const tournamentNotifs: Notification[] = [];
 
         if (month === 1) {
@@ -983,10 +1105,14 @@ export const useGameStore = create<GameState>()(
           sectLevel: state.sectLevel,
           reputation: finalReputation,
           spiritStones: finalSpiritStones,
-          herbInventory,
+          herbInventory: Math.max(0, accHerbs),
+          ironInventory: Math.max(0, accIron),
+          paperInventory: Math.max(0, accPaper),
           disciples: finalDisciples,
           buildings: [...currentBuildings],
           pillInventory: finalPillInventory,
+          artifactInventory: accArtifactInventory,
+          talismanInventory: accTalismanInventory,
           beastInventory: newBeastInventory,
           monthlyReport: report,
           showReport: true,
