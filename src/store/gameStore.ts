@@ -130,6 +130,8 @@ interface GameState {
   loadFromSlot: (slotIndex: number) => boolean;                         // 从槽位读取游戏（成功返回 true）
   buyShopItem: (itemId: string) => { success: boolean; reason?: string };
   setProductionTarget: (buildingId: string, target: NonNullable<Building['productionTarget']>) => void;
+  equipItem: (discipleId: string, slot: 'artifact' | 'talisman' | 'beast', type: string) => boolean;
+  unequipItem: (discipleId: string, slot: 'artifact' | 'talisman' | 'beast') => void;
 }
 
 // 库存累加辅助：找到同类型则 +1，否则新增条目
@@ -2059,6 +2061,110 @@ export const useGameStore = create<GameState>()(
             b.id === buildingId ? { ...b, productionTarget: target } : b
           ),
         }));
+      },
+      equipItem: (discipleId: string, slot: 'artifact' | 'talisman' | 'beast', type: string): boolean => {
+        const state = get();
+        const disciple = state.disciples.find(d => d.id === discipleId);
+        if (!disciple) return false;
+
+        // 校验库存中有该物品
+        let hasItem = false;
+        if (slot === 'artifact') {
+          hasItem = (state.artifactInventory.find(a => a.type === type)?.quantity ?? 0) > 0;
+        } else if (slot === 'talisman') {
+          hasItem = (state.talismanInventory.find(t => t.type === type)?.quantity ?? 0) > 0;
+        } else if (slot === 'beast') {
+          hasItem = (state.beastInventory.find(b => b.type === type)?.quantity ?? 0) > 0;
+        }
+        if (!hasItem) return false;
+
+        set(state => {
+          // 若该槽已有装备，归还旧装备到库存
+          const oldEquipped = disciple[slot === 'artifact' ? 'equippedArtifact' : slot === 'talisman' ? 'equippedTalisman' : 'equippedBeast'];
+          let newArtifactInv = state.artifactInventory.map(a => ({ ...a }));
+          let newTalismanInv = state.talismanInventory.map(t => ({ ...t }));
+          let newBeastInv = state.beastInventory.map(b => ({ ...b }));
+
+          if (oldEquipped) {
+            if (slot === 'artifact') {
+              const ex = newArtifactInv.find(a => a.type === oldEquipped);
+              if (ex) ex.quantity += 1; else newArtifactInv.push({ type: oldEquipped as any, quantity: 1 });
+            } else if (slot === 'talisman') {
+              const ex = newTalismanInv.find(t => t.type === oldEquipped);
+              if (ex) ex.quantity += 1; else newTalismanInv.push({ type: oldEquipped as any, quantity: 1 });
+            } else {
+              const ex = newBeastInv.find(b => b.type === oldEquipped);
+              if (ex) ex.quantity += 1; else newBeastInv.push({ type: oldEquipped as any, quantity: 1 });
+            }
+          }
+
+          // 从库存扣除新装备
+          if (slot === 'artifact') {
+            const ex = newArtifactInv.find(a => a.type === type);
+            if (ex) { ex.quantity -= 1; if (ex.quantity <= 0) newArtifactInv = newArtifactInv.filter(a => a.type !== type); }
+          } else if (slot === 'talisman') {
+            const ex = newTalismanInv.find(t => t.type === type);
+            if (ex) { ex.quantity -= 1; if (ex.quantity <= 0) newTalismanInv = newTalismanInv.filter(t => t.type !== type); }
+          } else {
+            const ex = newBeastInv.find(b => b.type === type);
+            if (ex) { ex.quantity -= 1; if (ex.quantity <= 0) newBeastInv = newBeastInv.filter(b => b.type !== type); }
+          }
+
+          return {
+            artifactInventory: newArtifactInv,
+            talismanInventory: newTalismanInv,
+            beastInventory: newBeastInv,
+            disciples: state.disciples.map(d =>
+              d.id === discipleId
+                ? {
+                    ...d,
+                    equippedArtifact: slot === 'artifact' ? type as any : d.equippedArtifact,
+                    equippedTalisman: slot === 'talisman' ? type as any : d.equippedTalisman,
+                    equippedBeast: slot === 'beast' ? type as any : d.equippedBeast,
+                  }
+                : d
+            ),
+          };
+        });
+        return true;
+      },
+      unequipItem: (discipleId: string, slot: 'artifact' | 'talisman' | 'beast') => {
+        set(state => {
+          const disciple = state.disciples.find(d => d.id === discipleId);
+          if (!disciple) return state;
+          const oldEquipped = disciple[slot === 'artifact' ? 'equippedArtifact' : slot === 'talisman' ? 'equippedTalisman' : 'equippedBeast'];
+          if (!oldEquipped) return state;
+
+          let newArtifactInv = state.artifactInventory.map(a => ({ ...a }));
+          let newTalismanInv = state.talismanInventory.map(t => ({ ...t }));
+          let newBeastInv = state.beastInventory.map(b => ({ ...b }));
+          if (slot === 'artifact') {
+            const ex = newArtifactInv.find(a => a.type === oldEquipped);
+            if (ex) ex.quantity += 1; else newArtifactInv.push({ type: oldEquipped as any, quantity: 1 });
+          } else if (slot === 'talisman') {
+            const ex = newTalismanInv.find(t => t.type === oldEquipped);
+            if (ex) ex.quantity += 1; else newTalismanInv.push({ type: oldEquipped as any, quantity: 1 });
+          } else {
+            const ex = newBeastInv.find(b => b.type === oldEquipped);
+            if (ex) ex.quantity += 1; else newBeastInv.push({ type: oldEquipped as any, quantity: 1 });
+          }
+
+          return {
+            artifactInventory: newArtifactInv,
+            talismanInventory: newTalismanInv,
+            beastInventory: newBeastInv,
+            disciples: state.disciples.map(d =>
+              d.id === discipleId
+                ? {
+                    ...d,
+                    equippedArtifact: slot === 'artifact' ? null : d.equippedArtifact,
+                    equippedTalisman: slot === 'talisman' ? null : d.equippedTalisman,
+                    equippedBeast: slot === 'beast' ? null : d.equippedBeast,
+                  }
+                : d
+            ),
+          };
+        });
       },
     }),
     {
