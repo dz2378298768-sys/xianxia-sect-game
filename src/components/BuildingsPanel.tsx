@@ -19,6 +19,9 @@ import { RealmNames, RealmOrder, DiscipleStatusNames } from '@/types/disciple';
 import type { BuildingType } from '@/types/building';
 import { RESIDENCE_TYPES, RESIDENCE_TYPES_WITH_CAVE, isResidenceType } from '@/types/building';
 import { BUILDING_CONFIGS } from '@/data/buildings';
+import { PillTypeNames } from '@/types/pill';
+import { ArtifactTypeNames } from '@/types/artifact';
+import { TalismanTypeNames } from '@/types/talisman';
 import { SectLevelNames } from '@/types/game';
 import { SectIcon } from '@/components/icons/SectIcons';
 import { SimpleAvatar } from '@/components/ui/Avatar';
@@ -92,7 +95,8 @@ function getBuildingIcon(type: string) {
 export const BuildingsPanel: React.FC = () => {
   const {
     buildings, disciples, spiritStones, reputation, sectLevel,
-    upgradeBuilding, downgradeBuilding, toggleBuilding, buildBuilding, setBuildingManager
+    upgradeBuilding, downgradeBuilding, toggleBuilding, buildBuilding, setBuildingManager,
+    setProductionTarget, unlockedPillRecipes, unlockedArtifactRecipes, unlockedTalismanRecipes,
   } = useGameStore();
   const { selectedBuildingId, setSelectedBuildingId } = useUIStore();
   const [showBuildModal, setShowBuildModal] = useState(false);
@@ -797,6 +801,57 @@ export const BuildingsPanel: React.FC = () => {
                     </div>
                   );
                 })()}
+
+                {/* 生产目标选择器：丹堂/炼器堂/符堂 */}
+                {(selectedBuilding.type === 'pill_hall' || selectedBuilding.type === 'sutra_hall' || selectedBuilding.type === 'artifact_hall') && (
+                  <div className="bg-blue-500/10 border border-blue-500/30 rounded p-2">
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <FlaskConical size={12} className="text-blue-300" />
+                      <span className="font-display text-blue-300 text-xs">生产目标</span>
+                    </div>
+                    {selectedBuilding.type === 'pill_hall' && (
+                      <select
+                        className="w-full bg-[rgba(13,17,23,0.6)] border border-[var(--gold-400)]/30 rounded px-2 py-1 text-xs text-sect-jade"
+                        value={selectedBuilding.productionTarget?.pillType || ''}
+                        onChange={e => setProductionTarget(selectedBuilding.id, { pillType: e.target.value as any })}
+                      >
+                        <option value="">未设置</option>
+                        {unlockedPillRecipes.map(t => (
+                          <option key={t} value={t}>{PillTypeNames[t]}</option>
+                        ))}
+                      </select>
+                    )}
+                    {selectedBuilding.type === 'sutra_hall' && (
+                      <select
+                        className="w-full bg-[rgba(13,17,23,0.6)] border border-[var(--gold-400)]/30 rounded px-2 py-1 text-xs text-sect-jade"
+                        value={selectedBuilding.productionTarget?.artifactType || ''}
+                        onChange={e => setProductionTarget(selectedBuilding.id, { artifactType: e.target.value as any })}
+                      >
+                        <option value="">未设置</option>
+                        {unlockedArtifactRecipes.map(t => (
+                          <option key={t} value={t}>{ArtifactTypeNames[t]}</option>
+                        ))}
+                      </select>
+                    )}
+                    {selectedBuilding.type === 'artifact_hall' && (
+                      <select
+                        className="w-full bg-[rgba(13,17,23,0.6)] border border-[var(--gold-400)]/30 rounded px-2 py-1 text-xs text-sect-jade"
+                        value={selectedBuilding.productionTarget?.talismanType || ''}
+                        onChange={e => setProductionTarget(selectedBuilding.id, { talismanType: e.target.value as any })}
+                      >
+                        <option value="">未设置</option>
+                        {unlockedTalismanRecipes.map(t => (
+                          <option key={t} value={t}>{TalismanTypeNames[t]}</option>
+                        ))}
+                      </select>
+                    )}
+                    {((selectedBuilding.type === 'pill_hall' && unlockedPillRecipes.length === 0) ||
+                      (selectedBuilding.type === 'sutra_hall' && unlockedArtifactRecipes.length === 0) ||
+                      (selectedBuilding.type === 'artifact_hall' && unlockedTalismanRecipes.length === 0)) && (
+                      <div className="text-[10px] text-yellow-400 mt-1">尚未解锁任何配方，请前往商店购买丹方/图谱/符谱</div>
+                    )}
+                  </div>
+                )}
 
                 {/* 在堂弟子 —— 再紧凑，头像小一点，行高差小 */}
                 <div>
