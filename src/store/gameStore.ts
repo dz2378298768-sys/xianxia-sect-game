@@ -1927,8 +1927,13 @@ export const useGameStore = create<GameState>()(
 
         return { success: true };
       },
-      // stub：Task 6 替换为真实实现（更新建筑 productionTarget）
-      setProductionTarget: (_buildingId: string, _target: NonNullable<Building['productionTarget']>) => {},
+      setProductionTarget: (buildingId: string, target: NonNullable<Building['productionTarget']>) => {
+        set(state => ({
+          buildings: state.buildings.map(b =>
+            b.id === buildingId ? { ...b, productionTarget: target } : b
+          ),
+        }));
+      },
     }),
     {
       name: 'sect-game-save',
