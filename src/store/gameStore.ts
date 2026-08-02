@@ -62,6 +62,9 @@ interface GameState {
   artifactInventory: ArtifactInventory[];
   talismanInventory: TalismanInventory[];
   beastInventory: BeastInventory[];
+  unlockedPillRecipes: PillType[];        // 已解锁丹方（丹堂可生产）
+  unlockedArtifactRecipes: ArtifactType[]; // 已解锁图谱（炼器堂可生产）
+  unlockedTalismanRecipes: TalismanType[]; // 已解锁符谱（符堂可生产）
   promotionRules: PromotionRules;
   notifications: Notification[];
   monthlyReport: MonthlyReport | null;
@@ -118,6 +121,7 @@ interface GameState {
   // 存档槽系统
   saveToSlot: (slotIndex: number) => void;                              // 保存当前游戏到指定槽位
   loadFromSlot: (slotIndex: number) => boolean;                         // 从槽位读取游戏（成功返回 true）
+  buyShopItem: (itemId: string) => { success: boolean; reason?: string };
 }
 
 const createInitialState = () => {
@@ -181,6 +185,9 @@ const createInitialState = () => {
     artifactInventory: [],
     talismanInventory: [],
     beastInventory: [],
+    unlockedPillRecipes: ['foundation_pill', 'recovery_pill'] as PillType[],
+    unlockedArtifactRecipes: ['flying_sword', 'defensive_shield'] as ArtifactType[],
+    unlockedTalismanRecipes: ['fire_talisman', 'heal_talisman'] as TalismanType[],
     promotionRules: getDefaultPromotionRules(),
     notifications: [],
     monthlyReport: null,
@@ -1872,6 +1879,9 @@ export const useGameStore = create<GameState>()(
         if (!state.beastInventory) {
           state.beastInventory = [];
         }
+        if (!state.unlockedPillRecipes) state.unlockedPillRecipes = [];
+        if (!state.unlockedArtifactRecipes) state.unlockedArtifactRecipes = [];
+        if (!state.unlockedTalismanRecipes) state.unlockedTalismanRecipes = [];
         if (state.buildings) {
           // 有效建筑类型（杂役居所已移除，旧存档中的杂役居所会被过滤）
           const validTypes = new Set([
