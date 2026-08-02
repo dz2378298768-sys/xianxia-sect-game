@@ -6,16 +6,18 @@ import { Button } from '@/components/ui/Button';
 import { PILL_CONFIGS } from '@/data/pills';
 import { ARTIFACT_CONFIGS } from '@/data/artifacts';
 import { TALISMAN_CONFIGS } from '@/data/talismans';
+import { BEAST_CONFIGS } from '@/data/beasts';
 import type { PillType } from '@/types/pill';
 import type { ArtifactType } from '@/types/artifact';
 import type { TalismanType } from '@/types/talisman';
-import { FlaskConical, Lock, Sparkles, Clock, Coins, Sword, ScrollText, Package } from 'lucide-react';
+import { FlaskConical, Lock, Sparkles, Clock, Coins, Sword, ScrollText, Package, PawPrint } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { SectIcon } from '@/components/icons/SectIcons';
 
-type WarehouseTab = 'pills' | 'artifacts' | 'talismans';
+type WarehouseTab = 'pills' | 'artifacts' | 'talismans' | 'beasts';
 
 export const WarehousePanel: React.FC = () => {
-  const { pillInventory, artifactInventory, talismanInventory, spiritStones, herbInventory } = useGameStore();
+  const { pillInventory, artifactInventory, talismanInventory, beastInventory, spiritStones, herbInventory } = useGameStore();
   const [activeTab, setActiveTab] = useState<WarehouseTab>('pills');
   
   const getPillQuantity = (type: PillType): number => {
@@ -37,6 +39,7 @@ export const WarehousePanel: React.FC = () => {
     { id: 'pills', label: '丹药库', icon: <FlaskConical size={16} /> },
     { id: 'artifacts', label: '炼器库', icon: <Sword size={16} /> },
     { id: 'talismans', label: '符库', icon: <ScrollText size={16} /> },
+    { id: 'beasts', label: '灵兽', icon: <PawPrint size={16} /> },
   ];
 
   const renderStats = () => {
@@ -135,7 +138,55 @@ export const WarehousePanel: React.FC = () => {
         </div>
       );
     }
-    
+
+    if (activeTab === 'beasts') {
+      return (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Card className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-amber-500/20">
+                <PawPrint className="text-amber-400" size={24} />
+              </div>
+              <div>
+                <div className="text-sect-jade/60 text-xs">灵兽品类</div>
+                <div className="font-display text-xl text-amber-400">
+                  {beastInventory.length} / {Object.keys(BEAST_CONFIGS).length}
+                </div>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-yellow-500/20">
+                <Package className="text-yellow-400" size={24} />
+              </div>
+              <div>
+                <div className="text-sect-jade/60 text-xs">灵兽总数</div>
+                <div className="font-display text-xl text-yellow-400">
+                  {beastInventory.reduce((sum, b) => sum + b.quantity, 0)}
+                </div>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-yellow-500/20">
+                <Coins className="text-yellow-400" size={24} />
+              </div>
+              <div>
+                <div className="text-sect-jade/60 text-xs">灵石储备</div>
+                <div className="font-display text-xl text-yellow-400">
+                  {spiritStones}
+                </div>
+              </div>
+            </div>
+          </Card>
+        </div>
+      );
+    }
+
     return (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card className="p-4">
@@ -193,10 +244,10 @@ export const WarehousePanel: React.FC = () => {
           <Card key={pill.type} className={isLocked ? 'opacity-60' : ''}>
             <div className="flex items-start justify-between mb-3">
               <div className="flex items-center gap-3">
-                <div className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl ${
+                <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
                   isLocked ? 'bg-gray-500/20' : 'bg-sect-pill/20'
                 }`}>
-                  {isLocked ? <Lock size={20} className="text-gray-500" /> : '💊'}
+                  {isLocked ? <Lock size={20} className="text-gray-500" /> : <SectIcon name="pill" size={24} strokeWidth={1.8} className="text-sect-pill-light" />}
                 </div>
                 <div>
                   <h3 className="font-display text-sect-jade">{pill.name}</h3>
@@ -204,11 +255,11 @@ export const WarehousePanel: React.FC = () => {
                 </div>
               </div>
             </div>
-            
+
             <p className="text-xs text-sect-jade/60 mb-3">
               {pill.description}
             </p>
-            
+
             <div className="space-y-2 text-sm mb-4">
               <div className="flex justify-between">
                 <span className="text-sect-jade/60 flex items-center gap-1">
@@ -229,7 +280,7 @@ export const WarehousePanel: React.FC = () => {
                 <span className="text-sect-herb-light text-xs">{pill.contributionCost} 贡献</span>
               </div>
             </div>
-            
+
             {!isLocked && (
               <div className="flex gap-2">
                 <Button variant="ghost" size="sm" className="flex-1" disabled>
@@ -238,7 +289,7 @@ export const WarehousePanel: React.FC = () => {
                 </Button>
               </div>
             )}
-            
+
             {isLocked && (
               <div className="text-xs text-sect-jade/40 text-center py-2">
                 需解锁丹方后炼制
@@ -272,10 +323,10 @@ export const WarehousePanel: React.FC = () => {
           <Card key={artifact.type} className={isLocked ? 'opacity-60' : ''}>
             <div className="flex items-start justify-between mb-3">
               <div className="flex items-center gap-3">
-                <div className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl ${
+                <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
                   isLocked ? 'bg-gray-500/20' : 'bg-blue-500/20'
                 }`}>
-                  {isLocked ? <Lock size={20} className="text-gray-500" /> : '⚔️'}
+                  {isLocked ? <Lock size={20} className="text-gray-500" /> : <SectIcon name="sword" size={24} strokeWidth={1.8} className="text-blue-400" />}
                 </div>
                 <div>
                   <h3 className="font-display text-sect-jade">{artifact.name}</h3>
@@ -354,10 +405,10 @@ export const WarehousePanel: React.FC = () => {
           <Card key={talisman.type} className={isLocked ? 'opacity-60' : ''}>
             <div className="flex items-start justify-between mb-3">
               <div className="flex items-center gap-3">
-                <div className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl ${
+                <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
                   isLocked ? 'bg-gray-500/20' : 'bg-red-500/20'
                 }`}>
-                  {isLocked ? <Lock size={20} className="text-gray-500" /> : '📜'}
+                  {isLocked ? <Lock size={20} className="text-gray-500" /> : <SectIcon name="scrollText" size={24} strokeWidth={1.8} className="text-red-400" />}
                 </div>
                 <div>
                   <h3 className="font-display text-sect-jade">{talisman.name}</h3>
@@ -414,6 +465,56 @@ export const WarehousePanel: React.FC = () => {
     </div>
   );
 
+  const renderBeasts = () => (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {beastInventory.length === 0 ? (
+        <div className="col-span-full text-center py-8 text-sect-jade/40 text-sm">尚未拥有灵兽</div>
+      ) : (
+        beastInventory.map(inv => {
+          const config = BEAST_CONFIGS[inv.type];
+          if (!config) return null;
+          return (
+            <Card key={inv.type}>
+              <div className="flex items-start justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-full flex items-center justify-center bg-amber-500/20">
+                    <PawPrint size={24} className="text-amber-400" />
+                  </div>
+                  <div>
+                    <h3 className="font-display text-sect-jade flex items-center gap-1">
+                      {config.name}
+                      <span className="text-[10px] text-sect-spirit">{config.tier}阶</span>
+                    </h3>
+                    <Badge variant="pill" size="sm">库存 {inv.quantity}</Badge>
+                  </div>
+                </div>
+              </div>
+
+              <p className="text-xs text-sect-jade/60 mb-3">{config.description}</p>
+
+              <div className="space-y-2 text-sm mb-4">
+                <div className="flex justify-between">
+                  <span className="text-sect-jade/60 flex items-center gap-1">
+                    <Sparkles size={14} /> 战力
+                  </span>
+                  <span className="text-amber-400 text-xs">+{config.combatPowerBonus}</span>
+                </div>
+                {config.lifespanBonus ? (
+                  <div className="flex justify-between">
+                    <span className="text-sect-jade/60 flex items-center gap-1">
+                      <Clock size={14} /> 寿命
+                    </span>
+                    <span className="text-green-400 text-xs">+{config.lifespanBonus}</span>
+                  </div>
+                ) : null}
+              </div>
+            </Card>
+          );
+        })
+      )}
+    </div>
+  );
+
   const renderContent = () => {
     switch (activeTab) {
       case 'pills':
@@ -422,6 +523,8 @@ export const WarehousePanel: React.FC = () => {
         return renderArtifacts();
       case 'talismans':
         return renderTalismans();
+      case 'beasts':
+        return renderBeasts();
       default:
         return renderPills();
     }
