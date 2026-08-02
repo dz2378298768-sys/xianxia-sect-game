@@ -656,6 +656,11 @@ export const BuildingsPanel: React.FC = () => {
                               <Star size={12} /> {detailUpgradeCost.contribution}
                             </span>
                           )}
+                          {detailUpgradeCost.reputation && detailUpgradeCost.reputation > 0 && (
+                            <span className="flex items-center gap-1 text-[11px] text-blue-300">
+                              <Star size={12} /> {detailUpgradeCost.reputation}
+                            </span>
+                          )}
                         </div>
                       </div>
                       <Button
@@ -695,8 +700,20 @@ export const BuildingsPanel: React.FC = () => {
                             Lv.{selectedBuilding.level} → Lv.{selectedBuilding.level - 1}
                           </div>
                         </div>
-                        <div className="flex items-center gap-1 text-[11px] text-emerald-400 shrink-0">
-                          <Gem size={12} /> 返还 {refundStones}
+                        <div className="flex items-center gap-2 text-[11px] text-emerald-400 shrink-0 flex-wrap justify-end">
+                          <span className="flex items-center gap-1"><Gem size={12} /> {refundStones}</span>
+                          {(() => {
+                            const c = isRes
+                              ? getResidenceUpgradeCost({ ...selectedBuilding, level: selectedBuilding.level - 1 })?.contribution ?? 0
+                              : selectedBuilding.upgradeCosts[selectedBuilding.level - 2]?.contribution ?? 0;
+                            return c > 0 ? <span className="flex items-center gap-1 text-amber-400"><Star size={12} /> {c}</span> : null;
+                          })()}
+                          {(() => {
+                            const r = isRes
+                              ? getResidenceUpgradeCost({ ...selectedBuilding, level: selectedBuilding.level - 1 })?.reputation ?? 0
+                              : selectedBuilding.upgradeCosts[selectedBuilding.level - 2]?.reputation ?? 0;
+                            return r > 0 ? <span className="flex items-center gap-1 text-blue-300"><Star size={12} /> {r}</span> : null;
+                          })()}
                         </div>
                       </div>
                       <Button
@@ -704,7 +721,7 @@ export const BuildingsPanel: React.FC = () => {
                         size="sm"
                         className="w-full border-red-500/40 text-red-300 hover:bg-red-500/10 text-xs py-1"
                         onClick={() => {
-                          if (confirm(`确认将「${selectedBuilding.name}」降级至 Lv.${selectedBuilding.level - 1}？返还 ${refundStones} 灵石。`)) {
+                          if (confirm(`确认将「${selectedBuilding.name}」降级至 Lv.${selectedBuilding.level - 1}？将返还升级时消耗的资源。`)) {
                             const r = downgradeBuilding(selectedBuilding.id);
                             if (!r.success && r.reason) alert(r.reason);
                           }
