@@ -12,6 +12,7 @@ import type { PillInventory, PillType } from '@/types/pill';
 import type { ArtifactInventory, ArtifactType } from '@/types/artifact';
 import type { TalismanInventory, TalismanType } from '@/types/talisman';
 import type { BeastInventory } from '@/types/beast';
+import type { BeastType } from '@/types/beast';
 import type { SectLevel, MonthlyReport, Notification, OtherSect, DiplomaticStatus } from '@/types/game';
 import {
   SectLevelNames, SectLevelRequirementsMap, SectLevelOrder,
@@ -323,6 +324,9 @@ export const useGameStore = create<GameState>()(
         let totalSpiritStoneIncome = 0;
         let totalMaintenance = 0;
         let totalHerbIncome = 0;
+
+        // 灵兽库存：以当前库存为基底，累加本月灵兽原产出
+        const newBeastInventory: BeastInventory[] = state.beastInventory.map(b => ({ ...b }));
         
         // 声望自动增长（基于人数和战力）
         const sectCombatPower = calculateSectCombatPower(disciples, buildings);
@@ -344,7 +348,31 @@ export const useGameStore = create<GameState>()(
           if (output.herbs > 0) {
             totalHerbIncome += output.herbs;
           }
-          
+
+          // 灵兽产出：按品阶权重随机抽取种类累加到库存
+          if (output.beasts && output.beasts > 0) {
+            for (let i = 0; i < output.beasts; i++) {
+              const roll = Math.random() * 100;
+              let type: BeastType;
+              if (roll < 60) {
+                // tier 2: 灵狐 / 玄龟（60%）
+                type = Math.random() < 0.5 ? 'spirit_fox' : 'mystic_turtle';
+              } else if (roll < 90) {
+                // tier 3: 火鸦 / 玉兔（30%）
+                type = Math.random() < 0.5 ? 'fire_crow' : 'jade_rabbit';
+              } else {
+                // tier 4: 金鹏（10%）
+                type = 'golden_roc';
+              }
+              const existing = newBeastInventory.find(b => b.type === type);
+              if (existing) {
+                existing.quantity += 1;
+              } else {
+                newBeastInventory.push({ type, quantity: 1 });
+              }
+            }
+          }
+
           const maintenance = calculateBuildingMaintenance(building);
           totalMaintenance += maintenance;
           spiritStoneExpense.push({ source: `${building.name}维护`, amount: maintenance });
@@ -936,6 +964,7 @@ export const useGameStore = create<GameState>()(
           disciples: finalDisciples,
           buildings: [...currentBuildings],
           pillInventory: finalPillInventory,
+          beastInventory: newBeastInventory,
           monthlyReport: report,
           showReport: true,
           notifications: [...tournamentNotifs, ...newNotifications, ...state.notifications].slice(0, 50),
