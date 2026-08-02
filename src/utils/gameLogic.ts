@@ -82,7 +82,13 @@ export function autoAssignBuilding(disciple: Disciple, buildings: Building[]): {
     // 4. 修为加成：高境界弟子权重略高（经验更丰富）
     const realmBonus = 1 + realmIndex * 0.15;
 
-    const score = talent * productionPriority * fillFactor * realmBonus;
+    // 贡献优先级：弟子贡献越低，越倾向去高贡献产出的工作建筑赚贡献
+    // 高贡献建筑（如丹堂/炼器堂）monthlyContributionCost 高，意味着贡献产出高
+    const buildingContributionYield = building.monthlyContributionCost ?? 0;
+    const discipleNeedContribution = disciple.contributionPoints < 100 ? 1 : 0; // 贡献不足100视为需要赚贡献
+    const contributionPriority = 1 + discipleNeedContribution * (buildingContributionYield / 20);
+
+    const score = talent * productionPriority * fillFactor * realmBonus * contributionPriority;
     return { building, score };
   });
 
