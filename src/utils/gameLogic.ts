@@ -565,6 +565,7 @@ export function calculateBuildingOutput(building: Building, disciples: Disciple[
   pills: number;
   artifacts: number;
   talismans: number;
+  beasts: number;
   breakdown: OutputBreakdown;
 } {
   // 委托给数值引擎。新公式修复了"升级即降产"：
