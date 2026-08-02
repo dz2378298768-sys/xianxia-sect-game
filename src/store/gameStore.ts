@@ -11,6 +11,7 @@ import type { DiscipleStatus } from '@/types/disciple';
 import type { PillInventory, PillType } from '@/types/pill';
 import type { ArtifactInventory, ArtifactType } from '@/types/artifact';
 import type { TalismanInventory, TalismanType } from '@/types/talisman';
+import type { BeastInventory } from '@/types/beast';
 import type { SectLevel, MonthlyReport, Notification, OtherSect, DiplomaticStatus } from '@/types/game';
 import {
   SectLevelNames, SectLevelRequirementsMap, SectLevelOrder,
@@ -59,6 +60,7 @@ interface GameState {
   pillInventory: PillInventory[];
   artifactInventory: ArtifactInventory[];
   talismanInventory: TalismanInventory[];
+  beastInventory: BeastInventory[];
   promotionRules: PromotionRules;
   notifications: Notification[];
   monthlyReport: MonthlyReport | null;
@@ -177,6 +179,7 @@ const createInitialState = () => {
     pillInventory: [],
     artifactInventory: [],
     talismanInventory: [],
+    beastInventory: [],
     promotionRules: getDefaultPromotionRules(),
     notifications: [],
     monthlyReport: null,
@@ -1835,6 +1838,10 @@ export const useGameStore = create<GameState>()(
         // v7: 新增 sectContribution 字段，旧存档默认 0
         if (state.sectContribution === undefined) {
           state.sectContribution = 0;
+        }
+        // v7: 新增 beastInventory 字段
+        if (!state.beastInventory) {
+          state.beastInventory = [];
         }
         if (state.buildings) {
           // 有效建筑类型（杂役居所已移除，旧存档中的杂役居所会被过滤）
