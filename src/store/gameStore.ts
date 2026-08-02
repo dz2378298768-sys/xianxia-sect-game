@@ -88,7 +88,7 @@ interface GameState {
   assignDiscipleToBuilding: (discipleId: string, buildingId: string | null) => void;
   setBuildingManager: (buildingId: string, discipleId: string | null) => void;
   upgradeBuilding: (buildingId: string) => boolean;
-  downgradeBuilding: (buildingId: string) => { success: boolean; refundSpiritStones: number; reason?: string };
+  downgradeBuilding: (buildingId: string) => { success: boolean; refundSpiritStones: number; refundContribution: number; refundReputation: number; reason?: string };
   toggleBuilding: (buildingId: string) => void;
   recruitDisciple: () => void;
   getDiscipleById: (id: string) => Disciple | undefined;
@@ -1109,24 +1109,34 @@ export const useGameStore = create<GameState>()(
         return true;
       },
 
-      downgradeBuilding: (buildingId: string): { success: boolean; refundSpiritStones: number; reason?: string } => {
+      downgradeBuilding: (buildingId: string): { success: boolean; refundSpiritStones: number; refundContribution: number; refundReputation: number; reason?: string } => {
         const state = get();
         const building = state.buildings.find(b => b.id === buildingId);
 
-        if (!building) return { success: false, refundSpiritStones: 0, reason: '建筑不存在' };
-        if (building.level <= 1) return { success: false, refundSpiritStones: 0, reason: '已是最低等级' };
+        if (!building) return { success: false, refundSpiritStones: 0, refundContribution: 0, refundReputation: 0, reason: '建筑不存在' };
+        if (building.level <= 1) return { success: false, refundSpiritStones: 0, refundContribution: 0, refundReputation: 0, reason: '已是最低等级' };
 
-        const isResidence = ['outer_residence', 'inner_residence', 'core_residence'].includes(building.type);
+        const isResidence = RESIDENCE_TYPES.includes(building.type);
 
-        // 计算返还资源：从 (level-1) 升级到 level 时花费的灵石（升级时仅扣除灵石）
+        // 计算返还资源：从 (level-1) 升级到 level 时花费的全部资源
         let refundSpiritStones = 0;
+        let refundContribution = 0;
+        let refundReputation = 0;
         if (isResidence) {
           const prevLevelBuilding = { ...building, level: building.level - 1 };
           const cost = getResidenceUpgradeCost(prevLevelBuilding);
-          if (cost) refundSpiritStones = cost.spiritStones;
+          if (cost) {
+            refundSpiritStones = cost.spiritStones;
+            refundContribution = cost.contribution ?? 0;
+            refundReputation = cost.reputation ?? 0;
+          }
         } else {
           const cost = building.upgradeCosts[building.level - 2];
-          if (cost) refundSpiritStones = cost.spiritStones;
+          if (cost) {
+            refundSpiritStones = cost.spiritStones;
+            refundContribution = cost.contribution ?? 0;
+            refundReputation = cost.reputation ?? 0;
+          }
         }
 
         const newLevel = building.level - 1;
@@ -1141,6 +1151,8 @@ export const useGameStore = create<GameState>()(
 
         set(state => ({
           spiritStones: state.spiritStones + refundSpiritStones,
+          sectContribution: state.sectContribution + refundContribution,
+          reputation: state.reputation + refundReputation,
           buildings: state.buildings.map(b =>
             b.id === buildingId
               ? { ...b, level: newLevel, discipleCapacity: newCapacity, baseMaintenanceCost: newMaintenanceCost }
@@ -1148,7 +1160,7 @@ export const useGameStore = create<GameState>()(
           ),
         }));
 
-        return { success: true, refundSpiritStones };
+        return { success: true, refundSpiritStones, refundContribution, refundReputation };
       },
 
       toggleBuilding: (buildingId: string) => {
