@@ -1,3 +1,7 @@
+import type { ArtifactType } from '@/types/artifact';
+import type { TalismanType } from '@/types/talisman';
+import type { BeastType } from '@/types/beast';
+
 export type DiscipleStatus = 'mortal' | 'servant' | 'outer' | 'inner' | 'core' | 'elder';
 
 export const DiscipleStatusNames: Record<DiscipleStatus, string> = {
@@ -109,7 +113,7 @@ export type LearningBook = {
   bookId: string;
   name: string;
   type: 'technique' | 'battle';
-  tier: 'foundation' | 'golden' | 'nascent' | 'spirit';
+  tier: 'qi' | 'foundation' | 'golden' | 'nascent';
   attribute?: string; // 属性
   cultivationBonus: number;
   combatBonus: number;
@@ -117,6 +121,15 @@ export type LearningBook = {
   totalDays: number;  // 总需要月数
   isLearned: boolean;  // 是否学成
 };
+
+// 弟子大比历史记录
+export interface DiscipleTournamentRecord {
+  year: number;
+  scope: 'sect' | 'inter-sect';   // 山门大比 / 宗门大比
+  frequency: string;               // 年度/五年/十年
+  rank: number;                    // 名次（1=冠军，0=未入三甲）
+  rewards: string[];               // 获得的奖励描述
+}
 
 export interface Disciple {
   id: string;
@@ -156,6 +169,14 @@ export interface Disciple {
   dodge: number;  // 闪避
   crit: number;  // 暴击率
   maxHp: number;  // 最大生命值
+  // 装备槽（三槽）
+  equippedArtifact?: ArtifactType | null;   // 法器
+  equippedTalisman?: TalismanType | null;   // 符箓
+  equippedBeast?: BeastType | null;         // 灵兽
+  // 人物经历
+  master: string | null;        // 师傅名称
+  friends: string[];            // 好友名称列表
+  tournamentHistory: DiscipleTournamentRecord[];  // 大比历史记录
 }
 
 export interface PromotionRules {
