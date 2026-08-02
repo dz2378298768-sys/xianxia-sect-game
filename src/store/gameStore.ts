@@ -47,6 +47,8 @@ import {
 import {
   saveToSlot as saveToSlotUtil, loadFromSlot as loadFromSlotUtil,
 } from '@/utils/saveSlots';
+import { SHOP_ITEMS } from '@/data/shop';
+import type { ShopItem } from '@/types/shop';
 
 interface GameState {
   year: number;
@@ -124,10 +126,19 @@ interface GameState {
   buyShopItem: (itemId: string) => { success: boolean; reason?: string };
 }
 
+// 库存累加辅助：找到同类型则 +1，否则新增条目
+function addItem<T extends string>(inv: { type: T; quantity: number }[], type: T): { type: T; quantity: number }[] {
+  const existing = inv.find(i => i.type === type);
+  if (existing) {
+    return inv.map(i => i.type === type ? { ...i, quantity: i.quantity + 1 } : i);
+  }
+  return [...inv, { type, quantity: 1 }];
+}
+
 const createInitialState = () => {
   let buildings = createInitialBuildings();
   const disciples: Disciple[] = [];
-  
+
   for (let i = 0; i < 10; i++) {
     const disciple = createInitialDisciple('servant', 'qi');
     disciples.push(disciple);
@@ -1859,6 +1870,57 @@ export const useGameStore = create<GameState>()(
         // 读取快照后替换全部 state，保留 action 函数（set 会合并）
         set({ ...snapshot, showMainMenu: false, gameStarted: true });
         return true;
+      },
+      buyShopItem: (itemId: string): { success: boolean; reason?: string } => {
+        const item = SHOP_ITEMS.find(i => i.id === itemId);
+        if (!item) return { success: false, reason: '商品不存在' };
+
+        const state = get();
+        if (state.spiritStones < item.price) return { success: false, reason: '灵石不足' };
+
+        // 配方类：检查是否已解锁
+        if (item.category === 'pill_recipe') {
+          if (item.recipePillType && state.unlockedPillRecipes.includes(item.recipePillType)) {
+            return { success: false, reason: '该丹方已解锁' };
+          }
+        } else if (item.category === 'artifact_recipe') {
+          if (item.recipeArtifactType && state.unlockedArtifactRecipes.includes(item.recipeArtifactType)) {
+            return { success: false, reason: '该图谱已解锁' };
+          }
+        } else if (item.category === 'talisman_recipe') {
+          if (item.recipeTalismanType && state.unlockedTalismanRecipes.includes(item.recipeTalismanType)) {
+            return { success: false, reason: '该符谱已解锁' };
+          }
+        }
+
+        set(state => {
+          const patch: Partial<GameState> = {
+            spiritStones: state.spiritStones - item.price,
+          };
+
+          // 成品类：增加库存
+          if (item.pillType) {
+            patch.pillInventory = addItem(state.pillInventory, item.pillType);
+          } else if (item.artifactType) {
+            patch.artifactInventory = addItem(state.artifactInventory, item.artifactType);
+          } else if (item.talismanType) {
+            patch.talismanInventory = addItem(state.talismanInventory, item.talismanType);
+          } else if (item.beastType) {
+            patch.beastInventory = addItem(state.beastInventory, item.beastType);
+          }
+          // 配方类：加入解锁列表
+          else if (item.recipePillType) {
+            patch.unlockedPillRecipes = [...state.unlockedPillRecipes, item.recipePillType];
+          } else if (item.recipeArtifactType) {
+            patch.unlockedArtifactRecipes = [...state.unlockedArtifactRecipes, item.recipeArtifactType];
+          } else if (item.recipeTalismanType) {
+            patch.unlockedTalismanRecipes = [...state.unlockedTalismanRecipes, item.recipeTalismanType];
+          }
+
+          return patch;
+        });
+
+        return { success: true };
       },
     }),
     {
