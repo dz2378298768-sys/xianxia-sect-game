@@ -72,6 +72,8 @@ interface GameState {
   monthlyReport: MonthlyReport | null;
   showReport: boolean;
   herbInventory: number;
+  ironInventory: number;    // 灵铁（炼器堂原料）
+  paperInventory: number;   // 符纸（符堂原料）
   gameStarted: boolean;
   showMainMenu: boolean;
   libraryBooks: BookConfig[]; // 藏经阁拥有的书籍
@@ -124,6 +126,7 @@ interface GameState {
   saveToSlot: (slotIndex: number) => void;                              // 保存当前游戏到指定槽位
   loadFromSlot: (slotIndex: number) => boolean;                         // 从槽位读取游戏（成功返回 true）
   buyShopItem: (itemId: string) => { success: boolean; reason?: string };
+  setProductionTarget: (buildingId: string, target: NonNullable<Building['productionTarget']>) => void;
 }
 
 // 库存累加辅助：找到同类型则 +1，否则新增条目
@@ -204,6 +207,8 @@ const createInitialState = () => {
     monthlyReport: null,
     showReport: false,
     herbInventory: 20,
+    ironInventory: 10,
+    paperInventory: 10,
     gameStarted: false,
     showMainMenu: true,
     libraryBooks,
@@ -1922,6 +1927,8 @@ export const useGameStore = create<GameState>()(
 
         return { success: true };
       },
+      // stub：Task 6 替换为真实实现（更新建筑 productionTarget）
+      setProductionTarget: (_buildingId: string, _target: NonNullable<Building['productionTarget']>) => {},
     }),
     {
       name: 'sect-game-save',
@@ -1944,6 +1951,8 @@ export const useGameStore = create<GameState>()(
         if (!state.unlockedPillRecipes) state.unlockedPillRecipes = [];
         if (!state.unlockedArtifactRecipes) state.unlockedArtifactRecipes = [];
         if (!state.unlockedTalismanRecipes) state.unlockedTalismanRecipes = [];
+        if (state.ironInventory === undefined) state.ironInventory = 10;
+        if (state.paperInventory === undefined) state.paperInventory = 10;
         if (state.buildings) {
           // 有效建筑类型（杂役居所已移除，旧存档中的杂役居所会被过滤）
           const validTypes = new Set([
