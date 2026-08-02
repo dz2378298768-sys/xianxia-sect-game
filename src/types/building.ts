@@ -57,6 +57,7 @@ export interface BuildingOutput {
   pills?: number;      // 丹药产出
   artifacts?: number;   // 法器产出
   talismans?: number;  // 符箓产出
+  beasts?: number;     // 灵兽产出（灵兽原专属）
 }
 
 export interface BuildingUpgradeCost {
