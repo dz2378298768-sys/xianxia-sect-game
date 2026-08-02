@@ -2,16 +2,17 @@ import React from 'react';
 import { useGameStore } from '@/store/gameStore';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
-import { 
+import {
   TrendingUp, TrendingDown, Gem,
   AlertTriangle, Wallet, PiggyBank
 } from 'lucide-react';
 import { calculateBuildingMaintenance, calculateBuildingOutput } from '@/utils/gameLogic';
+import { SectIcon } from '@/components/icons/SectIcons';
 
 export const EconomyPanel: React.FC = () => {
-  const { 
+  const {
     spiritStones, buildings, disciples,
-    herbInventory
+    herbInventory,
   } = useGameStore();
   
   const activeBuildings = buildings.filter(b => b.status === 'active');
@@ -64,11 +65,13 @@ export const EconomyPanel: React.FC = () => {
   
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="font-display text-2xl text-gold-gradient">经济收支</h1>
-        <p className="text-sect-jade/60 text-sm mt-1">
-          管理宗门灵石收支
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="font-display text-2xl text-gold-gradient">经济收支</h1>
+          <p className="text-sect-jade/60 text-sm mt-1">
+            管理宗门灵石收支
+          </p>
+        </div>
       </div>
       
       {bankruptcyLevel > 0 && (
@@ -174,25 +177,31 @@ export const EconomyPanel: React.FC = () => {
       <Card title="资源库存">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="text-center p-3 rounded-lg bg-sect-ink-light/30">
-            <div className="text-sect-herb text-2xl mb-1">🌿</div>
+            <div className="text-sect-herb mb-1 flex justify-center">
+              <SectIcon name="herb" size={28} strokeWidth={1.8} />
+            </div>
             <div className="text-sect-jade/60 text-xs">灵草</div>
             <div className="font-display text-sect-herb-light">{herbInventory} 株</div>
             <div className="text-xs text-green-400 mt-1">+{totalHerbIncome}/月</div>
           </div>
           <div className="text-center p-3 rounded-lg bg-sect-ink-light/30">
-            <div className="text-sect-gold text-2xl mb-1">👥</div>
+            <div className="text-sect-gold mb-1 flex justify-center">
+              <SectIcon name="group" size={28} strokeWidth={1.8} />
+            </div>
             <div className="text-sect-jade/60 text-xs">杂役弟子</div>
             <div className="font-display text-sect-jade">{servantCount} 人</div>
             <div className="text-xs text-red-400 mt-1">-{servantStipend}/月</div>
           </div>
           <div className="text-center p-3 rounded-lg bg-sect-ink-light/30">
-            <div className="text-sect-spirit text-2xl mb-1">🏛️</div>
+            <div className="text-sect-spirit mb-1 flex justify-center">
+              <SectIcon name="building" size={28} strokeWidth={1.8} />
+            </div>
             <div className="text-sect-jade/60 text-xs">启用建筑</div>
             <div className="font-display text-sect-jade">{activeBuildings.length} 座</div>
           </div>
           <div className="text-center p-3 rounded-lg bg-sect-ink-light/30">
-            <div className={`text-2xl mb-1 ${netIncome >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-              {netIncome >= 0 ? '📈' : '📉'}
+            <div className={`mb-1 flex justify-center ${netIncome >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              <SectIcon name={netIncome >= 0 ? 'trendUp' : 'trendDown'} size={28} strokeWidth={1.8} />
             </div>
             <div className="text-sect-jade/60 text-xs">净收益</div>
             <div className={`font-display ${netIncome >= 0 ? 'text-green-400' : 'text-red-400'}`}>

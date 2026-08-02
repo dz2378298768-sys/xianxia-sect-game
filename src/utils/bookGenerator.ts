@@ -1,5 +1,5 @@
 import type { BookConfig, BookTier, BookType, BookAttribute } from '@/data/buildings';
-import { BookAttributeNames, BookTierNames } from '@/data/buildings';
+import { BookAttributeNames, BookTierNames, BOOK_TIER_BONUSES, BOOK_TIER_COSTS, INITIAL_LIBRARY_BOOKS } from '@/data/buildings';
 import { generateId, randomInt, pickRandom } from '@/utils/random';
 
 // 功法名称前缀
@@ -70,27 +70,27 @@ const battleDescriptions = [
   '传说由{}老祖所创，威力无穷',
 ];
 
-// 各层级的基础加成
+// 各层级的基础加成（从配置读取）
 const tierBaseCultivationBonus: Record<BookTier, number> = {
-  foundation: 10,
-  golden: 25,
-  nascent: 45,
-  spirit: 75,
+  qi: BOOK_TIER_BONUSES.qi.cultivation,
+  foundation: BOOK_TIER_BONUSES.foundation.cultivation,
+  golden: BOOK_TIER_BONUSES.golden.cultivation,
+  nascent: BOOK_TIER_BONUSES.nascent.cultivation,
 };
 
 const tierBaseCombatBonus: Record<BookTier, number> = {
-  foundation: 8,
-  golden: 20,
-  nascent: 40,
-  spirit: 70,
+  qi: BOOK_TIER_BONUSES.qi.combat,
+  foundation: BOOK_TIER_BONUSES.foundation.combat,
+  golden: BOOK_TIER_BONUSES.golden.combat,
+  nascent: BOOK_TIER_BONUSES.nascent.combat,
 };
 
-// 学习时间：筑基1月，每层翻倍
+// 学习时间：炼气1月，筑基2月，金丹3月，元婴4月
 const tierLearnDays: Record<BookTier, number> = {
-  foundation: 1,
-  golden: 2,
+  qi: 1,
+  foundation: 2,
+  golden: 3,
   nascent: 4,
-  spirit: 8,
 };
 
 // 生成随机功法名称
@@ -199,16 +199,16 @@ export function generateRandomBook(tier: BookTier, type: BookType, forceAttribut
 // 生成一批随机书籍（默认各层级各类型都有）
 export function generateBatchBooks(count: number): BookConfig[] {
   const books: BookConfig[] = [];
-  const tiers: BookTier[] = ['foundation', 'golden', 'nascent', 'spirit'];
+  const tiers: BookTier[] = ['qi', 'foundation', 'golden', 'nascent'];
   const types: BookType[] = ['technique', 'battle'];
   
-  // 按概率分配：筑基40%，金丹30%，元婴20%，化神10%
+  // 按概率分配：炼气40%，筑基30%，金丹20%，元婴10%
   const tierWeights = [0.4, 0.3, 0.2, 0.1];
   
   for (let i = 0; i < count; i++) {
     // 选层级
     const rand = Math.random();
-    let tier: BookTier = 'foundation';
+    let tier: BookTier = 'qi';
     let cumulative = 0;
     for (let t = 0; t < tiers.length; t++) {
       cumulative += tierWeights[t];
@@ -227,36 +227,36 @@ export function generateBatchBooks(count: number): BookConfig[] {
   return books;
 }
 
-// 生成初始藏经阁书籍（每个层级有几本基础的）
+// 生成初始藏经阁书籍（每层1本通用功法 + 1本通用战技）
 export function generateInitialLibraryBooks(): BookConfig[] {
   const books: BookConfig[] = [];
-  const tiers: BookTier[] = ['foundation', 'golden', 'nascent', 'spirit'];
   
-  tiers.forEach((tier, idx) => {
-    // 每层初始 3本功法 + 5本战技（越高阶越少）
-    const techCount = Math.max(1, 3 - idx);
-    const battleCount = Math.max(2, 5 - idx);
-    
-    for (let i = 0; i < techCount; i++) {
-      books.push(generateRandomBook(tier, 'technique'));
-    }
-    for (let i = 0; i < battleCount; i++) {
-      books.push(generateRandomBook(tier, 'battle'));
-    }
+  INITIAL_LIBRARY_BOOKS.forEach(bookDef => {
+    books.push({
+      id: generateId(),
+      type: bookDef.type,
+      tier: bookDef.tier,
+      attribute: 'universal',
+      name: bookDef.name,
+      description: bookDef.description,
+      cultivationBonus: bookDef.cultivationBonus,
+      combatBonus: bookDef.combatBonus,
+      quality: 50, // 通用功法品质50
+      learnDays: tierLearnDays[bookDef.tier],
+    });
   });
   
   return books;
 }
 
-// 计算购买随机书的价格
+// 计算购买随机书的价格（从配置读取）
 export function getBookPrice(tier: BookTier): number {
-  const prices: Record<BookTier, number> = {
-    foundation: 50,
-    golden: 200,
-    nascent: 800,
-    spirit: 3000,
-  };
-  return prices[tier];
+  return BOOK_TIER_COSTS[tier].buyPrice;
+}
+
+// 获取学习消耗（贡献点）
+export function getBookLearnCost(tier: BookTier): number {
+  return BOOK_TIER_COSTS[tier].learnCost;
 }
 
 // 判断弟子是否能学习某本书（灵根匹配）

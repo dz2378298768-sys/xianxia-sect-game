@@ -1,253 +1,274 @@
 import React, { useState, useEffect } from 'react';
-import { useGameStore } from '@/store/gameStore';
 import { Button } from '@/components/ui/Button';
-import { Card } from '@/components/ui/Card';
-import { 
-  Sparkles, Play, PlusCircle, LogOut, Mountain, 
-  BookOpen, Users, Gem, Clock, AlertTriangle
+import {
+  Play, PlusCircle, LogOut, Mountain,
+  Users, Gem, Trash2, Clock,
 } from 'lucide-react';
+import { getSlots, deleteSlot, SAVE_SLOT_COUNT, type SaveSlotMeta } from '@/utils/saveSlots';
+import { SectLevelNames } from '@/types/game';
 
 interface MainMenuProps {
-  onStartNew: () => void;
-  onContinue: () => void;
+  onStartNew: (sectName: string) => void;
+  onContinue: (slotIndex: number) => void;
 }
 
+/** 装饰性金印徽记：八卦外框 + 旋转金环 + 朱砂心 + 书法字 */
+const SectEmblem: React.FC<{ size?: number }> = ({ size = 80 }) => (
+  <div className="relative" style={{ width: size, height: size }}>
+    <svg className="emblem-ring-spin absolute inset-0" width={size} height={size} viewBox="0 0 120 120">
+      <defs>
+        <linearGradient id="emblem-gold" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#f5e6b8" />
+          <stop offset="50%" stopColor="#d4a857" />
+          <stop offset="100%" stopColor="#8a6a2a" />
+        </linearGradient>
+      </defs>
+      <circle cx="60" cy="60" r="57" fill="none" stroke="url(#emblem-gold)" strokeWidth="1" strokeDasharray="2 5" opacity="0.7" />
+      {Array.from({ length: 8 }).map((_, i) => {
+        const a = (i * 45 * Math.PI) / 180;
+        const x1 = 60 + Math.cos(a) * 50, y1 = 60 + Math.sin(a) * 50;
+        const x2 = 60 + Math.cos(a) * 54, y2 = 60 + Math.sin(a) * 54;
+        return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke="url(#emblem-gold)" strokeWidth="1.4" opacity="0.8" />;
+      })}
+    </svg>
+    <svg className="absolute inset-0" width={size} height={size} viewBox="0 0 120 120" style={{ filter: 'drop-shadow(0 0 10px rgba(212,168,87,0.45))' }}>
+      <polygon points="60,8 88,20 108,44 112,72 100,100 72,112 44,108 20,88 8,60 16,32 36,14" fill="none" stroke="url(#emblem-gold)" strokeWidth="1.6" opacity="0.85" />
+      <circle cx="60" cy="60" r="42" fill="none" stroke="url(#emblem-gold)" strokeWidth="1.2" opacity="0.6" />
+      <circle cx="60" cy="60" r="38" fill="rgba(20,28,42,0.55)" stroke="url(#emblem-gold)" strokeWidth="0.8" />
+      <circle cx="60" cy="60" r="30" fill="url(#emblem-cinnabar)" opacity="0.92" />
+      <defs>
+        <radialGradient id="emblem-cinnabar" cx="40%" cy="35%" r="70%">
+          <stop offset="0%" stopColor="#d94a3e" />
+          <stop offset="70%" stopColor="#c23a2e" />
+          <stop offset="100%" stopColor="#8b2820" />
+        </radialGradient>
+      </defs>
+      <text x="60" y="62" textAnchor="middle" dominantBaseline="central" fontFamily="'LXGW WenKai','Noto Serif SC',serif" fontWeight="700" fontSize="34" fill="#fdf8ec" style={{ textShadow: '0 1px 3px rgba(60,5,0,0.6)' }}>仙</text>
+      {[[60, 14], [106, 60], [60, 106], [14, 60]].map(([cx, cy], i) => (
+        <circle key={i} cx={cx} cy={cy} r="1.6" fill="#f5e6b8" opacity="0.85" />
+      ))}
+    </svg>
+  </div>
+);
+
 export const MainMenu: React.FC<MainMenuProps> = ({ onStartNew, onContinue }) => {
-  const { year, month, disciples, sectLevel, buildings, spiritStones, reputation } = useGameStore();
-  const [hasSave, setHasSave] = useState(false);
-  const [showConfirmNew, setShowConfirmNew] = useState(false);
-  
+  const [slots, setSlots] = useState<(SaveSlotMeta | null)[]>(new Array(SAVE_SLOT_COUNT).fill(null));
+  // 选中的空槽位（用于开辟新宗时填名）
+  const [newSlotIndex, setNewSlotIndex] = useState<number | null>(null);
+  const [sectName, setSectName] = useState('');
+
+  // 读取存档槽位
+  const refreshSlots = () => {
+    setSlots(getSlots());
+  };
+
   useEffect(() => {
-    const saved = localStorage.getItem('sect-game-save');
-    if (saved) {
-      try {
-        const data = JSON.parse(saved);
-        setHasSave(!!data.state && data.state.gameStarted);
-      } catch {
-        setHasSave(false);
-      }
-    }
+    refreshSlots();
   }, []);
-  
-  const handleNewGame = () => {
-    if (hasSave) {
-      setShowConfirmNew(true);
-    } else {
-      onStartNew();
-    }
+
+  // 点击空槽位 → 打开命名弹窗
+  const handleEmptySlotClick = (index: number) => {
+    setNewSlotIndex(index);
+    setSectName('');
   };
-  
+
+  // 确认开辟新宗
   const confirmNewGame = () => {
-    setShowConfirmNew(false);
-    onStartNew();
+    const name = sectName.trim() || '修仙宗门';
+    onStartNew(name);
   };
-  
-  const SectLevelNames: Record<string, string> = {
-    founding: '草创期',
-    known: '小有名气',
-    famous: '声名鹊起',
-    dominant: '一方霸主',
-    eternal: '万古长青',
+
+  // 删除存档槽位
+  const handleDeleteSlot = (index: number) => {
+    deleteSlot(index);
+    refreshSlots();
   };
-  
-  const activeBuildings = buildings.filter(b => b.status === 'active').length;
-  
+
   return (
-    <div className="h-full w-full paper-bg flex items-center justify-center relative overflow-hidden">
+    <div className="h-full w-full relative overflow-hidden menu-stage">
+      <div className="absolute inset-0 menu-backdrop" style={{ backgroundImage: 'url(/buildings/mountain-gate.jpg)' }} />
+      <div className="absolute inset-0 menu-shade" />
       <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute top-10 left-10 w-32 h-32 rounded-full bg-sect-gold/5 blur-3xl" />
-        <div className="absolute bottom-20 right-20 w-48 h-48 rounded-full bg-sect-spirit/5 blur-3xl" />
-        <div className="absolute top-1/3 right-1/4 w-24 h-24 rounded-full bg-sect-herb/5 blur-3xl" />
+        <span className="menu-ember" style={{ left: '12%', animationDelay: '0s' }} />
+        <span className="menu-ember" style={{ left: '28%', animationDelay: '2.4s' }} />
+        <span className="menu-ember" style={{ left: '72%', animationDelay: '1.2s' }} />
+        <span className="menu-ember" style={{ left: '88%', animationDelay: '3.6s' }} />
       </div>
-      
-      <div className="relative z-10 text-center max-w-2xl px-8">
-        <div className="mb-10">
-          <div className="mb-6 animate-float">
-            <Mountain className="mx-auto text-sect-gold" size={72} strokeWidth={1.5} />
+
+      <div className="relative z-10 h-full w-full flex flex-col items-center justify-center px-4 py-4 overflow-y-auto">
+        <div className="w-full max-w-2xl menu-enter flex flex-col items-center">
+          {/* 紧凑头部：徽记 + 标题 */}
+          <div className="flex items-center gap-3 mb-3">
+            <SectEmblem size={64} />
+            <div>
+              <h1 className="font-display text-3xl text-gold-gradient tracking-[0.25em] pl-[0.25em] menu-title-glow leading-none">
+                宗 门 录
+              </h1>
+              <p className="text-[var(--gold-200)]/70 font-display text-xs tracking-[0.2em] pl-[0.2em] mt-1">
+                修仙界 · 宗门管理模拟
+              </p>
+            </div>
           </div>
-          <h1 className="font-display text-5xl text-gold-gradient mb-3 tracking-wider">
-            宗 门 录
-          </h1>
-          <p className="text-sect-jade/60 font-display text-lg">
-            修仙界·宗门管理模拟器
-          </p>
-        </div>
-        
-        <div className="space-y-4 mb-10">
-          <Button 
-            size="lg" 
-            className="w-64 text-lg py-6"
-            onClick={onContinue}
-            disabled={!hasSave}
-          >
-            <Play size={22} className="mr-2" />
-            继续游戏
-          </Button>
-          
-          <div className="block">
-            <Button 
+
+          {/* 金线分隔 */}
+          <div className="flex items-center justify-center gap-2 mb-3 w-full max-w-md">
+            <div className="flex-1 h-px bg-gradient-to-r from-transparent to-[var(--gold-400)]" />
+            <span className="text-[var(--gold-300)] text-[10px]">❖</span>
+            <div className="flex-1 h-px bg-gradient-to-l from-transparent to-[var(--gold-400)]" />
+          </div>
+
+          {/* 六个存档槽位：3列 × 2行 */}
+          <div className="grid grid-cols-3 gap-2 w-full max-w-2xl mb-3">
+            {slots.map((slot, i) => (
+              <SaveSlotCard
+                key={i}
+                index={i}
+                slot={slot}
+                onContinue={() => onContinue(i)}
+                onDelete={() => handleDeleteSlot(i)}
+                onCreate={() => handleEmptySlotClick(i)}
+              />
+            ))}
+          </div>
+
+          {/* 底部：开辟新宗 + 离开 */}
+          <div className="flex items-center gap-3">
+            <Button
               variant="outline"
-              size="lg" 
-              className="w-64 text-lg py-6"
-              onClick={handleNewGame}
+              size="sm"
+              className="px-4"
+              onClick={() => {
+                // 找第一个空槽位
+                const emptyIdx = slots.findIndex(s => s === null);
+                handleEmptySlotClick(emptyIdx >= 0 ? emptyIdx : 0);
+              }}
             >
-              <PlusCircle size={22} className="mr-2" />
-              新游戏
+              <PlusCircle size={16} className="mr-1.5" />
+              开辟新宗
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="px-4 opacity-60 hover:opacity-100"
+              onClick={() => { if (confirm('确定要退出游戏吗？')) window.close(); }}
+            >
+              <LogOut size={16} className="mr-1.5" />
+              离开此界
             </Button>
           </div>
-          
-          <Button 
-            variant="ghost"
-            size="lg" 
-            className="w-64 text-lg py-6 opacity-70 hover:opacity-100"
-            onClick={() => {
-              if (confirm('确定要退出游戏吗？')) {
-                window.close();
-              }
-            }}
-          >
-            <LogOut size={22} className="mr-2" />
-            退出游戏
-          </Button>
+
+          <p className="text-[var(--gold-300)]/40 text-xs mt-3 font-display tracking-[0.3em] pl-[0.3em]">
+            天道酬勤 · 道法自然
+          </p>
         </div>
-        
-        {hasSave && (
-          <Card className="max-w-md mx-auto bg-sect-ink/30 border-sect-gold/20">
-            <div className="text-left">
-              <div className="text-sect-gold font-display text-lg mb-3 flex items-center gap-2">
-                <BookOpen size={18} />
-                上次存档
-              </div>
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div className="flex items-center gap-2">
-                  <Clock size={14} className="text-sect-jade/40" />
-                  <span className="text-sect-jade/70">
-                    第 {year} 年 {month} 月
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Mountain size={14} className="text-sect-jade/40" />
-                  <span className="text-sect-jade/70">
-                    {SectLevelNames[sectLevel] || '未知'}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Users size={14} className="text-sect-jade/40" />
-                  <span className="text-sect-jade/70">
-                    {disciples.length} 名弟子
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Building2 size={14} className="text-sect-jade/40" />
-                  <span className="text-sect-jade/70">
-                    {activeBuildings} 座建筑
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Gem size={14} className="text-sect-jade/40" />
-                  <span className="text-sect-jade/70">
-                    {Math.floor(spiritStones)} 灵石
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Star size={14} className="text-sect-jade/40" />
-                  <span className="text-sect-jade/70">
-                    {Math.floor(reputation)} 声望
-                  </span>
-                </div>
-              </div>
-            </div>
-          </Card>
-        )}
-        
-        <p className="text-sect-jade/30 text-sm mt-10 font-display">
-          天道酬勤，道法自然
-        </p>
       </div>
-      
-      {showConfirmNew && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <Card className="max-w-sm w-full mx-4">
-            <div className="text-center">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-sect-gold/20 flex items-center justify-center">
-                <AlertTriangle size={32} className="text-sect-gold" />
+
+      {/* 开辟新宗命名弹窗 */}
+      {newSlotIndex !== null && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 px-4">
+          <div className="max-w-sm w-full scroll-panel-dark p-5 slide-in-up">
+            <div className="text-center mb-4">
+              <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-sect-gold/20 flex items-center justify-center">
+                <Mountain size={28} className="text-sect-gold" />
               </div>
-              <h3 className="font-display text-xl text-sect-gold mb-2">
-                确认开新档？
-              </h3>
-              <p className="text-sect-jade/70 text-sm mb-6">
-                开始新游戏将覆盖当前存档，
-                <br />
-                所有进度将无法恢复。
+              <h3 className="font-display text-lg text-sect-gold mb-1">开辟新宗</h3>
+              <p className="text-sect-jade/60 text-xs">
+                将占据第 {newSlotIndex + 1} 号存档位
               </p>
-              <div className="flex gap-3">
-                <Button 
-                  variant="ghost" 
-                  className="flex-1"
-                  onClick={() => setShowConfirmNew(false)}
-                >
-                  取消
-                </Button>
-                <Button 
-                  variant="gold" 
-                  className="flex-1"
-                  onClick={confirmNewGame}
-                >
-                  确认开新
-                </Button>
-              </div>
             </div>
-          </Card>
+            <div className="mb-4">
+              <label className="text-xs text-[var(--gold-300)] mb-1.5 block">宗门名称</label>
+              <input
+                type="text"
+                value={sectName}
+                onChange={e => setSectName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') confirmNewGame(); }}
+                placeholder="如：青云宗、紫霄宫…"
+                maxLength={12}
+                autoFocus
+                className="w-full px-3 py-2 bg-[rgba(13,17,23,0.6)] border border-[var(--gold-400)]/30 rounded text-sect-jade placeholder:text-sect-jade/30 focus:outline-none focus:border-[var(--gold-300)]/60 text-sm"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button variant="ghost" className="flex-1" onClick={() => setNewSlotIndex(null)}>
+                取消
+              </Button>
+              <Button variant="gold" className="flex-1" onClick={confirmNewGame}>
+                立即开辟
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>
   );
 };
 
-function Building2(props: any) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width={props.size || 24}
-      height={props.size || 24}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={props.className}
-    >
-      <rect x="4" y="2" width="16" height="20" rx="2" ry="2" />
-      <path d="M9 22v-4h6v4" />
-      <path d="M8 6h.01" />
-      <path d="M16 6h.01" />
-      <path d="M12 6h.01" />
-      <path d="M12 10h.01" />
-      <path d="M12 14h.01" />
-      <path d="M16 10h.01" />
-      <path d="M16 14h.01" />
-      <path d="M8 10h.01" />
-      <path d="M8 14h.01" />
-    </svg>
-  );
-}
+/** 单个存档槽位卡片 */
+const SaveSlotCard: React.FC<{
+  index: number;
+  slot: SaveSlotMeta | null;
+  onContinue: () => void;
+  onDelete: () => void;
+  onCreate: () => void;
+}> = ({ index, slot, onContinue, onDelete, onCreate }) => {
+  if (!slot) {
+    // 空槽位
+    return (
+      <button
+        onClick={onCreate}
+        className="save-slot-card save-slot-empty group"
+        title={`在第 ${index + 1} 号位开辟新宗`}
+      >
+        <PlusCircle size={20} className="text-[var(--gold-400)]/40 group-hover:text-[var(--gold-300)] transition-colors mb-1" />
+        <span className="text-[10px] text-[var(--ink-400)]">第 {index + 1} 位</span>
+        <span className="text-[10px] text-[var(--gold-300)]/50 group-hover:text-[var(--gold-300)]">空 · 开辟新宗</span>
+      </button>
+    );
+  }
 
-function Star(props: any) {
+  // 有存档的槽位
   return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width={props.size || 24}
-      height={props.size || 24}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={props.className}
-    >
-      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-    </svg>
+    <div className="save-slot-card save-slot-filled">
+      <button
+        onClick={onContinue}
+        className="flex-1 text-left min-w-0"
+        title={`继续 ${slot.sectName}`}
+      >
+        <div className="flex items-center gap-1 mb-1">
+          <span className="font-display text-sm text-[var(--gold-200)] truncate flex-1">
+            {slot.sectName}
+          </span>
+          <span className="seal-badge text-[9px] !px-1 !py-0 shrink-0">
+            {SectLevelNames[slot.sectLevel]}
+          </span>
+        </div>
+        <div className="flex items-center gap-2 text-[10px] text-[var(--ink-300)]">
+          <span className="flex items-center gap-0.5">
+            <Clock size={10} /> {slot.year}年{slot.month}月
+          </span>
+          <span className="flex items-center gap-0.5">
+            <Users size={10} /> {slot.discipleCount}
+          </span>
+          <span className="flex items-center gap-0.5">
+            <Gem size={10} /> {slot.spiritStones}
+          </span>
+        </div>
+        <div className="flex items-center gap-1 mt-1.5">
+          <Play size={11} className="text-[var(--gold-300)]" />
+          <span className="text-[10px] text-[var(--gold-300)]">继续修行</span>
+        </div>
+      </button>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          if (confirm(`确定删除「${slot.sectName}」的存档吗？`)) onDelete();
+        }}
+        className="absolute top-1.5 right-1.5 p-1 rounded text-[var(--ink-500)] hover:text-red-400 hover:bg-red-400/10 transition-colors"
+        title="删除存档"
+      >
+        <Trash2 size={12} />
+      </button>
+    </div>
   );
-}
+};

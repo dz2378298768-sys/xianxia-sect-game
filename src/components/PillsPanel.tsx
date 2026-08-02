@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { PILL_CONFIGS } from '@/data/pills';
 import type { PillType } from '@/types/pill';
 import { FlaskConical, Lock, Sparkles, Clock, Coins } from 'lucide-react';
+import { SectIcon } from '@/components/icons/SectIcons';
 
 export const PillsPanel: React.FC = () => {
   const { pillInventory, spiritStones, herbInventory } = useGameStore();
@@ -77,10 +78,10 @@ export const PillsPanel: React.FC = () => {
             <Card key={pill.type} className={isLocked ? 'opacity-60' : ''}>
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-3">
-                  <div className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl ${
+                  <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
                     isLocked ? 'bg-gray-500/20' : 'bg-sect-pill/20'
                   }`}>
-                    {isLocked ? <Lock size={20} className="text-gray-500" /> : '💊'}
+                    {isLocked ? <Lock size={20} className="text-gray-500" /> : <SectIcon name="pill" size={24} strokeWidth={1.8} className="text-sect-pill-light" />}
                   </div>
                   <div>
                     <h3 className="font-display text-sect-jade">{pill.name}</h3>

@@ -28,6 +28,8 @@ export interface Pill {
   sellPrice: number;
   contributionCost: number;
   unlocked: boolean;
+  lifespanBonus?: number;      // 寿命增加（首次服用有效）
+  firstUseOnly?: boolean;       // 是否仅首次服用有效
 }
 
 export interface PillInventory {

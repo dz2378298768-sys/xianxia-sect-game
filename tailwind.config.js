@@ -40,6 +40,7 @@ export default {
         "float": "float 3s ease-in-out infinite",
         "glow": "glow 2s ease-in-out infinite alternate",
         "scroll-unfold": "scrollUnfold 0.6s ease-out forwards",
+        "modal-fade-in": "modalFadeIn 0.25s ease-out forwards",
       },
       keyframes: {
         float: {
@@ -53,6 +54,11 @@ export default {
         scrollUnfold: {
           "0%": { transform: "scaleY(0)", opacity: "0" },
           "100%": { transform: "scaleY(1)", opacity: "1" },
+        },
+        // 居中淡入：从顶部拉取改为居中缩放淡入，避免下方建筑弹窗从上拉取的违和感
+        modalFadeIn: {
+          "0%": { transform: "scale(0.96)", opacity: "0" },
+          "100%": { transform: "scale(1)", opacity: "1" },
         },
       },
     },

@@ -27,6 +27,7 @@ export interface Talisman {
   sellPrice: number;
   contributionCost: number;
   unlocked: boolean;
+  defenseBonus?: number;
 }
 
 export interface TalismanInventory {

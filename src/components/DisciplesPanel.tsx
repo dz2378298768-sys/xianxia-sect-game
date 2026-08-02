@@ -1,32 +1,24 @@
 import React, { useState } from 'react';
 import { useGameStore } from '@/store/gameStore';
 import { useUIStore } from '@/store/uiStore';
-import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { Tooltip } from '@/components/ui/Tooltip';
+import { DiscipleAvatar, SimpleAvatar } from '@/components/ui/Avatar';
 import { 
-  DiscipleStatus, DiscipleStatusNames, RealmNames, SpiritRootNames 
+  DiscipleStatus, DiscipleStatusNames, RealmNames, RealmOrder, SpiritRootNames 
 } from '@/types/disciple';
 import { 
   User, Heart, Sparkles, BookOpen, Calendar, Star, 
-  Filter, UserPlus, X, Building2, Sword, Shield, 
+  UserPlus, X, Building2, Sword, Shield, 
   Zap, Target, Activity, Smile, Frown, Wind, Swords, Flame
 } from 'lucide-react';
-import { calculateDiscipleCombatPower } from '@/utils/gameLogic';
+import { calculateDiscipleCombatPower, getRealmBreakthroughRequired } from '@/utils/gameLogic';
 import { CONSTITUTIONS, RARITY_COLORS, RARITY_NAMES } from '@/data/constitutions';
 import type { Constitution } from '@/data/constitutions';
-
-const statusFilters: { value: DiscipleStatus | 'all'; label: string }[] = [
-  { value: 'all', label: '全部' },
-  { value: 'servant', label: '杂役' },
-  { value: 'outer', label: '外门' },
-  { value: 'inner', label: '内门' },
-  { value: 'core', label: '核心' },
-  { value: 'elder', label: '长老' },
-];
+import { SectIcon } from '@/components/icons/SectIcons';
 
 function getRealmColor(realm: string): string {
   const colors: Record<string, string> = {
@@ -82,192 +74,182 @@ function getBaseCultivationSpeed(disciple: any): number {
   return disciple.cultivationSpeed / (1 + totalBonus / 100) / (1 - satisfactionPenalty);
 }
 
-// 精美弟子头像 - DiceBear API + 玉石边框
-function DiscipleAvatar({ seed, size = 48, status = 'servant' }: { seed: number; size?: number; status?: string }) {
-  // DiceBear 冒险风格头像（适合古风主题）
-  const avatarUrl = `https://api.dicebear.com/7.x/adventurer/svg?seed=${seed}&backgroundColor=1a2e2a`;
+// 头像组件统一使用 ui/Avatar（DiscipleAvatar / SimpleAvatar），不再在此文件内重复定义
 
-  // 根据身份状态选择边框颜色
-  const getBorderGradient = () => {
-    switch (status) {
-      case 'elder': return 'from-amber-400 via-yellow-300 to-amber-400';
-      case 'core': return 'from-yellow-600 via-amber-400 to-yellow-600';
-      case 'inner': return 'from-purple-500 via-violet-400 to-purple-500';
-      case 'outer': return 'from-emerald-500 via-teal-400 to-emerald-500';
-      default: return 'from-stone-400 via-stone-300 to-stone-400';
-    }
-  };
 
-  return (
-    <div className="relative" style={{ width: size, height: size }}>
-      {/* 外层光晕 */}
-      <div
-        className="absolute inset-0 rounded-full bg-gradient-to-br from-yellow-500/20 via-transparent to-amber-500/20 blur-sm"
-      />
-      {/* 金色边框 */}
-      <div className={`absolute inset-0 rounded-full bg-gradient-to-br ${getBorderGradient()} p-[2px]`}>
-        <div className="w-full h-full rounded-full bg-gradient-to-br from-stone-900 to-stone-800 overflow-hidden flex items-center justify-center">
-          <img
-            src={avatarUrl}
-            alt="弟子头像"
-            width={size - 6}
-            height={size - 6}
-            className="rounded-full"
-            style={{ imageRendering: 'auto' }}
-          />
-        </div>
-      </div>
-      {/* 内层高光 */}
-      <div
-        className="absolute inset-1 rounded-full"
-        style={{
-          background: 'linear-gradient(135deg, rgba(255,255,255,0.15) 0%, transparent 50%, rgba(0,0,0,0.1) 100%)',
-          pointerEvents: 'none'
-        }}
-      />
-    </div>
-  );
-}
+// 头像组件统一使用 ui/Avatar（DiscipleAvatar / SimpleAvatar），不再在此文件内重复定义
 
-// 简化版头像 - 用于列表
-function SimpleAvatar({ seed, size = 36 }: { seed: number; size?: number }) {
-  const avatarUrl = `https://api.dicebear.com/7.x/adventurer/svg?seed=${seed}&backgroundColor=1a2e2a`;
 
-  return (
-    <div
-      className="rounded-full overflow-hidden border border-sect-gold/30"
-      style={{ width: size, height: size }}
-    >
-      <img
-        src={avatarUrl}
-        alt="弟子头像"
-        width={size}
-        height={size}
-        style={{ imageRendering: 'auto' }}
-      />
-    </div>
-  );
-}
+// 头像组件统一使用 ui/Avatar（DiscipleAvatar / SimpleAvatar），不再在此文件内重复定义
+
 
 export const DisciplesPanel: React.FC = () => {
-  const { disciples, recruitDisciple, spiritStones, getBuildingById } = useGameStore();
+  const { disciples, recruitDisciple, spiritStones, getBuildingById, followedDiscipleIds, toggleFollowDisciple } = useGameStore();
   const { selectedDiscipleId, setSelectedDiscipleId } = useUIStore();
   const [statusFilter, setStatusFilter] = useState<DiscipleStatus | 'all'>('all');
-  const [detailTab, setDetailTab] = useState<'basic' | 'combat'>('basic');
-  
+  const [detailTab, setDetailTab] = useState<'basic' | 'combat' | 'experience'>('basic');
+
+  // 左侧等级分布导航：按 status 分组
+  const statusNavItems: { value: DiscipleStatus | 'all'; label: string; count: number }[] = [
+    { value: 'all',     label: '全部', count: disciples.length },
+    { value: 'servant', label: '杂役', count: disciples.filter(d => d.status === 'servant').length },
+    { value: 'outer',   label: '外门', count: disciples.filter(d => d.status === 'outer').length },
+    { value: 'inner',   label: '内门', count: disciples.filter(d => d.status === 'inner').length },
+    { value: 'core',    label: '核心', count: disciples.filter(d => d.status === 'core').length },
+    { value: 'elder',   label: '长老', count: disciples.filter(d => d.status === 'elder').length },
+  ];
+
   const filteredDisciples = statusFilter === 'all'
     ? disciples
     : disciples.filter(d => d.status === statusFilter);
-  
+
   const selectedDisciple = disciples.find(d => d.id === selectedDiscipleId);
-  
+
   const canRecruit = spiritStones >= 50;
-  
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-4">
+    <div className="flex flex-col h-full min-h-0 gap-2">
+      {/* 顶部标题栏 + 招募按钮 */}
+      <div className="flex items-center justify-between flex-wrap gap-2 shrink-0">
         <div>
-          <h1 className="font-display text-2xl text-gold-gradient">弟子管理</h1>
-          <p className="text-sect-jade/60 text-sm mt-1">
-            共 {disciples.length} 名弟子
+          <h1 className="font-display text-lg text-gold-gradient">弟子管理</h1>
+          <p className="text-sect-jade/60 text-[10px] mt-0.5">
+            共 {disciples.length} 名弟子 · 当前筛选 {filteredDisciples.length} 名
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <Button 
-            variant="ghost" 
-            size="sm"
-            onClick={recruitDisciple}
-            disabled={!canRecruit}
-          >
-            <UserPlus size={16} className="mr-1.5" />
-            招募弟子 (50灵石)
-          </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={recruitDisciple}
+          disabled={!canRecruit}
+        >
+          <UserPlus size={14} className="mr-1" />
+          招募(50灵石)
+        </Button>
+      </div>
+
+      {/* 主区域：左侧等级导航 + 右侧弟子列表（长方形卡片） */}
+      <div className="disciple-panel-layout flex-1 min-h-0">
+        {/* 左侧：等级分布导航（像导航栏一样） */}
+        <div className="disciple-level-nav">
+          {statusNavItems.map(item => (
+            <button
+              key={item.value}
+              className={`disciple-level-nav-item ${statusFilter === item.value ? 'disciple-level-nav-item-active' : ''}`}
+              onClick={() => setStatusFilter(item.value)}
+              title={`${item.label} ${item.count}人`}
+            >
+              <span className="disciple-level-nav-count">{item.count}</span>
+              <span className="disciple-level-nav-label">{item.label}</span>
+            </button>
+          ))}
         </div>
-      </div>
-      
-      <div className="flex items-center gap-2 flex-wrap">
-        <Filter size={16} className="text-sect-jade/50" />
-        {statusFilters.map(filter => (
-          <button
-            key={filter.value}
-            onClick={() => setStatusFilter(filter.value)}
-            className={`px-3 py-1 text-sm rounded-full transition-all ${
-              statusFilter === filter.value
-                ? 'bg-sect-gold/20 text-sect-gold border border-sect-gold/40'
-                : 'text-sect-jade/60 hover:text-sect-jade hover:bg-sect-jade/10'
-            }`}
-          >
-            {filter.label}
-          </button>
-        ))}
-      </div>
-      
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {filteredDisciples.map(disciple => (
-          <Card
-            key={disciple.id}
-            hoverable
-            className="cursor-pointer"
-            onClick={() => setSelectedDiscipleId(disciple.id)}
-          >
-            <div className="flex items-start gap-3">
-              <SimpleAvatar seed={disciple.avatarSeed} size={48} />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="font-display text-sect-jade truncate">
-                    {disciple.name}
-                  </span>
+
+        {/* 右侧：弟子列表（长方形卡片，可滚动） */}
+        <div className="disciple-list-area">
+          {filteredDisciples.length === 0 ? (
+            <div className="text-center text-sect-jade/40 text-xs py-6">
+              暂无弟子
+            </div>
+          ) : filteredDisciples.map(disciple => {
+            const isFollowed = followedDiscipleIds.includes(disciple.id);
+            const breakthroughRequired = getRealmBreakthroughRequired(disciple.realm);
+            const cultivationPct = Math.min(100, (disciple.realmProgress / breakthroughRequired) * 100);
+            const satisfactionPct = Math.max(0, Math.min(100, disciple.satisfaction));
+            const assignedBuildingName = disciple.assignedBuilding
+              ? getBuildingById(disciple.assignedBuilding)?.name
+              : null;
+
+            return (
+              <div
+                key={disciple.id}
+                className="disciple-rect-card"
+                onClick={() => setSelectedDiscipleId(disciple.id)}
+              >
+                {/* 关注按钮 */}
+                <button
+                  onClick={e => {
+                    e.stopPropagation();
+                    toggleFollowDisciple(disciple.id);
+                  }}
+                  className={`disciple-rect-follow ${isFollowed ? 'disciple-rect-follow-active' : ''}`}
+                  title={isFollowed ? '取消关注' : '关注弟子'}
+                >
+                  <Heart size={12} fill={isFollowed ? 'currentColor' : 'none'} strokeWidth={1.8} />
+                </button>
+
+                {/* 左侧：头像 */}
+                <div className="disciple-rect-avatar">
+                  <SimpleAvatar
+                    seed={disciple.avatarSeed}
+                    size={48}
+                    status={disciple.status}
+                    realm={disciple.realm}
+                    name={disciple.name}
+                  />
                 </div>
-                <div className="flex items-center gap-2 mt-1">
-                  <Badge variant={getStatusVariant(disciple.status)} size="sm">
-                    {DiscipleStatusNames[disciple.status]}
-                  </Badge>
-                  <span className={`text-xs ${getRealmColor(disciple.realm)}`}>
-                    {RealmNames[disciple.realm]}
-                  </span>
-                </div>
-                <div className="flex items-center gap-3 mt-1.5 text-xs text-sect-jade/60">
-                  <span className="flex items-center gap-0.5">
-                    <Star size={12} className="text-sect-herb-light/60" />
-                    {Math.floor(disciple.contributionPoints)}
-                  </span>
-                  {disciple.assignedBuilding && (
-                    <span className="flex items-center gap-0.5 truncate">
-                      <Building2 size={12} className="text-sect-gold/60" />
-                      {getBuildingById(disciple.assignedBuilding)?.name || '无'}
+
+                {/* 右侧：等级、修为、双进度条 */}
+                <div className="disciple-rect-body">
+                  {/* 头部：姓名 + 身份 + 境界 */}
+                  <div className="disciple-rect-header">
+                    <span className="disciple-rect-name">{disciple.name}</span>
+                    <Badge variant={getStatusVariant(disciple.status)} size="sm">
+                      {DiscipleStatusNames[disciple.status]}
+                    </Badge>
+                    <span className={`text-[10px] ${getRealmColor(disciple.realm)}`}>
+                      {RealmNames[disciple.realm]}
                     </span>
-                  )}
-                </div>
-                <div className="mt-2">
-                  <div className="flex justify-between text-xs text-sect-jade/50 mb-0.5">
-                    <span>修为</span>
-                    <span>{Math.floor(disciple.realmProgress)}%</span>
                   </div>
-                  <ProgressBar value={disciple.realmProgress} max={100} size="sm" />
-                </div>
-                {/* 满意度显示 */}
-                <div className="flex items-center gap-1.5 mt-2 text-xs">
-                  {getSatisfactionIcon(disciple.satisfaction)}
-                  <span className={getSatisfactionColor(disciple.satisfaction)}>
-                    {Math.floor(disciple.satisfaction)}%满意
-                  </span>
-                  {disciple.maxSatisfactionLossWork > 0 && (
-                    <span className="text-orange-400/60 text-[10px]">
-                      (工作-{disciple.maxSatisfactionLossWork}%)
+
+                  {/* 中部：等级、修为、贡献、归属建筑 */}
+                  <div className="disciple-rect-meta">
+                    <span className="flex items-center gap-0.5">
+                      <Star size={10} className="text-sect-herb-light/60" />
+                      贡献{Math.floor(disciple.contributionPoints)}
                     </span>
-                  )}
-                  {disciple.maxSatisfactionLossResidence > 0 && (
-                    <span className="text-orange-400/60 text-[10px]">
-                      (居所-{disciple.maxSatisfactionLossResidence}%)
-                    </span>
-                  )}
+                    {assignedBuildingName && (
+                      <span className="flex items-center gap-0.5 truncate">
+                        <Building2 size={10} className="text-sect-gold/60" />
+                        {assignedBuildingName}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* 底部：双进度条（修练值 + 满意度） */}
+                  <div className="disciple-rect-progress">
+                    <div className="disciple-progress-row">
+                      <span className="disciple-progress-label">修为</span>
+                      <div className="disciple-progress-track">
+                        <div
+                          className="disciple-progress-fill disciple-progress-fill-cultivation"
+                          style={{ width: `${cultivationPct}%` }}
+                        />
+                      </div>
+                      <span className="disciple-progress-value">
+                        {Math.floor(disciple.realmProgress)}/{breakthroughRequired}
+                      </span>
+                    </div>
+                    <div className="disciple-progress-row">
+                      <span className="disciple-progress-label">满意</span>
+                      <div className="disciple-progress-track">
+                        <div
+                          className="disciple-progress-fill disciple-progress-fill-satisfaction"
+                          style={{ width: `${satisfactionPct}%` }}
+                        />
+                      </div>
+                      <span className="disciple-progress-value">
+                        {Math.floor(disciple.satisfaction)}%
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
-          </Card>
-        ))}
+            );
+          })}
+        </div>
       </div>
-      
+
       <Modal
         isOpen={!!selectedDisciple}
         onClose={() => setSelectedDiscipleId(null)}
@@ -277,7 +259,7 @@ export const DisciplesPanel: React.FC = () => {
         {selectedDisciple && (
           <div className="space-y-4">
             <div className="flex items-center gap-4">
-              <DiscipleAvatar seed={selectedDisciple.avatarSeed} size={64} />
+              <DiscipleAvatar seed={selectedDisciple.avatarSeed} size={64} status={selectedDisciple.status} realm={selectedDisciple.realm} name={selectedDisciple.name} />
               <div>
                 <h2 className="font-display text-xl text-sect-gold">
                   {selectedDisciple.name}
@@ -324,6 +306,19 @@ export const DisciplesPanel: React.FC = () => {
                 <span className="flex items-center gap-2">
                   <Sword size={16} />
                   战斗属性
+                </span>
+              </button>
+              <button
+                onClick={() => setDetailTab('experience')}
+                className={`px-4 py-2 text-sm font-medium transition-colors ${
+                  detailTab === 'experience'
+                    ? 'text-sect-gold border-b-2 border-sect-gold'
+                    : 'text-sect-jade/60 hover:text-sect-jade'
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  <BookOpen size={16} />
+                  人物经历
                 </span>
               </button>
             </div>
@@ -430,8 +425,9 @@ export const DisciplesPanel: React.FC = () => {
                               <div className="text-green-400">✓ 居所匹配，每月恢复</div>
                             )}
                             {selectedDisciple.satisfaction < 60 && (
-                              <div className="text-red-400 pt-1 border-t border-sect-gold/20">
-                                ⚠ 满意度低于60%，弟子可能离开！
+                              <div className="text-red-400 pt-1 border-t border-sect-gold/20 flex items-center gap-1.5">
+                                <SectIcon name="warning" size={14} strokeWidth={1.8} />
+                                <span>满意度低于60%，弟子可能离开！</span>
                               </div>
                             )}
                           </div>
@@ -455,13 +451,19 @@ export const DisciplesPanel: React.FC = () => {
                   <div className="flex justify-between text-sm mb-1">
                     <span className="text-sect-jade/80">修为进度</span>
                     <span className="text-sect-jade/60">
-                      {Math.floor(selectedDisciple.realmProgress)} / 100
+                      {Math.floor(selectedDisciple.realmProgress)} / {getRealmBreakthroughRequired(selectedDisciple.realm)}
+                      <span className="ml-2 text-sect-gold/70">
+                        {Math.min(100, Math.floor((selectedDisciple.realmProgress / getRealmBreakthroughRequired(selectedDisciple.realm)) * 100))}%
+                      </span>
+                      {selectedDisciple.realmProgress >= getRealmBreakthroughRequired(selectedDisciple.realm) && (
+                        <span className="ml-2 text-sect-gold">可突破</span>
+                      )}
                     </span>
                   </div>
-                  <ProgressBar 
-                    value={selectedDisciple.realmProgress} 
-                    max={100} 
-                    color="spirit" 
+                  <ProgressBar
+                    value={selectedDisciple.realmProgress}
+                    max={getRealmBreakthroughRequired(selectedDisciple.realm)}
+                    color="spirit"
                   />
                 </div>
                 
@@ -632,43 +634,151 @@ export const DisciplesPanel: React.FC = () => {
             {/* 战斗属性页 */}
             {detailTab === 'combat' && (
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="flex items-center gap-2">
-                    <Sword size={16} className="text-red-400/50" />
-                    <span className="text-sect-jade/80 text-sm">
-                      战力 {calculateDiscipleCombatPower(selectedDisciple).toLocaleString()}
-                    </span>
+                {/* 战力总览（带悬浮明细） */}
+                <Tooltip
+                  content={
+                    <div className="space-y-2 text-xs min-w-[220px]">
+                      <div className="font-medium text-sect-gold mb-1">战力构成</div>
+                      <div className="space-y-1">
+                        <div className="flex justify-between">
+                          <span className="text-sect-jade/60">基础战力</span>
+                          <span className="text-sect-jade">{(selectedDisciple.attack * 2 + selectedDisciple.defense + selectedDisciple.maxHp * 0.1).toFixed(0)}</span>
+                        </div>
+                        {selectedDisciple.learnedTechnique && selectedDisciple.learnedTechnique.combatBonus > 0 && (
+                          <div className="flex justify-between text-green-400">
+                            <span>{selectedDisciple.learnedTechnique.name}</span>
+                            <span>+{selectedDisciple.learnedTechnique.combatBonus}%</span>
+                          </div>
+                        )}
+                        {selectedDisciple.learnedBattles.filter(b => b.isLearned).map((b, i) => (
+                          <div key={i} className="flex justify-between text-green-400">
+                            <span>{b.name}</span>
+                            <span>+{b.combatBonus}%</span>
+                          </div>
+                        ))}
+                        <div className="border-t border-sect-gold/20 pt-1 flex justify-between">
+                          <span className="text-sect-gold">总战力</span>
+                          <span className="text-sect-gold font-bold">{calculateDiscipleCombatPower(selectedDisciple).toLocaleString()}</span>
+                        </div>
+                      </div>
+                    </div>
+                  }
+                  position="top"
+                >
+                  <div className="p-3 rounded-lg bg-sect-ink-light/30 border border-sect-gold/20 cursor-help">
+                    <div className="flex items-center gap-2">
+                      <Sword size={16} className="text-red-400/50" />
+                      <span className="text-sect-jade/80 text-sm">综合战力</span>
+                      <span className="font-display text-sect-gold ml-auto">
+                        {calculateDiscipleCombatPower(selectedDisciple).toLocaleString()}
+                      </span>
+                    </div>
                   </div>
-                </div>
+                </Tooltip>
                 
-                {/* 战斗属性 */}
+                {/* 战斗属性（带悬浮明细） */}
                 <div className="p-3 rounded-lg bg-sect-ink-light/30 border border-sect-gold/20">
                   <h3 className="font-display text-sect-gold mb-3 flex items-center gap-2">
                     <Swords size={16} />
                     战斗属性
                   </h3>
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="p-2 rounded bg-sect-ink-light/50">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Heart size={14} className="text-red-500/70" />
-                        <span className="text-sect-jade/60 text-xs">生命</span>
+                    {/* 生命 - 悬浮显示灵力（修炼速度作为灵力参考） */}
+                    <Tooltip
+                      content={
+                        <div className="space-y-1 text-xs min-w-[180px]">
+                          <div className="font-medium text-sect-gold mb-1">生命值明细</div>
+                          <div className="flex justify-between">
+                            <span className="text-sect-jade/60">基础生命</span>
+                            <span className="text-sect-jade">100 + 体质×5</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-sect-jade/60">境界加成</span>
+                            <span className="text-sect-jade">+{RealmOrder.indexOf(selectedDisciple.realm) * 50}</span>
+                          </div>
+                          {CONSTITUTIONS.find(c => c.id === selectedDisciple.constitutionId)?.effects.hpBonus ? (
+                            <div className="flex justify-between text-green-400">
+                              <span>体质加成</span>
+                              <span>+{CONSTITUTIONS.find(c => c.id === selectedDisciple.constitutionId)!.effects.hpBonus}</span>
+                            </div>
+                          ) : null}
+                          <div className="border-t border-sect-gold/20 pt-1 flex justify-between">
+                            <span className="text-sect-jade/60">灵力（修炼效率）</span>
+                            <span className="text-sect-gold">{selectedDisciple.cultivationSpeed.toFixed(1)}/月</span>
+                          </div>
+                        </div>
+                      }
+                      position="top"
+                    >
+                      <div className="p-2 rounded bg-sect-ink-light/50 cursor-help hover:bg-sect-ink-light/70 transition-colors">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Heart size={14} className="text-red-500/70" />
+                          <span className="text-sect-jade/60 text-xs">生命/灵力</span>
+                        </div>
+                        <div className="text-sect-jade font-medium">{selectedDisciple.maxHp}</div>
+                        <div className="text-[10px] text-sect-gold/60">灵力 {selectedDisciple.cultivationSpeed.toFixed(1)}/月</div>
                       </div>
-                      <div className="text-sect-jade font-medium">{selectedDisciple.maxHp}</div>
-                    </div>
-                    <div className="p-2 rounded bg-sect-ink-light/50">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Sword size={14} className="text-red-400/70" />
-                        <span className="text-sect-jade/60 text-xs">攻击</span>
+                    </Tooltip>
+                    
+                    {/* 攻击 */}
+                    <Tooltip
+                      content={
+                        <div className="space-y-1 text-xs min-w-[180px]">
+                          <div className="font-medium text-sect-gold mb-1">攻击明细</div>
+                          <div className="flex justify-between">
+                            <span className="text-sect-jade/60">基础攻击</span>
+                            <span className="text-sect-jade">10 + 根骨×0.5</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-sect-jade/60">境界加成</span>
+                            <span className="text-sect-jade">+{RealmOrder.indexOf(selectedDisciple.realm) * 20}</span>
+                          </div>
+                          {CONSTITUTIONS.find(c => c.id === selectedDisciple.constitutionId)?.effects.attackBonus ? (
+                            <div className="flex justify-between text-green-400">
+                              <span>体质加成</span>
+                              <span>+{CONSTITUTIONS.find(c => c.id === selectedDisciple.constitutionId)!.effects.attackBonus}</span>
+                            </div>
+                          ) : null}
+                        </div>
+                      }
+                      position="top"
+                    >
+                      <div className="p-2 rounded bg-sect-ink-light/50 cursor-help hover:bg-sect-ink-light/70 transition-colors">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Sword size={14} className="text-red-400/70" />
+                          <span className="text-sect-jade/60 text-xs">攻击</span>
+                        </div>
+                        <div className="text-sect-jade font-medium">{selectedDisciple.attack}</div>
                       </div>
-                      <div className="text-sect-jade font-medium">{selectedDisciple.attack}</div>
-                    </div>
-                    <div className="p-2 rounded bg-sect-ink-light/50">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Shield size={14} className="text-blue-400/70" />
-                        <span className="text-sect-jade/60 text-xs">防御</span>
+                    </Tooltip>
+                    
+                    {/* 防御 */}
+                    <Tooltip
+                      content={
+                        <div className="space-y-1 text-xs min-w-[180px]">
+                          <div className="font-medium text-sect-gold mb-1">防御明细</div>
+                          <div className="flex justify-between">
+                            <span className="text-sect-jade/60">基础防御</span>
+                            <span className="text-sect-jade">5 + 体质×0.3</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-sect-jade/60">境界加成</span>
+                            <span className="text-sect-jade">+{RealmOrder.indexOf(selectedDisciple.realm) * 15}</span>
+                          </div>
+                        </div>
+                      }
+                      position="top"
+                    >
+                      <div className="p-2 rounded bg-sect-ink-light/50 cursor-help hover:bg-sect-ink-light/70 transition-colors">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Shield size={14} className="text-blue-400/70" />
+                          <span className="text-sect-jade/60 text-xs">防御</span>
+                        </div>
+                        <div className="text-sect-jade font-medium">{selectedDisciple.defense}</div>
                       </div>
-                      <div className="text-sect-jade font-medium">{selectedDisciple.defense}</div>
-                    </div>
+                    </Tooltip>
+                    
+                    {/* 闪避 */}
                     <div className="p-2 rounded bg-sect-ink-light/50">
                       <div className="flex items-center gap-2 mb-1">
                         <Wind size={14} className="text-cyan-400/70" />
@@ -676,6 +786,8 @@ export const DisciplesPanel: React.FC = () => {
                       </div>
                       <div className="text-sect-jade font-medium">{selectedDisciple.dodge}%</div>
                     </div>
+                    
+                    {/* 暴击 */}
                     <div className="p-2 rounded bg-sect-ink-light/50">
                       <div className="flex items-center gap-2 mb-1">
                         <Zap size={14} className="text-yellow-400/70" />
@@ -686,30 +798,75 @@ export const DisciplesPanel: React.FC = () => {
                   </div>
                 </div>
                 
-                {/* 功法战技加成 */}
-                <div>
-                  <h3 className="font-display text-sect-gold mb-3 flex items-center gap-2">
-                    <BookOpen size={16} />
-                    功法加成
-                  </h3>
-                  {selectedDisciple.learnedTechnique ? (
-                    <div className="p-3 rounded bg-sect-ink-light/50 border border-sect-gold/20">
-                      <div className="flex justify-between items-center">
-                        <span className="text-sect-jade font-medium">{selectedDisciple.learnedTechnique.name}</span>
-                        <Badge variant="spirit" size="sm">
-                          {selectedDisciple.learnedTechnique.isLearned ? '已学成' : '学习中'}
-                        </Badge>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 mt-2 text-xs text-sect-jade/60">
-                        <span>修炼加成: +{selectedDisciple.learnedTechnique.cultivationBonus}%</span>
-                        <span>战力加成: +{selectedDisciple.learnedTechnique.combatBonus}%</span>
-                      </div>
+                {/* 功法加成（带悬浮） */}
+                <Tooltip
+                  content={
+                    <div className="space-y-2 text-xs min-w-[240px]">
+                      <div className="font-medium text-sect-gold mb-1">功法详情</div>
+                      {selectedDisciple.learnedTechnique ? (
+                        <>
+                          <div className="text-sect-jade/80">{selectedDisciple.learnedTechnique.name}</div>
+                          <div className="flex justify-between">
+                            <span className="text-sect-jade/60">类型</span>
+                            <span className="text-sect-gold">{selectedDisciple.learnedTechnique.type === 'technique' ? '功法' : '战技'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-sect-jade/60">品阶</span>
+                            <span className="text-sect-gold">{selectedDisciple.learnedTechnique.tier}</span>
+                          </div>
+                          {selectedDisciple.learnedTechnique.attribute && (
+                            <div className="flex justify-between">
+                              <span className="text-sect-jade/60">属性</span>
+                              <span className="text-sect-gold">{selectedDisciple.learnedTechnique.attribute}</span>
+                            </div>
+                          )}
+                          <div className="flex justify-between text-green-400">
+                            <span>修炼加成</span>
+                            <span>+{selectedDisciple.learnedTechnique.cultivationBonus}%</span>
+                          </div>
+                          <div className="flex justify-between text-green-400">
+                            <span>战力加成</span>
+                            <span>+{selectedDisciple.learnedTechnique.combatBonus}%</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-sect-jade/60">学习状态</span>
+                            <span className={selectedDisciple.learnedTechnique.isLearned ? 'text-green-400' : 'text-yellow-400'}>
+                              {selectedDisciple.learnedTechnique.isLearned ? '已学成' : `学习中 ${selectedDisciple.learnedTechnique.progress}%`}
+                            </span>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="text-sect-jade/50">尚未学习功法</div>
+                      )}
                     </div>
-                  ) : (
-                    <div className="text-sm text-sect-jade/50 italic">尚未学习功法</div>
-                  )}
-                </div>
+                  }
+                  position="top"
+                >
+                  <div>
+                    <h3 className="font-display text-sect-gold mb-3 flex items-center gap-2 cursor-help">
+                      <BookOpen size={16} />
+                      功法加成
+                    </h3>
+                    {selectedDisciple.learnedTechnique ? (
+                      <div className="p-3 rounded bg-sect-ink-light/50 border border-sect-gold/20 cursor-help">
+                        <div className="flex justify-between items-center">
+                          <span className="text-sect-jade font-medium">{selectedDisciple.learnedTechnique.name}</span>
+                          <Badge variant="spirit" size="sm">
+                            {selectedDisciple.learnedTechnique.isLearned ? '已学成' : '学习中'}
+                          </Badge>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 mt-2 text-xs text-sect-jade/60">
+                          <span>修炼加成: +{selectedDisciple.learnedTechnique.cultivationBonus}%</span>
+                          <span>战力加成: +{selectedDisciple.learnedTechnique.combatBonus}%</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-sm text-sect-jade/50 italic">尚未学习功法</div>
+                    )}
+                  </div>
+                </Tooltip>
                 
+                {/* 战技加成 */}
                 <div>
                   <h3 className="font-display text-sect-gold mb-3 flex items-center gap-2">
                     <Sword size={16} />
@@ -765,7 +922,124 @@ export const DisciplesPanel: React.FC = () => {
                 )}
               </div>
             )}
-            
+
+            {/* 人物经历页 */}
+            {detailTab === 'experience' && (
+              <div className="space-y-4">
+                {/* 人物形象描述 */}
+                <div className="p-3 rounded-lg bg-sect-ink-light/30 border border-sect-gold/20">
+                  <h3 className="font-display text-sect-gold mb-2 flex items-center gap-2 text-sm">
+                    <User size={16} />
+                    人物形象
+                  </h3>
+                  <p className="text-sect-jade/70 text-sm leading-relaxed">
+                    {selectedDisciple.name}，{Math.floor(selectedDisciple.age)}岁，{RealmNames[selectedDisciple.realm]}修士。
+                    {selectedDisciple.talentDisplay?.nickname && selectedDisciple.talentDisplay.nickname !== '凡夫俗子' && `世人称其「${selectedDisciple.talentDisplay.nickname}」。`}
+                    {selectedDisciple.talentDisplay?.rootBoneDesc}，{selectedDisciple.talentDisplay?.spiritRhythmDesc}，
+                    {selectedDisciple.talentDisplay?.constitutionDesc}，{selectedDisciple.talentDisplay?.daoFateDesc}。
+                    {CONSTITUTIONS.find(c => c.id === selectedDisciple.constitutionId) && `身具${CONSTITUTIONS.find(c => c.id === selectedDisciple.constitutionId)!.name}，`}
+                    于第{selectedDisciple.joinDate?.year ?? '?'}年{selectedDisciple.joinDate?.month ?? '?'}月入宗，现为{DiscipleStatusNames[selectedDisciple.status]}。
+                  </p>
+                </div>
+
+                {/* 师承关系 */}
+                <div className="p-3 rounded-lg bg-sect-ink-light/30 border border-sect-gold/20">
+                  <h3 className="font-display text-sect-gold mb-2 flex items-center gap-2 text-sm">
+                    <BookOpen size={16} />
+                    师承交友
+                  </h3>
+                  <div className="space-y-1.5 text-sm">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sect-jade/50 text-xs w-12">师傅</span>
+                      {selectedDisciple.master ? (
+                        <Badge variant="gold" size="sm">{selectedDisciple.master}</Badge>
+                      ) : (
+                        <span className="text-sect-jade/40 text-xs italic">尚无师承</span>
+                      )}
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="text-sect-jade/50 text-xs w-12 mt-0.5">好友</span>
+                      {(selectedDisciple.friends?.length ?? 0) > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {selectedDisciple.friends.map((fname, idx) => (
+                            <Badge key={idx} variant="herb" size="sm">{fname}</Badge>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-sect-jade/40 text-xs italic">尚无好友</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 大比经历 */}
+                <div className="p-3 rounded-lg bg-sect-ink-light/30 border border-sect-gold/20">
+                  <h3 className="font-display text-sect-gold mb-2 flex items-center gap-2 text-sm">
+                    <Swords size={16} />
+                    大比经历
+                  </h3>
+                  {selectedDisciple.tournamentHistory && selectedDisciple.tournamentHistory.length > 0 ? (
+                    <div className="space-y-2">
+                      {selectedDisciple.tournamentHistory.map((record, idx) => (
+                        <div key={idx} className="flex items-start gap-2 text-xs p-2 rounded bg-sect-ink-light/40">
+                          <span className="text-sect-jade/50 shrink-0">第{record.year}年</span>
+                          <div className="flex-1">
+                            <span className="text-sect-jade/80">
+                              {record.scope === 'sect' ? '山门' : '宗门'}{record.frequency}大比
+                            </span>
+                            <span className={`ml-2 font-medium ${record.rank === 1 ? 'text-yellow-400' : record.rank === 2 ? 'text-gray-300' : record.rank === 3 ? 'text-orange-400' : 'text-sect-jade/50'}`}>
+                              {record.rank === 1 ? '冠军' : record.rank === 2 ? '亚军' : record.rank === 3 ? '季军' : '第' + record.rank + '名'}
+                            </span>
+                            {record.rewards.length > 0 && (
+                              <div className="text-green-400/80 mt-0.5">
+                                奖励：{record.rewards.join('、')}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-sect-jade/40 text-xs italic">尚未参加过大比</div>
+                  )}
+                </div>
+
+                {/* 资质总评 */}
+                <div className="p-3 rounded-lg bg-sect-ink-light/30 border border-sect-gold/20">
+                  <h3 className="font-display text-sect-gold mb-2 flex items-center gap-2 text-sm">
+                    <Star size={16} />
+                    资质总评
+                  </h3>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="flex justify-between p-1.5 rounded bg-sect-ink-light/40">
+                      <span className="text-sect-jade/50">根骨</span>
+                      <span className="text-sect-gold">{selectedDisciple.hiddenTalents?.rootBone ?? '-'}</span>
+                    </div>
+                    <div className="flex justify-between p-1.5 rounded bg-sect-ink-light/40">
+                      <span className="text-sect-jade/50">灵韵</span>
+                      <span className="text-sect-gold">{selectedDisciple.hiddenTalents?.spiritRhythm ?? '-'}</span>
+                    </div>
+                    <div className="flex justify-between p-1.5 rounded bg-sect-ink-light/40">
+                      <span className="text-sect-jade/50">体质</span>
+                      <span className="text-sect-gold">{selectedDisciple.hiddenTalents?.constitution ?? '-'}</span>
+                    </div>
+                    <div className="flex justify-between p-1.5 rounded bg-sect-ink-light/40">
+                      <span className="text-sect-jade/50">道缘</span>
+                      <span className="text-sect-gold">{selectedDisciple.hiddenTalents?.daoFate ?? '-'}</span>
+                    </div>
+                  </div>
+                  {/* 灵根详情 */}
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {(selectedDisciple.hiddenTalents?.spiritRoots ?? []).map((root, idx) => (
+                      <span key={idx} className="text-xs px-2 py-0.5 rounded bg-sect-ink-light/40 text-sect-jade/70">
+                        {SpiritRootNames[root.type]}灵根 · {root.quality}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="flex justify-end pt-2">
               <Button variant="ghost" onClick={() => setSelectedDiscipleId(null)}>
                 关闭

@@ -25,6 +25,7 @@ export interface Artifact {
   sellPrice: number;
   contributionCost: number;
   unlocked: boolean;
+  combatPowerBonus?: number;
 }
 
 export interface ArtifactInventory {

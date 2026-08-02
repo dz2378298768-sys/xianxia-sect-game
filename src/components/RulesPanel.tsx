@@ -31,10 +31,10 @@ export const RulesPanel: React.FC = () => {
     minRealm: 'foundation' as Realm,
     requireElderRecommendation: false,
     // 招收规则
-    minSpiritRhythm: 40,
-    minConstitution: 40,
-    minDaoFate: 40,
-    recruitmentExceptional: 60,
+    minSpiritRhythm: 60,
+    minConstitution: 60,
+    minDaoFate: 60,
+    recruitmentExceptional: 80,
   });
   
   const handleEdit = (rule: RuleType) => {

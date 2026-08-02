@@ -2,11 +2,15 @@ import React from 'react';
 import { useUIStore, PanelType } from '@/store/uiStore';
 import { 
   Home, Users, Building2, TrendingUp, FlaskConical, 
-  ScrollText, Crown, X, UserPlus
+  ScrollText, Crown, X, UserPlus, Mountain
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-const navItems: { id: PanelType; label: string; icon: React.ReactNode }[] = [
+// PanelType | null，null 代表山景主界面
+type NavId = PanelType | null;
+
+const navItems: { id: NavId; label: string; icon: React.ReactNode }[] = [
+  { id: null, label: '山门总览', icon: <Mountain size={20} /> },
   { id: 'overview', label: '宗门总览', icon: <Home size={20} /> },
   { id: 'disciples', label: '弟子管理', icon: <Users size={20} /> },
   { id: 'allocation', label: '弟子分配', icon: <UserPlus size={20} /> },

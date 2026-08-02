@@ -28,7 +28,9 @@ export interface SectLevelRequirements {
   goldenDisciple?: boolean;  // 至少1名金丹期
   nascentDisciple?: boolean; // 至少1名元婴期
   spiritDisciple?: boolean;  // 至少1名化神期
+  elderCount?: number;       // 长老数量要求
   promotionCost: number;     // 晋升消耗灵石
+  promotionContribution?: number; // 晋升消耗贡献点
 }
 
 export const SectLevelRequirementsMap: Record<SectLevel, SectLevelRequirements> = {
@@ -49,29 +51,34 @@ export const SectLevelRequirementsMap: Record<SectLevel, SectLevelRequirements> 
     level2Buildings: 2, 
     goldenDisciple: true,
     promotionCost: 1000,
+    promotionContribution: 500,
   },
   dominant: { 
     reputation: 800, 
     spiritStones: 5000, 
     level3Buildings: 1, 
     nascentDisciple: true,
+    elderCount: 3,
     promotionCost: 3000,
+    promotionContribution: 1500,
   },
   eternal: { 
     reputation: 2000, 
     spiritStones: 20000, 
     allLevel2: true, 
     spiritDisciple: true,
+    elderCount: 5,
     promotionCost: 10000,
+    promotionContribution: 5000,
   },
 };
 
 // 各等级解锁的建筑类型
 export const SectLevelUnlockBuildings: Record<SectLevel, string[]> = {
-  founding: ['mountain_gate', 'lecture_hall', 'servant_hall', 'residence'],
-  known: ['pill_hall', 'secret_library'],
-  famous: ['artifact_hall'],
-  dominant: ['guardian_array', 'spirit_beast_garden'],
+  founding: ['mountain_gate', 'lecture_hall', 'servant_hall', 'outer_residence', 'secret_library'],
+  known: ['inner_residence', 'pill_hall'],
+  famous: ['core_residence', 'sutra_hall', 'artifact_hall', 'array_hall'],
+  dominant: ['cave_mansion', 'spirit_beast_garden', 'guardian_array'],
   eternal: ['skyscraper_tower'],
 };
 
@@ -136,3 +143,51 @@ export interface MonthlyReport {
   events: string[];
   reputationChange: number;
 }
+
+// ===== 天下宗门（其他宗门） =====
+
+// 宗门阵营
+export type SectAlignment = 'righteous' | 'demonic' | 'neutral';
+// 与本宗的关系
+export type SectRelation = 'ally' | 'friendly' | 'neutral' | 'wary' | 'hostile';
+
+// 外交状态（玩家可手动设置）
+export type DiplomaticStatus = 'neutral' | 'ally' | 'rival' | 'vassal';
+
+export const DiplomaticStatusNames: Record<DiplomaticStatus, string> = {
+  neutral: '中立',
+  ally: '同盟',
+  rival: '宿敌',
+  vassal: '附庸',
+};
+
+export interface OtherSect {
+  id: string;
+  name: string;
+  level: SectLevel;          // 宗门等级
+  alignment: SectAlignment;  // 阵营：正/魔/中立
+  relation: SectRelation;    // 与本宗的关系
+  combatPower: number;       // 战力
+  discipleCount: number;     // 弟子数
+  distance: number;          // 距离（里）
+  specialty: string;         // 特色（如：丹道、剑修、阵法）
+  description: string;       // 简介
+  image?: string;            // 图片路径
+  favorability: number;      // 好感度 0-100
+  diplomaticStatus: DiplomaticStatus;  // 外交状态
+  tradeActive: boolean;      // 是否正在交易
+}
+
+export const SectAlignmentNames: Record<SectAlignment, string> = {
+  righteous: '正道',
+  demonic: '魔道',
+  neutral: '中立',
+};
+
+export const SectRelationNames: Record<SectRelation, string> = {
+  ally: '盟友',
+  friendly: '友好',
+  neutral: '中立',
+  wary: '戒备',
+  hostile: '敌对',
+};

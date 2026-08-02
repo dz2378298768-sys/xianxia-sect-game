@@ -23,3 +23,21 @@ dist-ssr
 *.sln
 *.sw?
 .iga/
+.trae/
+
+# APK / Build artifacts
+*.apk
+*.tar.gz
+old-apks/
+
+# Android build
+android/.gradle/
+android/build/
+android/app/build/
+android/capacitor-cordova-android-plugins/build/
+android/local.properties
+android/**/*.iml
+.gradle/
+
+# Electron (if not needed)
+electron/

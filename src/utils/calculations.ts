@@ -175,13 +175,23 @@ export function generateTalentDisplay(talents: HiddenTalents): TalentDisplay {
   };
 }
 
+// 各境界基础寿命（年）
+const REALM_BASE_LIFESPAN = [80, 80, 110, 260, 560, 1060];
+
 export function calculateLifespan(baseLifespan: number, realmIndex: number): number {
-  const lifeMultipliers = [1, 1.33, 1.83, 4.33, 9.33, 17.67];
-  return Math.floor(baseLifespan * lifeMultipliers[Math.min(realmIndex, lifeMultipliers.length - 1)]);
+  // 基础寿命 = 境界寿命 + 体质加成
+  const realmLifespan = REALM_BASE_LIFESPAN[Math.min(realmIndex, REALM_BASE_LIFESPAN.length - 1)] || 80;
+  // 体质影响基础寿命：体质越高，额外寿命越多
+  const constitutionBonus = Math.floor((baseLifespan - 60) * 0.4);
+  return realmLifespan + constitutionBonus;
 }
 
+// 各境界基础修炼速度（修为/月）
+const REALM_BASE_CULTIVATION_SPEED = [0, 100, 150, 250, 400, 600];
+
 export function calculateCultivationSpeed(rootBone: number, realmIndex: number): number {
-  const baseSpeed = 2 + (rootBone / 100) * 8;
-  const realmSlowdown = Math.pow(0.85, realmIndex);
-  return baseSpeed * realmSlowdown;
+  const baseSpeed = REALM_BASE_CULTIVATION_SPEED[Math.min(realmIndex, REALM_BASE_CULTIVATION_SPEED.length - 1)] || 100;
+  // 根骨影响修炼效率：根骨80时100%效率，根骨40时60%效率
+  const rootBoneMultiplier = 0.4 + (rootBone / 100) * 0.6;
+  return Math.floor(baseSpeed * rootBoneMultiplier);
 }
