@@ -1,4 +1,4 @@
-export type BuildingType = 
+export type BuildingType =
   | 'mountain_gate'
   | 'lecture_hall'
   | 'servant_hall'
@@ -10,11 +10,21 @@ export type BuildingType =
   | 'spirit_beast_garden'
   | 'guardian_array'
   | 'skyscraper_tower'
-  | 'servant_residence'
   | 'outer_residence'
   | 'inner_residence'
   | 'core_residence'
   | 'cave_mansion';
+
+// 居所类建筑判定集合（单一来源，消除散落字面量）
+// 不含 cave_mansion：用于"按居所升级公式计算"的场景（洞府 maxLevel=1，不走该分支）
+export const RESIDENCE_TYPES: readonly BuildingType[] = ['outer_residence', 'inner_residence', 'core_residence'] as const;
+
+// 含 cave_mansion：用于"是否为居所（不任命堂主/不分配工作）"的场景
+export const RESIDENCE_TYPES_WITH_CAVE: readonly BuildingType[] = ['outer_residence', 'inner_residence', 'core_residence', 'cave_mansion'] as const;
+
+export function isResidenceType(type: string): boolean {
+  return (RESIDENCE_TYPES_WITH_CAVE as readonly string[]).includes(type);
+}
 
 export const BuildingTypeNames: Record<BuildingType, string> = {
   mountain_gate: '山门',
@@ -28,7 +38,6 @@ export const BuildingTypeNames: Record<BuildingType, string> = {
   spirit_beast_garden: '灵兽园',
   guardian_array: '护山大阵',
   skyscraper_tower: '通天塔',
-  servant_residence: '杂役居所',
   outer_residence: '外门居所',
   inner_residence: '内门居所',
   core_residence: '核心居所',
@@ -52,6 +61,7 @@ export interface BuildingOutput {
 
 export interface BuildingUpgradeCost {
   spiritStones: number;
+  contribution?: number;
   reputation?: number;
 }
 
