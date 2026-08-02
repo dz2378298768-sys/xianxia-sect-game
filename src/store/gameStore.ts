@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Disciple, PromotionRules } from '@/types/disciple';
-import { DiscipleStatusNames, RealmNames, RealmOrder } from '@/types/disciple';
+import { DiscipleStatusNames, RealmNames, RealmOrder, getRealmDisplay } from '@/types/disciple';
 import type { Building, BuildingType } from '@/types/building';
 import { RESIDENCE_TYPES } from '@/types/building';
 import { BUILDING_CONFIGS } from '@/data/buildings';
@@ -90,7 +90,8 @@ interface GameState {
   lastInterSectTournamentResults: Record<TournamentFrequency, TournamentResult | null>;
   lastSectTournamentYears: Record<TournamentFrequency, number>;
   lastInterSectTournamentYears: Record<TournamentFrequency, number>;
-  
+  spiritStoneHistory: { year: number; month: number; spiritStones: number; netIncome: number }[]; // 近24月灵石收支历史
+  autoAppointElder: boolean; // 是否每月自动任命符合条件核心弟子为长老
   nextMonth: () => void;
   dismissReport: () => void;
   startGame: () => void;
@@ -117,6 +118,8 @@ interface GameState {
   promoteSect: () => boolean; // 晋升宗门
   refreshOtherSects: () => void; // 刷新其他宗门列表
   toggleFollowDisciple: (discipleId: string) => void; // 关注/取消关注弟子
+  appointElder: (discipleId: string) => { success: boolean; reason?: string }; // 任命核心弟子为长老
+  setAutoAppointElder: (enabled: boolean) => void; // 设置自动任命长老开关
   updateSectTournamentFreqConfig: (frequency: TournamentFrequency, config: Partial<FrequencyTournamentConfig>) => void;   // 更新山门大比指定频率配置
   updateInterSectTournamentFreqConfig: (frequency: TournamentFrequency, config: Partial<FrequencyTournamentConfig>) => void; // 更新宗门大比指定频率配置
   triggerSectTournament: (frequency: TournamentFrequency) => void;       // 手动触发山门大比（指定频率）
@@ -245,12 +248,18 @@ const createInitialState = () => {
     disciples[0].friends.push(disciples[1].name);
     disciples[1].friends.push(disciples[0].name);
   }
-  // 后面的弟子从前面选一位师傅
+  // 后面的弟子从前面选一位师傅（师傅境界必须严格高于徒弟，否则不分配师傅）
   for (let i = 2; i < disciples.length; i++) {
-    const masterCandidate = disciples[i % 2]; // 选前面的弟子做师傅
-    disciples[i].master = masterCandidate.name;
-    if (!masterCandidate.friends.includes(disciples[i].name)) {
-      masterCandidate.friends.push(disciples[i].name);
+    const candidate = disciples.slice(0, i).find(
+      m => RealmOrder.indexOf(m.realm) > RealmOrder.indexOf(disciples[i].realm),
+    );
+    if (candidate) {
+      disciples[i].master = candidate.name;
+      if (!candidate.friends.includes(disciples[i].name)) {
+        candidate.friends.push(disciples[i].name);
+      }
+    } else {
+      disciples[i].master = null;
     }
     // 随机选一位好友
     const friendIdx = randomInt(0, i - 1);
@@ -318,6 +327,8 @@ const createInitialState = () => {
     lastInterSectTournamentResults: { yearly: null, every5years: null, every10years: null },
     lastSectTournamentYears: { yearly: 0, every5years: 0, every10years: 0 },
     lastInterSectTournamentYears: { yearly: 0, every5years: 0, every10years: 0 },
+    spiritStoneHistory: [],
+    autoAppointElder: false,
   };
 };
 
@@ -457,7 +468,10 @@ export const useGameStore = create<GameState>()(
         const combatBonus = sectCombatPower.totalPower * ReputationGrowthConfig.combatWeight;
         const growthMultiplier = Math.min(1 + discipleBonus + combatBonus, ReputationGrowthConfig.maxMultiplier);
         const reputationChange = Math.floor(ReputationGrowthConfig.baseGrowth * growthMultiplier);
-        
+
+        // 建筑产出的声望累加器（讲经堂/藏书阁等）
+        let buildingReputation = 0;
+
         buildings.forEach(building => {
           if (building.status !== 'active') return;
 
@@ -475,6 +489,10 @@ export const useGameStore = create<GameState>()(
           // 材料产出累加（杂役堂）
           if (output.iron > 0) accIron += output.iron;
           if (output.paper > 0) accPaper += output.paper;
+          // 声望产出累加（讲经堂/藏书阁等）
+          if (output.reputation > 0) buildingReputation += output.reputation;
+          // 通天塔：无工人也能产出声望（每级+1），作为结局建筑的进度反馈
+          if (building.type === 'skyscraper_tower') buildingReputation += building.level;
 
           // 灵兽产出：按品阶权重随机抽取种类累加到库存
           if (output.beasts && output.beasts > 0) {
@@ -739,7 +757,10 @@ export const useGameStore = create<GameState>()(
           }
           
           if (canAttemptBreakthrough(d2)) {
-            const hasPill = (() => {
+            // 丹药仅在跨境界突破（late 阶段）时生效
+            const isRealmAdvance = d2.realmStage === 'late';
+            const pillForBreak: PillType | null = (() => {
+              if (!isRealmAdvance) return null;
               const nextRealmIndex = RealmOrder.indexOf(d2.realm) + 1;
               const nextRealm = RealmOrder[nextRealmIndex];
               const pillMap: Record<string, PillType> = {
@@ -751,52 +772,46 @@ export const useGameStore = create<GameState>()(
               const pillType = pillMap[nextRealm];
               if (pillType) {
                 const pill = accPillInventory.find(p => p.type === pillType);
-                return pill && pill.quantity > 0;
+                if (pill && pill.quantity > 0) return pillType;
               }
-              return false;
+              return null;
             })();
-            
+            const hasPill = pillForBreak !== null;
+
             const result = attemptBreakthrough(d2, hasPill);
-            
+
             breakthroughEvents.push({
               discipleId: d2.id,
               discipleName: d2.name,
-              from: RealmNames[d2.realm],
-              to: RealmNames[result.newRealm],
+              from: getRealmDisplay(d2),
+              to: getRealmDisplay({ realm: result.newRealm, realmStage: result.newStage }),
               success: result.success,
             });
-            
+
             if (result.success) {
-              // 突破后境界提升，按新境界重算修炼速度（修复旧实现不重算的 Bug A）。
-              const breakthroughed = { ...d2, realm: result.newRealm };
+              // 突破后境界/阶段提升，按新境界重算修炼速度（跨境界时寿命上限也重算）
+              const realmChanged = result.newRealm !== d2.realm;
+              const breakthroughed = { ...d2, realm: result.newRealm, realmStage: result.newStage };
               d2 = {
                 ...d2,
                 realm: result.newRealm,
+                realmStage: result.newStage,
                 realmProgress: result.newProgress,
                 cultivationSpeed: recomputeCultivationSpeed(breakthroughed),
-                // 突破后寿命上限随新境界重算（金丹寿命 260 >> 炼气 80）。
-                maxAge: recomputeLifespan(breakthroughed),
+                maxAge: realmChanged ? recomputeLifespan(breakthroughed) : d2.maxAge,
                 breakthroughAttempts: 0,
                 breakthroughBonus: 0,
                 isBreakingThrough: false,
               };
-              // 突破后自动去藏经阁学习更优秀的功法（可替换旧功法，玩家无需手动操作）
-              d2 = autoLearnTechniqueOnBreakthrough(d2, libraryBooks);
-              
-              if (hasPill) {
-                const nextRealm = result.newRealm;
-                const pillMap: Record<string, PillType> = {
-                  foundation: 'foundation_pill',
-                  golden: 'golden_pill',
-                  nascent: 'nascent_pill',
-                  spirit: 'spirit_pill',
-                };
-                const pillType = pillMap[nextRealm];
-                if (pillType) {
-                  const idx = accPillInventory.findIndex(p => p.type === pillType);
-                  if (idx >= 0) {
-                    accPillInventory[idx] = { ...accPillInventory[idx], quantity: accPillInventory[idx].quantity - 1 };
-                  }
+              // 仅跨境界突破后自动学习更高阶功法
+              if (realmChanged) {
+                d2 = autoLearnTechniqueOnBreakthrough(d2, libraryBooks);
+              }
+
+              if (hasPill && pillForBreak) {
+                const idx = accPillInventory.findIndex(p => p.type === pillForBreak);
+                if (idx >= 0) {
+                  accPillInventory[idx] = { ...accPillInventory[idx], quantity: accPillInventory[idx].quantity - 1 };
                 }
               }
             } else {
@@ -944,7 +959,29 @@ export const useGameStore = create<GameState>()(
           
           return d;
         });
-        
+
+        // 自动任命长老：若玩家开启 autoAppointElder，则将符合 coreToElder 条件的核心弟子自动转为长老
+        if (state.autoAppointElder) {
+          const elderRule = promotionRules.coreToElder;
+          const minElderRealmIdx = RealmOrder.indexOf(elderRule.minRealm);
+          finalDisciples.forEach(d => {
+            if (d.status === 'core' &&
+                RealmOrder.indexOf(d.realm) >= minElderRealmIdx &&
+                d.contributionPoints >= elderRule.minContribution) {
+              // 从工作建筑移除
+              currentBuildings = currentBuildings.map(b => ({
+                ...b,
+                assignedDisciples: b.assignedDisciples.filter(id => id !== d.id),
+                managerId: b.managerId === d.id ? null : b.managerId,
+              }));
+              // 重分居所（长老→核心居所）
+              const resRes = autoAssignResidence({ ...d, status: 'elder' }, currentBuildings);
+              currentBuildings = resRes.newBuildings;
+              d.status = 'elder';
+            }
+          });
+        }
+
         const totalInnerCount = finalDisciples.filter(d => d.status === 'inner').length;
         const maxCoreCount = Math.floor(finalDisciples.filter(d => d.status === 'outer').length * 0.3);
         
@@ -1005,7 +1042,7 @@ export const useGameStore = create<GameState>()(
         currentBuildings = managerResult.buildings;
 
         spiritStones += totalSpiritStoneIncome - totalMaintenance;
-        reputation += reputationChange;
+        reputation += reputationChange + buildingReputation;
         
         // 声望上限检查
         const repCap = SectLevelReputationCap[state.sectLevel];
@@ -1142,6 +1179,13 @@ export const useGameStore = create<GameState>()(
           }
         }
 
+        // 记录本月灵石收支历史（保留最近24条）
+        const netIncome = totalSpiritStoneIncome - totalMaintenance;
+        const newSpiritStoneHistory = [
+          ...state.spiritStoneHistory,
+          { year, month, spiritStones: finalSpiritStones, netIncome },
+        ].slice(-24);
+
         set({
           year,
           month,
@@ -1165,6 +1209,7 @@ export const useGameStore = create<GameState>()(
           lastInterSectTournamentResults: interSectTournamentResults,
           lastSectTournamentYears: sectYears,
           lastInterSectTournamentYears: interSectYears,
+          spiritStoneHistory: newSpiritStoneHistory,
         });
       },
       
@@ -1406,9 +1451,11 @@ export const useGameStore = create<GameState>()(
         newDisciple.status = 'servant';
         newDisciple.realm = 'qi';
 
-        // 自动生成师承关系：从高境界弟子中选一位作为师傅
+        // 自动生成师承关系：从境界严格高于新弟子的弟子中选一位作为师傅
+        // 新弟子为炼气期，故师傅需筑基期及以上
         const potentialMasters = state.disciples.filter(
-          d => d.id !== newDisciple.id && (d.status === 'inner' || d.status === 'core' || d.status === 'elder'),
+          d => d.id !== newDisciple.id &&
+                RealmOrder.indexOf(d.realm) > RealmOrder.indexOf(newDisciple.realm),
         );
         if (potentialMasters.length > 0) {
           const master = potentialMasters[randomInt(0, potentialMasters.length - 1)];
@@ -1876,6 +1923,41 @@ export const useGameStore = create<GameState>()(
         set({ followedDiscipleIds: newList });
       },
 
+      // 任命核心弟子为长老：校验境界/贡献，转 status，从工作建筑移除并重分居所
+      appointElder: (discipleId: string) => {
+        const state = get();
+        const disciple = state.disciples.find(d => d.id === discipleId);
+        if (!disciple) return { success: false, reason: '弟子不存在' };
+        if (disciple.status !== 'core') return { success: false, reason: '仅核心弟子可任命为长老' };
+        const rule = state.promotionRules.coreToElder;
+        if (RealmOrder.indexOf(disciple.realm) < RealmOrder.indexOf(rule.minRealm)) {
+          return { success: false, reason: `境界需达到${RealmNames[rule.minRealm]}` };
+        }
+        if (disciple.contributionPoints < rule.minContribution) {
+          return { success: false, reason: `贡献点需达到${rule.minContribution}` };
+        }
+
+        // 从工作建筑移除（长老不再参与生产）
+        let newBuildings = state.buildings.map(b => ({
+          ...b,
+          assignedDisciples: b.assignedDisciples.filter(id => id !== discipleId),
+          managerId: b.managerId === discipleId ? null : b.managerId,
+        }));
+        // 重分居所（长老→核心居所/洞府，autoAssignResidence 会按身份映射）
+        const residenceResult = autoAssignResidence({ ...disciple, status: 'elder' }, newBuildings);
+        newBuildings = residenceResult.newBuildings;
+
+        set({
+          disciples: state.disciples.map(d => d.id === discipleId ? { ...d, status: 'elder' as DiscipleStatus } : d),
+          buildings: newBuildings,
+        });
+        return { success: true };
+      },
+
+      setAutoAppointElder: (enabled: boolean) => {
+        set({ autoAppointElder: enabled });
+      },
+
       updateSectTournamentFreqConfig: (frequency, partial) => {
         const state = get();
         const freqConfig = { ...state.sectTournamentConfig[frequency], ...partial };
@@ -2210,7 +2292,7 @@ export const useGameStore = create<GameState>()(
     }),
     {
       name: 'sect-game-save',
-      version: 7,
+      version: 8,
       migrate: (persistedState: any, version) => {
         if (!persistedState) return persistedState;
         const state = persistedState as GameState;
@@ -2351,6 +2433,8 @@ export const useGameStore = create<GameState>()(
             master: d.master ?? null,
             friends: d.friends ?? [],
             tournamentHistory: d.tournamentHistory ?? [],
+            // v8: 境界拆分前/中/后期，旧存档弟子默认前期；realmProgress 保留原值
+            realmStage: d.realmStage ?? 'early',
           }));
         }
         if (state.otherSects) {
@@ -2361,6 +2445,9 @@ export const useGameStore = create<GameState>()(
             tradeActive: s.tradeActive ?? false,
           }));
         }
+        // v8: 新增灵石收支历史与自动任命长老开关
+        if (!state.spiritStoneHistory) state.spiritStoneHistory = [];
+        if (state.autoAppointElder === undefined) state.autoAppointElder = false;
         return state;
       },
     }

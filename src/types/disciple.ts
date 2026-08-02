@@ -26,6 +26,23 @@ export const RealmNames: Record<Realm, string> = {
 
 export const RealmOrder: Realm[] = ['mortal', 'qi', 'foundation', 'golden', 'nascent', 'spirit'];
 
+// 境界阶段：每个境界拆分为前/中/后期三格
+export type RealmStage = 'early' | 'mid' | 'late';
+
+export const RealmStageNames: Record<RealmStage, string> = {
+  early: '前期',
+  mid: '中期',
+  late: '后期',
+};
+
+export const RealmStageOrder: RealmStage[] = ['early', 'mid', 'late'];
+
+// 境界显示：凡人无阶段，其他境界显示为「炼气期·前期」
+export function getRealmDisplay(d: { realm: Realm; realmStage: RealmStage }): string {
+  if (d.realm === 'mortal') return '凡人';
+  return `${RealmNames[d.realm]}·${RealmStageNames[d.realmStage]}`;
+}
+
 // 灵根类型
 export type SpiritRootType = 'gold' | 'wood' | 'water' | 'fire' | 'earth' | 'thunder' | 'wind' | 'ice' | 'light' | 'dark';
 
@@ -138,7 +155,8 @@ export interface Disciple {
   maxAge: number;
   status: DiscipleStatus;
   realm: Realm;
-  realmProgress: number;
+  realmStage: RealmStage;   // 境界阶段：前/中/后期
+  realmProgress: number;    // 当前阶段突破进度
   cultivationSpeed: number;
   hiddenTalents: HiddenTalents;
   talentDisplay: TalentDisplay;
@@ -202,7 +220,6 @@ export interface PromotionRules {
   innerToCore: {
     minRealm: Realm;
     minContribution: number;
-    requireElderRecommendation: boolean;
   };
   coreToElder: {
     minRealm: Realm;

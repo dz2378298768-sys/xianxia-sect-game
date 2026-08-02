@@ -12,7 +12,7 @@ import { SectIcon } from '@/components/icons/SectIcons';
 export const EconomyPanel: React.FC = () => {
   const {
     spiritStones, buildings, disciples,
-    herbInventory,
+    herbInventory, spiritStoneHistory,
   } = useGameStore();
   
   const activeBuildings = buildings.filter(b => b.status === 'active');
@@ -133,7 +133,90 @@ export const EconomyPanel: React.FC = () => {
           </div>
         </Card>
       </div>
-      
+
+      {/* 近12月灵石余额与月净收益折线图 */}
+      <Card title="近12月灵石趋势">
+        {(() => {
+          const data = spiritStoneHistory.slice(-12);
+          if (data.length < 2) {
+            return (
+              <div className="text-sect-jade/50 text-sm text-center py-8">
+                至少需要2个月数据才能绘制趋势图（当前 {data.length} 个月）
+              </div>
+            );
+          }
+          const W = 600;
+          const H = 240;
+          const padL = 56;
+          const padR = 16;
+          const padT = 16;
+          const padB = 32;
+          const innerW = W - padL - padR;
+          const innerH = H - padT - padB;
+
+          // 同时考虑余额和净收益，确定统一值域
+          const allVals = data.flatMap(d => [d.spiritStones, d.netIncome]);
+          let minV = Math.min(...allVals, 0);
+          let maxV = Math.max(...allVals, 1);
+          if (maxV === minV) maxV = minV + 1;
+          const yOf = (v: number) => padT + innerH - ((v - minV) / (maxV - minV)) * innerH;
+          const xOf = (i: number) => padL + (data.length === 1 ? 0 : (i / (data.length - 1)) * innerW);
+
+          const balancePath = data.map((d, i) => `${i === 0 ? 'M' : 'L'}${xOf(i).toFixed(1)},${yOf(d.spiritStones).toFixed(1)}`).join(' ');
+          const incomePath = data.map((d, i) => `${i === 0 ? 'M' : 'L'}${xOf(i).toFixed(1)},${yOf(d.netIncome).toFixed(1)}`).join(' ');
+
+          // Y 轴刻度（4 格）
+          const ticks = [0, 1, 2, 3, 4].map(k => minV + (k / 4) * (maxV - minV));
+          const zeroY = yOf(0);
+
+          return (
+            <div className="w-full overflow-x-auto">
+              <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ minWidth: 320 }} preserveAspectRatio="xMidYMid meet">
+                {/* 网格线 + Y 轴刻度 */}
+                {ticks.map((t, i) => (
+                  <g key={i}>
+                    <line x1={padL} y1={yOf(t)} x2={W - padR} y2={yOf(t)} stroke="rgba(212,175,55,0.1)" strokeWidth={1} />
+                    <text x={padL - 8} y={yOf(t) + 4} textAnchor="end" fontSize={11} fill="rgba(212,210,180,0.55)">
+                      {Math.round(t)}
+                    </text>
+                  </g>
+                ))}
+                {/* 零线（净收益正负分界） */}
+                {minV < 0 && maxV > 0 && (
+                  <line x1={padL} y1={zeroY} x2={W - padR} y2={zeroY} stroke="rgba(212,210,180,0.35)" strokeWidth={1} strokeDasharray="4 3" />
+                )}
+                {/* X 轴月份标签 */}
+                {data.map((d, i) => (
+                  <text key={i} x={xOf(i)} y={H - padB + 18} textAnchor="middle" fontSize={10} fill="rgba(212,210,180,0.55)">
+                    {d.year}.{d.month}
+                  </text>
+                ))}
+                {/* 灵石余额折线（金） */}
+                <path d={balancePath} fill="none" stroke="#d4af37" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+                {data.map((d, i) => (
+                  <circle key={i} cx={xOf(i)} cy={yOf(d.spiritStones)} r={2.5} fill="#d4af37" />
+                ))}
+                {/* 月净收益折线（绿） */}
+                <path d={incomePath} fill="none" stroke="#34d399" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" strokeDasharray="5 3" />
+                {data.map((d, i) => (
+                  <circle key={`n${i}`} cx={xOf(i)} cy={yOf(d.netIncome)} r={2.5} fill="#34d399" />
+                ))}
+              </svg>
+              <div className="flex items-center justify-center gap-6 mt-2 text-xs text-sect-jade/70">
+                <span className="flex items-center gap-2">
+                  <span style={{ display: 'inline-block', width: 16, height: 3, background: '#d4af37' }} />
+                  灵石余额
+                </span>
+                <span className="flex items-center gap-2">
+                  <span style={{ display: 'inline-block', width: 16, height: 3, background: '#34d399', borderTop: '3px dashed #34d399' }} />
+                  月净收益
+                </span>
+              </div>
+            </div>
+          );
+        })()}
+      </Card>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card title="收入明细">
           <div className="space-y-3">

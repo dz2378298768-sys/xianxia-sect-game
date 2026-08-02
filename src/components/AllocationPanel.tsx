@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { SimpleAvatar, DiscipleAvatar } from '@/components/ui/Avatar';
 import { BuildingTypeNames } from '@/types/building';
-import { DiscipleStatusNames, RealmNames, RealmOrder } from '@/types/disciple';
+import { DiscipleStatusNames, RealmOrder, getRealmDisplay } from '@/types/disciple';
 import type { DiscipleStatus } from '@/types/disciple';
 import { 
   Users, Building2, Sparkles, TrendingUp, 
@@ -259,7 +259,7 @@ export const AllocationPanel: React.FC = () => {
                         {DiscipleStatusNames[disciple.status]}
                       </Badge>
                       <span className={`text-xs ${getRealmColor(disciple.realm)}`}>
-                        {RealmNames[disciple.realm]}
+                        {getRealmDisplay(disciple)}
                       </span>
                     </div>
                   </div>
@@ -364,7 +364,7 @@ export const AllocationPanel: React.FC = () => {
                                 {DiscipleStatusNames[disciple.status]}
                               </Badge>
                               <span className={getRealmColor(disciple.realm)}>
-                                {RealmNames[disciple.realm]}
+                                {getRealmDisplay(disciple)}
                               </span>
                               {disciple.managingBuilding && (
                                 <Crown size={12} className="text-sect-gold" />
@@ -453,7 +453,7 @@ export const AllocationPanel: React.FC = () => {
                                 {DiscipleStatusNames[disciple.status]}
                               </Badge>
                               <span className={`text-xs ${getRealmColor(disciple.realm)}`}>
-                                {RealmNames[disciple.realm]}
+                                {getRealmDisplay(disciple)}
                               </span>
                             </div>
                           </div>
@@ -513,7 +513,7 @@ export const AllocationPanel: React.FC = () => {
                     {DiscipleStatusNames[selectedDiscipleData.status]}
                   </Badge>
                   <span className={`text-sm ${getRealmColor(selectedDiscipleData.realm)}`}>
-                    {RealmNames[selectedDiscipleData.realm]}
+                    {getRealmDisplay(selectedDiscipleData)}
                   </span>
                 </div>
               </div>

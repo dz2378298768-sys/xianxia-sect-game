@@ -15,7 +15,7 @@ import {
 import { Tooltip } from '@/components/ui/Tooltip';
 import { LibraryPanel } from '@/components/LibraryPanel';
 import { calculateBuildingMaintenance, calculateBuildingOutput, getResidenceUpgradeCost } from '@/utils/gameLogic';
-import { RealmNames, RealmOrder, DiscipleStatusNames } from '@/types/disciple';
+import { RealmOrder, DiscipleStatusNames, getRealmDisplay } from '@/types/disciple';
 import type { BuildingType } from '@/types/building';
 import { RESIDENCE_TYPES, RESIDENCE_TYPES_WITH_CAVE, isResidenceType } from '@/types/building';
 import { BUILDING_CONFIGS } from '@/data/buildings';
@@ -791,7 +791,7 @@ export const BuildingsPanel: React.FC = () => {
                               <div className="flex items-center gap-1.5">
                                 <span className="text-[11px] text-sect-jade">{d.name}</span>
                                 <Badge variant="default" size="sm">{DiscipleStatusNames[d.status]}</Badge>
-                                <span className={`text-[10px] ${getRealmColor(d.realm)}`}>{RealmNames[d.realm]}</span>
+                                <span className={`text-[10px] ${getRealmColor(d.realm)}`}>{getRealmDisplay(d)}</span>
                               </div>
                               <span className="text-[10px] text-sect-jade/50">贡献 {d.contributionPoints}</span>
                             </button>
@@ -877,7 +877,7 @@ export const BuildingsPanel: React.FC = () => {
                               </span>
                               <Badge variant="default" size="sm">{DiscipleStatusNames[disciple.status]}</Badge>
                               <span className={`text-[10px] ${getRealmColor(disciple.realm)}`}>
-                                {RealmNames[disciple.realm]}
+                                {getRealmDisplay(disciple)}
                               </span>
                               {selectedBuilding.managerId === disciple.id && (
                                 <Badge variant="gold" size="sm">

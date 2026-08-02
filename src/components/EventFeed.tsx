@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useGameStore } from '@/store/gameStore';
 import { SectIcon } from '@/components/icons/SectIcons';
+import { DiscipleStatusNames, getRealmDisplay } from '@/types/disciple';
 import type { Notification } from '@/types/game';
 
 /**
@@ -8,8 +9,17 @@ import type { Notification } from '@/types/game';
  * 展示新弟子加入、弟子突破、晋升、大比结果、宗门升级、重要事件等
  */
 export const EventFeed: React.FC = () => {
-  const { notifications, markNotificationRead } = useGameStore();
+  const { notifications, markNotificationRead, followedDiscipleIds, disciples } = useGameStore();
   const [collapsed, setCollapsed] = useState(false);
+  const [followCollapsed, setFollowCollapsed] = useState(false);
+
+  // 已关注弟子列表（按关注顺序，缺失弟子自动忽略）
+  const followedDisciples = useMemo(
+    () => followedDiscipleIds
+      .map(id => disciples.find(d => d.id === id))
+      .filter((d): d is NonNullable<typeof d> => !!d),
+    [followedDiscipleIds, disciples],
+  );
 
   // 过滤出宗门相关事件（剔除纯月报明细类），保留突破/晋升/大比/宗门升级/新弟子/弟子离去/灵石告急等
   const sectEvents = useMemo(() => {
@@ -83,6 +93,38 @@ export const EventFeed: React.FC = () => {
         </button>
       </div>
       <div className="event-feed-list">
+        {/* 已关注弟子区（可折叠） */}
+        <div className="event-feed-follow-section">
+          <button
+            className="event-feed-follow-header"
+            onClick={() => setFollowCollapsed(c => !c)}
+            title={followCollapsed ? '展开已关注弟子' : '收起已关注弟子'}
+          >
+            <span className="event-feed-follow-title">
+              <SectIcon name="disciple" size={12} strokeWidth={2} />
+              已关注弟子（{followedDisciples.length}）
+            </span>
+            <SectIcon name="arrowRight" size={12} strokeWidth={2} />
+          </button>
+          {!followCollapsed && (
+            followedDisciples.length === 0 ? (
+              <div className="event-feed-follow-empty">尚未关注弟子</div>
+            ) : (
+              <div className="event-feed-follow-list">
+                {followedDisciples.map(d => (
+                  <div key={d.id} className="event-feed-follow-card">
+                    <span className="event-feed-follow-name">{d.name}</span>
+                    <span className="event-feed-follow-realm">{getRealmDisplay(d)}</span>
+                    <span className="event-feed-follow-status">{DiscipleStatusNames[d.status]}</span>
+                    <span className={`event-feed-follow-sat ${d.satisfaction >= 60 ? 'ok' : d.satisfaction >= 30 ? 'mid' : 'low'}`}>
+                      满意{d.satisfaction}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )
+          )}
+        </div>
         {recentEvents.length === 0 ? (
           <div className="event-feed-empty">山门清平，暂无事件</div>
         ) : (

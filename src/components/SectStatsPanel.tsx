@@ -3,7 +3,7 @@ import { useGameStore } from '@/store/gameStore';
 import { useUIStore } from '@/store/uiStore';
 import { calculateSectCombatPower } from '@/utils/gameLogic';
 import { SectIcon } from '@/components/icons/SectIcons';
-import { DiscipleStatusNames, RealmNames } from '@/types/disciple';
+import { DiscipleStatusNames, getRealmDisplay } from '@/types/disciple';
 import type { Disciple } from '@/types/disciple';
 
 interface Props {
@@ -128,7 +128,7 @@ export const SectStatsPanel: React.FC<Props> = ({ mobileMode }) => {
                     </span>
                   </div>
                   <div className="text-[10px] text-[var(--ink-400)] truncate leading-tight">
-                    {DiscipleStatusNames[d.status]} · {RealmNames[d.realm]}
+                    {DiscipleStatusNames[d.status]} · {getRealmDisplay(d)}
                   </div>
                 </div>
                 <button

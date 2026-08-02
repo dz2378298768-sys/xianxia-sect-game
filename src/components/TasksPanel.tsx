@@ -3,7 +3,7 @@ import { useGameStore } from '@/store/gameStore';
 import { useUIStore } from '@/store/uiStore';
 import { SectIcon } from '@/components/icons/SectIcons';
 import { MiniAvatar } from '@/components/ui/Avatar';
-import { DiscipleStatusNames, RealmNames } from '@/types/disciple';
+import { DiscipleStatusNames, getRealmDisplay } from '@/types/disciple';
 import type { Disciple } from '@/types/disciple';
 
 interface Quest {
@@ -190,7 +190,7 @@ export const TasksPanel: React.FC<Props> = ({ mobileMode }) => {
                     key={d.id}
                     className="group flex items-center gap-1.5 p-1 rounded hover:bg-sect-gold/10 transition-colors cursor-pointer"
                     onClick={() => setSelectedDiscipleId(d.id)}
-                    title={`${d.name} · ${RealmNames[d.realm]} · ${DiscipleStatusNames[d.status]}`}
+                    title={`${d.name} · ${getRealmDisplay(d)} · ${DiscipleStatusNames[d.status]}`}
                   >
                     <MiniAvatar seed={d.avatarSeed} name={d.name} status={d.status} realm={d.realm} size={24} />
                     <div className="flex-1 min-w-0 flex items-center gap-1.5">
@@ -198,7 +198,7 @@ export const TasksPanel: React.FC<Props> = ({ mobileMode }) => {
                         {d.name}
                       </span>
                       <span className="text-[9.5px] text-[var(--ink-400)] truncate shrink-0">
-                        {RealmNames[d.realm]}
+                        {getRealmDisplay(d)}
                       </span>
                     </div>
                     <button

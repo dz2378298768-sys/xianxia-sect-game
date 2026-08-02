@@ -1,7 +1,7 @@
 import React from 'react';
 import { useGameStore } from '@/store/gameStore';
 import { useUIStore } from '@/store/uiStore';
-import { RealmNames, DiscipleStatusNames } from '@/types/disciple';
+import { DiscipleStatusNames, getRealmDisplay } from '@/types/disciple';
 import { calculateDiscipleCombatPower } from '@/utils/gameLogic';
 import { useDevice } from '@/hooks/useDevice';
 import { SectIcon } from '@/components/icons/SectIcons';
@@ -69,7 +69,7 @@ export const DiscipleStrip: React.FC = () => {
                   key={disc.id}
                   className="disciple-card slide-in-left"
                   onClick={() => handleDiscipleClick(disc.id)}
-                  title={`${disc.name} · ${RealmNames[disc.realm]}`}
+                  title={`${disc.name} · ${getRealmDisplay(disc)}`}
                 >
                   {/* 头像 */}
                   <DiscipleAvatar seed={disc.avatarSeed || 0} size={isCompact ? 36 : 48} status={disc.status} realm={disc.realm} name={disc.name} />

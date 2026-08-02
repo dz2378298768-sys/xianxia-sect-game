@@ -273,8 +273,16 @@ function getDefaultFrequencyConfig(scope: 'sect' | 'inter-sect', frequency: Tour
       rewards: [
         { type: 'contribution', amount: 300, rank: 1 },
         { type: 'spiritStones', amount: scope === 'sect' ? 200 : 400, rank: 1 },
+        { type: 'reputation', amount: scope === 'sect' ? 10 : 30, rank: 1 },
         { type: 'contribution', amount: 150, rank: 2 },
         { type: 'contribution', amount: 75, rank: 3 },
+        // 宗门大比五年期：跨宗门 rank2/rank3 也给声望；宗内仅冠军得声望
+        ...(scope === 'inter-sect'
+          ? [
+              { type: 'reputation' as const, amount: 15, rank: 2 as const },
+              { type: 'reputation' as const, amount: 8, rank: 3 as const },
+            ]
+          : []),
       ],
     };
   }

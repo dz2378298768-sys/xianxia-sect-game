@@ -1,5 +1,5 @@
-import type { Disciple, HiddenTalents, Realm, DiscipleStatus, PromotionRules } from '@/types/disciple';
-import { RealmOrder, RealmNames, DiscipleStatusNames, BreakthroughData } from '@/types/disciple';
+import type { Disciple, HiddenTalents, Realm, DiscipleStatus, PromotionRules, RealmStage } from '@/types/disciple';
+import { RealmOrder, RealmStageOrder, DiscipleStatusNames, BreakthroughData } from '@/types/disciple';
 import type { Building, BuildingType } from '@/types/building';
 import { RESIDENCE_TYPES_WITH_CAVE } from '@/types/building';
 import { BUILDING_CONFIGS, INITIAL_BUILDING_TYPES, getRootBoneEffectiveness } from '@/data/buildings';
@@ -396,7 +396,10 @@ export function createInitialDisciple(status: DiscipleStatus = 'servant', realm:
     maxAge,
     status,
     realm,
-    realmProgress: realm === 'mortal' ? getRealmBreakthroughRequired('mortal') : randomInt(0, Math.floor(getRealmBreakthroughRequired(realm) * 0.5)),
+    realmStage: 'early',
+    realmProgress: realm === 'mortal'
+      ? getStageBreakthroughRequired('mortal', 'early')
+      : randomInt(0, Math.floor(getStageBreakthroughRequired(realm, 'early') * 0.5)),
     cultivationSpeed: 0, // 由 recomputeCultivationSpeed 按当前境界/根骨/灵根/体质重算
     hiddenTalents,
     talentDisplay,
@@ -543,7 +546,6 @@ export function getDefaultPromotionRules(): PromotionRules {
     innerToCore: {
       minRealm: 'golden',
       minContribution: 500,
-      requireElderRecommendation: true,
     },
     coreToElder: {
       minRealm: 'nascent',
@@ -611,10 +613,16 @@ export function getRealmBreakthroughRequired(realm: Realm): number {
   return REALM_BREAKTHROUGH_REQUIRED[realm] || 100;
 }
 
+// 当前境界阶段突破所需修为：将整境界总需求均分为三格
+export function getStageBreakthroughRequired(realm: Realm, stage: RealmStage): number {
+  return Math.ceil(REALM_BREAKTHROUGH_REQUIRED[realm] / 3);
+}
+
 export function canAttemptBreakthrough(disciple: Disciple): boolean {
-  const required = getRealmBreakthroughRequired(disciple.realm);
+  const required = getStageBreakthroughRequired(disciple.realm, disciple.realmStage);
   if (disciple.realmProgress < required) return false;
-  if (disciple.realm === 'spirit') return false;
+  // 化神期后期为最高阶，无法继续突破
+  if (disciple.realm === 'spirit' && disciple.realmStage === 'late') return false;
   if (disciple.isBreakingThrough) return false;
   return true;
 }
@@ -622,36 +630,51 @@ export function canAttemptBreakthrough(disciple: Disciple): boolean {
 export function attemptBreakthrough(disciple: Disciple, hasPill: boolean = false): {
   success: boolean;
   newRealm: Realm;
+  newStage: RealmStage;
   newProgress: number;
 } {
-  const currentIndex = RealmOrder.indexOf(disciple.realm);
-  const nextRealm = RealmOrder[currentIndex + 1];
-  
-  if (!nextRealm) {
-    return { success: false, newRealm: disciple.realm, newProgress: disciple.realmProgress };
+  const currentStageIdx = RealmStageOrder.indexOf(disciple.realmStage);
+  const isRealmAdvance = disciple.realmStage === 'late';
+
+  // 计算突破后的目标境界与阶段
+  let newRealm: Realm = disciple.realm;
+  let newStage: RealmStage = disciple.realmStage;
+  if (isRealmAdvance) {
+    const currentIndex = RealmOrder.indexOf(disciple.realm);
+    const nextRealm = RealmOrder[currentIndex + 1];
+    if (!nextRealm) {
+      return { success: false, newRealm: disciple.realm, newStage: disciple.realmStage, newProgress: disciple.realmProgress };
+    }
+    newRealm = nextRealm;
+    newStage = 'early';
+  } else {
+    newStage = RealmStageOrder[currentStageIdx + 1] || disciple.realmStage;
   }
-  
-  const breakthroughData = BreakthroughData[nextRealm];
+
+  // 成功率：跨境界突破取下一境界数据；同境界进阶取当前境界数据（更温和）
+  const breakthroughData = BreakthroughData[isRealmAdvance ? newRealm : disciple.realm];
   let successRate = breakthroughData.baseSuccessRate;
   successRate += disciple.breakthroughAttempts * breakthroughData.failureBonus;
   successRate += disciple.breakthroughBonus;
-  
-  if (hasPill) {
+
+  // 丹药仅在跨境界突破时生效
+  if (hasPill && isRealmAdvance) {
     successRate += breakthroughData.pillBonus;
   }
-  
+
   const talentBonus = (disciple.hiddenTalents.rootBone - 50) * 0.2;
   successRate += talentBonus;
-  
+
   successRate = clamp(successRate, 5, 95);
-  
+
   const roll = randomFloat(0, 100);
   const success = roll < successRate;
-  
+
   if (success) {
     return {
       success: true,
-      newRealm: nextRealm,
+      newRealm,
+      newStage,
       newProgress: 0,
     };
   } else {
@@ -661,6 +684,7 @@ export function attemptBreakthrough(disciple: Disciple, hasPill: boolean = false
     return {
       success: false,
       newRealm: disciple.realm,
+      newStage: disciple.realmStage,
       newProgress,
     };
   }
@@ -669,7 +693,7 @@ export function attemptBreakthrough(disciple: Disciple, hasPill: boolean = false
 export function processMonthlyCultivation(disciple: Disciple): Disciple {
   if (disciple.status === 'mortal' || disciple.status === 'servant') {
     if (disciple.realm === 'mortal') {
-      const required = getRealmBreakthroughRequired('mortal');
+      const required = getStageBreakthroughRequired('mortal', disciple.realmStage);
       return {
         ...disciple,
         realmProgress: Math.min(required, disciple.realmProgress + disciple.cultivationSpeed * 2),
@@ -677,35 +701,35 @@ export function processMonthlyCultivation(disciple: Disciple): Disciple {
     }
     return disciple;
   }
-  
+
   if (disciple.isBreakingThrough) {
     return disciple;
   }
-  
+
   let speed = disciple.cultivationSpeed;
   for (const buff of disciple.buffs) {
     if (buff.type === 'cultivation') {
       speed *= (1 + buff.value / 100);
     }
   }
-  
+
   // 功法修炼速度加成（按熟练度计算，根骨决定发挥比例）
   if (disciple.learnedTechnique) {
     const rootBoneEff = getRootBoneEffectiveness(disciple.hiddenTalents.rootBone);
-    const techniqueBonus = disciple.learnedTechnique.isLearned 
+    const techniqueBonus = disciple.learnedTechnique.isLearned
       ? disciple.learnedTechnique.cultivationBonus * rootBoneEff
       : disciple.learnedTechnique.cultivationBonus * (disciple.learnedTechnique.progress / 100) * rootBoneEff;
     speed *= (1 + techniqueBonus / 100);
   }
-  
+
   // 旧秘籍系统加成
   for (const secret of disciple.learnedSecrets) {
     speed *= (1 + secret.cultivationBonus / 100);
   }
-  
-  const required = getRealmBreakthroughRequired(disciple.realm);
+
+  const required = getStageBreakthroughRequired(disciple.realm, disciple.realmStage);
   const newProgress = Math.min(required, disciple.realmProgress + speed);
-  
+
   return {
     ...disciple,
     realmProgress: newProgress,

@@ -8,7 +8,7 @@ import {
   BookTierNames, BookAttributeNames,
   type BookConfig, type BookTier, type BookType
 } from '@/data/buildings';
-import { RealmOrder, RealmNames, DiscipleStatusNames } from '@/types/disciple';
+import { RealmOrder, RealmNames, DiscipleStatusNames, getRealmDisplay } from '@/types/disciple';
 import {
   BookOpen, Sword, Sparkles, Lock, Trash2, Clock, User, ShoppingCart, Settings
 } from 'lucide-react';
@@ -412,7 +412,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({ buildingId }) => {
               <div>
                 <div className="font-display text-sm text-sect-gold">{selectedDisciple.name}</div>
                 <div className="text-[10px] text-sect-jade/60">
-                  {DiscipleStatusNames[selectedDisciple.status]} · {RealmNames[selectedDisciple.realm]} · 贡献 {Math.floor(selectedDisciple.contributionPoints)}
+                  {DiscipleStatusNames[selectedDisciple.status]} · {getRealmDisplay(selectedDisciple)} · 贡献 {Math.floor(selectedDisciple.contributionPoints)}
                 </div>
               </div>
             </div>

@@ -1,8 +1,8 @@
 import React from 'react';
 import { useGameStore } from '@/store/gameStore';
 import { useUIStore } from '@/store/uiStore';
-import { RealmNames, DiscipleStatusNames } from '@/types/disciple';
-import { getRealmBreakthroughRequired, calculateDiscipleCombatPower } from '@/utils/gameLogic';
+import { DiscipleStatusNames, getRealmDisplay } from '@/types/disciple';
+import { getStageBreakthroughRequired, calculateDiscipleCombatPower } from '@/utils/gameLogic';
 import { getRootBoneEffectiveness } from '@/data/buildings';
 import { SectIcon } from '@/components/icons/SectIcons';
 import { DiscipleAvatar } from '@/components/ui/Avatar';
@@ -18,7 +18,7 @@ export const DiscipleDetailModal: React.FC = () => {
 
   if (!disciple) return null;
 
-  const breakthroughReq = getRealmBreakthroughRequired(disciple.realm);
+  const breakthroughReq = getStageBreakthroughRequired(disciple.realm, disciple.realmStage);
   const rootBoneEff = getRootBoneEffectiveness(disciple.hiddenTalents?.rootBone || 50);
   const progressPct = Math.min(100, (disciple.realmProgress / breakthroughReq) * 100);
 
@@ -65,7 +65,7 @@ export const DiscipleDetailModal: React.FC = () => {
             <div className="col-span-3 min-w-0">
               <div className="font-display text-sect-gold text-sm">{disciple.name}</div>
               <div className="text-[11px] text-sect-jade/80">
-                {RealmNames[disciple.realm]} · 战力 {Math.floor(calculateDiscipleCombatPower(disciple))}
+                {getRealmDisplay(disciple)} · 战力 {Math.floor(calculateDiscipleCombatPower(disciple))}
               </div>
               <div className="text-[10px] text-sect-jade/50">
                 满意度 {Math.floor(disciple.satisfaction)}%

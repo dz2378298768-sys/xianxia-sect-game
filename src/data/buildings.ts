@@ -34,7 +34,7 @@ export const BUILDING_CONFIGS: Record<BuildingType, BuildingConfig> = {
     type: 'lecture_hall',
     name: '讲经堂',
     maxLevel: 3,
-    baseOutput: { spiritStones: 10 },
+    baseOutput: { spiritStones: 10, reputation: 1 },
     baseMaintenanceCost: 10,
     buildCost: { spiritStones: 0 },
     upgradeCosts: [
@@ -82,7 +82,7 @@ export const BUILDING_CONFIGS: Record<BuildingType, BuildingConfig> = {
     type: 'secret_library',
     name: '藏经阁',
     maxLevel: 4,
-    baseOutput: { spiritStones: 20 },
+    baseOutput: { spiritStones: 20, reputation: 2 },
     baseMaintenanceCost: 30,
     buildCost: { spiritStones: 0 },
     upgradeCosts: [
@@ -316,7 +316,6 @@ export const BUILDING_CONFIGS: Record<BuildingType, BuildingConfig> = {
     category: 'service',
     primaryOutput: 'spiritStones',
     minDiscipleStatus: 'inner',
-    unlockRequirement: { sectLevel: 'known' },
     description: '内门弟子居住之所；Lv1=10人，每级+10人，无上限',
     discipleEffect: {
       type: 'cultivation',
@@ -340,7 +339,6 @@ export const BUILDING_CONFIGS: Record<BuildingType, BuildingConfig> = {
     category: 'service',
     primaryOutput: 'spiritStones',
     minDiscipleStatus: 'core',
-    unlockRequirement: { sectLevel: 'famous' },
     description: '核心弟子居住之所；Lv1=10人，每级+10人，无上限',
     discipleEffect: {
       type: 'cultivation',
@@ -360,7 +358,6 @@ export const BUILDING_CONFIGS: Record<BuildingType, BuildingConfig> = {
     category: 'service',
     primaryOutput: 'spiritStones',
     minDiscipleStatus: 'elder',
-    unlockRequirement: { sectLevel: 'dominant' },
     description: '长老专属洞府；修炼速度+30%',
     discipleEffect: {
       type: 'cultivation',

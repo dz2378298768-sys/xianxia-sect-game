@@ -7,15 +7,15 @@ import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { DiscipleAvatar, SimpleAvatar } from '@/components/ui/Avatar';
-import { 
-  DiscipleStatus, DiscipleStatusNames, RealmNames, RealmOrder, SpiritRootNames 
+import {
+  DiscipleStatus, DiscipleStatusNames, RealmNames, RealmOrder, SpiritRootNames, getRealmDisplay
 } from '@/types/disciple';
 import { 
   User, Heart, Sparkles, BookOpen, Calendar, Star, 
   UserPlus, X, Building2, Sword, Shield, 
   Zap, Target, Activity, Smile, Frown, Wind, Swords, Flame
 } from 'lucide-react';
-import { calculateDiscipleCombatPower, getRealmBreakthroughRequired } from '@/utils/gameLogic';
+import { calculateDiscipleCombatPower, getStageBreakthroughRequired } from '@/utils/gameLogic';
 import { CONSTITUTIONS, RARITY_COLORS, RARITY_NAMES } from '@/data/constitutions';
 import type { Constitution } from '@/data/constitutions';
 import { SectIcon } from '@/components/icons/SectIcons';
@@ -153,7 +153,7 @@ export const DisciplesPanel: React.FC = () => {
             </div>
           ) : filteredDisciples.map(disciple => {
             const isFollowed = followedDiscipleIds.includes(disciple.id);
-            const breakthroughRequired = getRealmBreakthroughRequired(disciple.realm);
+            const breakthroughRequired = getStageBreakthroughRequired(disciple.realm, disciple.realmStage);
             const cultivationPct = Math.min(100, (disciple.realmProgress / breakthroughRequired) * 100);
             const satisfactionPct = Math.max(0, Math.min(100, disciple.satisfaction));
             const assignedBuildingName = disciple.assignedBuilding
@@ -198,7 +198,7 @@ export const DisciplesPanel: React.FC = () => {
                       {DiscipleStatusNames[disciple.status]}
                     </Badge>
                     <span className={`text-[10px] ${getRealmColor(disciple.realm)}`}>
-                      {RealmNames[disciple.realm]}
+                      {getRealmDisplay(disciple)}
                     </span>
                   </div>
 
@@ -269,7 +269,7 @@ export const DisciplesPanel: React.FC = () => {
                     {DiscipleStatusNames[selectedDisciple.status]}
                   </Badge>
                   <span className={`text-sm ${getRealmColor(selectedDisciple.realm)}`}>
-                    {RealmNames[selectedDisciple.realm]}
+                    {getRealmDisplay(selectedDisciple)}
                   </span>
                 </div>
                 <div className="text-sm text-sect-jade/60 mt-1">
@@ -451,18 +451,18 @@ export const DisciplesPanel: React.FC = () => {
                   <div className="flex justify-between text-sm mb-1">
                     <span className="text-sect-jade/80">修为进度</span>
                     <span className="text-sect-jade/60">
-                      {Math.floor(selectedDisciple.realmProgress)} / {getRealmBreakthroughRequired(selectedDisciple.realm)}
+                      {Math.floor(selectedDisciple.realmProgress)} / {getStageBreakthroughRequired(selectedDisciple.realm, selectedDisciple.realmStage)}
                       <span className="ml-2 text-sect-gold/70">
-                        {Math.min(100, Math.floor((selectedDisciple.realmProgress / getRealmBreakthroughRequired(selectedDisciple.realm)) * 100))}%
+                        {Math.min(100, Math.floor((selectedDisciple.realmProgress / getStageBreakthroughRequired(selectedDisciple.realm, selectedDisciple.realmStage)) * 100))}%
                       </span>
-                      {selectedDisciple.realmProgress >= getRealmBreakthroughRequired(selectedDisciple.realm) && (
+                      {selectedDisciple.realmProgress >= getStageBreakthroughRequired(selectedDisciple.realm, selectedDisciple.realmStage) && (
                         <span className="ml-2 text-sect-gold">可突破</span>
                       )}
                     </span>
                   </div>
                   <ProgressBar
                     value={selectedDisciple.realmProgress}
-                    max={getRealmBreakthroughRequired(selectedDisciple.realm)}
+                    max={getStageBreakthroughRequired(selectedDisciple.realm, selectedDisciple.realmStage)}
                     color="spirit"
                   />
                 </div>
@@ -933,7 +933,7 @@ export const DisciplesPanel: React.FC = () => {
                     人物形象
                   </h3>
                   <p className="text-sect-jade/70 text-sm leading-relaxed">
-                    {selectedDisciple.name}，{Math.floor(selectedDisciple.age)}岁，{RealmNames[selectedDisciple.realm]}修士。
+                    {selectedDisciple.name}，{Math.floor(selectedDisciple.age)}岁，{getRealmDisplay(selectedDisciple)}修士。
                     {selectedDisciple.talentDisplay?.nickname && selectedDisciple.talentDisplay.nickname !== '凡夫俗子' && `世人称其「${selectedDisciple.talentDisplay.nickname}」。`}
                     {selectedDisciple.talentDisplay?.rootBoneDesc}，{selectedDisciple.talentDisplay?.spiritRhythmDesc}，
                     {selectedDisciple.talentDisplay?.constitutionDesc}，{selectedDisciple.talentDisplay?.daoFateDesc}。

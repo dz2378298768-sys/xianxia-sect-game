@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { ScrollText, Settings, Check, Users, UserPlus } from 'lucide-react';
-import { RealmNames, RealmOrder } from '@/types/disciple';
+import { RealmNames, RealmOrder, getRealmDisplay } from '@/types/disciple';
 import type { Realm } from '@/types/disciple';
 
 type RuleType = 'servantToOuter' | 'outerToInner' | 'innerToCore' | 'coreToElder' | 'recruitment';
@@ -20,23 +20,22 @@ const RuleLabels: Record<RuleType, { from: string; to: string }> = {
 };
 
 export const RulesPanel: React.FC = () => {
-  const { promotionRules, updatePromotionRules } = useGameStore();
+  const { promotionRules, updatePromotionRules, disciples, appointElder, autoAppointElder, setAutoAppointElder } = useGameStore();
   const [editingRule, setEditingRule] = useState<RuleType | null>(null);
-  
+
   const [editForm, setEditForm] = useState({
     minContribution: 0,
     minRootBone: 0,
     enableExceptional: false,
     exceptionalThreshold: 0,
     minRealm: 'foundation' as Realm,
-    requireElderRecommendation: false,
     // 招收规则
     minSpiritRhythm: 60,
     minConstitution: 60,
     minDaoFate: 60,
     recruitmentExceptional: 80,
   });
-  
+
   const handleEdit = (rule: RuleType) => {
     const current = promotionRules[rule] as any;
     if (rule === 'recruitment') {
@@ -46,7 +45,6 @@ export const RulesPanel: React.FC = () => {
         enableExceptional: false,
         exceptionalThreshold: 0,
         minRealm: 'foundation',
-        requireElderRecommendation: false,
         minSpiritRhythm: current.minSpiritRhythm || 40,
         minConstitution: current.minConstitution || 40,
         minDaoFate: current.minDaoFate || 40,
@@ -59,7 +57,6 @@ export const RulesPanel: React.FC = () => {
         enableExceptional: current.enableExceptional || false,
         exceptionalThreshold: current.exceptionalThreshold || 0,
         minRealm: current.minRealm || 'foundation',
-        requireElderRecommendation: current.requireElderRecommendation || false,
         minSpiritRhythm: 40,
         minConstitution: 40,
         minDaoFate: 40,
@@ -104,7 +101,6 @@ export const RulesPanel: React.FC = () => {
         innerToCore: {
           minRealm: editForm.minRealm,
           minContribution: editForm.minContribution,
-          requireElderRecommendation: editForm.requireElderRecommendation,
         },
       });
     } else if (editingRule === 'coreToElder') {
@@ -230,14 +226,6 @@ export const RulesPanel: React.FC = () => {
                 <span className="text-sect-jade/60">最低贡献点</span>
                 <span className="text-sect-jade">{rule.minContribution}</span>
               </div>
-              {ruleType === 'innerToCore' && (
-                <div className="flex justify-between">
-                  <span className="text-sect-jade/60">长老推荐</span>
-                  <span className={rule.requireElderRecommendation ? 'text-green-400' : 'text-sect-jade/40'}>
-                    {rule.requireElderRecommendation ? '需要' : '不需要'}
-                  </span>
-                </div>
-              )}
               {ruleType === 'coreToElder' && (
                 <div className="text-xs text-sect-jade/50 mt-2">
                   需玩家手动任命
@@ -271,6 +259,69 @@ export const RulesPanel: React.FC = () => {
           {renderRuleCard('outerToInner')}
           {renderRuleCard('innerToCore')}
           {renderRuleCard('coreToElder')}
+        </div>
+      </Card>
+
+      {/* 长老任命：手动任命符合条件核心弟子 + 自动任命开关 */}
+      <Card title="长老任命" icon={<UserPlus size={18} />}>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between p-3 rounded-lg bg-sect-ink-light/30 border border-sect-gold/10">
+            <div>
+              <div className="text-sm text-sect-jade">每月自动任命</div>
+              <div className="text-xs text-sect-jade/50 mt-1">
+                开启后，每月自动将符合「核心升长老」条件的核心弟子任命为长老
+              </div>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={autoAppointElder}
+              onClick={() => setAutoAppointElder(!autoAppointElder)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${autoAppointElder ? 'bg-sect-gold' : 'bg-sect-ink-light'}`}
+            >
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${autoAppointElder ? 'translate-x-6' : 'translate-x-1'}`} />
+            </button>
+          </div>
+
+          <div>
+            <div className="text-sm text-sect-jade/80 mb-2">可任命的核心弟子</div>
+            {(() => {
+              const rule = promotionRules.coreToElder;
+              const minRealmIdx = RealmOrder.indexOf(rule.minRealm);
+              const eligible = disciples.filter(d =>
+                d.status === 'core' &&
+                RealmOrder.indexOf(d.realm) >= minRealmIdx &&
+                d.contributionPoints >= rule.minContribution,
+              );
+              if (eligible.length === 0) {
+                return (
+                  <div className="text-xs text-sect-jade/50 text-center py-4 rounded-lg bg-sect-ink-light/20">
+                    暂无符合条件的核心弟子
+                  </div>
+                );
+              }
+              return (
+                <div className="space-y-2">
+                  {eligible.map(d => (
+                    <div key={d.id} className="flex items-center justify-between p-2 rounded-lg bg-sect-ink-light/30 border border-sect-gold/10">
+                      <div className="text-sm">
+                        <span className="text-sect-jade font-medium">{d.name}</span>
+                        <span className="text-sect-jade/50 ml-2">{getRealmDisplay(d)}</span>
+                        <span className="text-sect-gold/70 ml-2">贡献 {d.contributionPoints}</span>
+                      </div>
+                      <Button
+                        variant="gold"
+                        onClick={() => appointElder(d.id)}
+                        className="!py-1 !px-3 text-xs"
+                      >
+                        任命长老
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
         </div>
       </Card>
       
@@ -432,18 +483,6 @@ export const RulesPanel: React.FC = () => {
                   className="w-full px-3 py-2 rounded bg-sect-ink-light border border-sect-gold/20 text-sect-jade"
                 />
               </div>
-              {editingRule === 'innerToCore' && (
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="requireElderRecommendation"
-                    checked={editForm.requireElderRecommendation}
-                    onChange={e => setEditForm({ ...editForm, requireElderRecommendation: e.target.checked })}
-                    className="rounded"
-                  />
-                  <label htmlFor="requireElderRecommendation" className="text-sm text-sect-jade">需要长老推荐</label>
-                </div>
-              )}
             </>
           )}
           
