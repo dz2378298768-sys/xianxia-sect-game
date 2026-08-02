@@ -10,14 +10,16 @@ import type { DiscipleStatus } from '@/types/disciple';
 import type { PillInventory, PillType } from '@/types/pill';
 import type { ArtifactInventory, ArtifactType } from '@/types/artifact';
 import type { TalismanInventory, TalismanType } from '@/types/talisman';
-import type { SectLevel, MonthlyReport, Notification } from '@/types/game';
+import type { SectLevel, MonthlyReport, Notification, OtherSect, DiplomaticStatus } from '@/types/game';
 import {
   SectLevelNames, SectLevelRequirementsMap, SectLevelOrder,
   SectLevelDiscipleCap, SectLevelReputationCap, ReputationGrowthConfig,
 } from '@/types/game';
 import {
   createInitialDisciple, createInitialBuildings, getDefaultPromotionRules, autoAssignBuilding,
-  autoAssignResidence, getResidenceUpgradeCost, calculateLectureBonus,
+  autoAssignResidence, getResidenceUpgradeCost, getResidenceCapacityByLevel, monthlyReassign,
+  autoAssignManagers, autoLearnTechniqueOnBreakthrough,
+  getMaintenanceCostByLevel, calculateLectureBonus,
 } from '@/utils/gameLogic';
 import {
   calculateBuildingMaintenance,
@@ -32,12 +34,24 @@ import {
   createNotification,
 } from '@/utils/gameLogic';
 import { randomInt } from '@/utils/random';
+import { recomputeCultivationSpeed, applySatisfactionPenalty, recomputeLifespan } from '@/domain/balance';
+import { generateOtherSects, refreshSectRelations } from '@/utils/worldGenerator';
+import type { TournamentConfig, TournamentResult, TournamentFrequency, FrequencyTournamentConfig } from '@/types/tournament';
+import { TournamentRewardTypeNames } from '@/types/tournament';
+import {
+  runTournament, shouldTournamentTrigger, getDefaultTournamentConfig,
+} from '@/utils/tournament';
+import {
+  saveToSlot as saveToSlotUtil, loadFromSlot as loadFromSlotUtil,
+} from '@/utils/saveSlots';
 
 interface GameState {
   year: number;
   month: number;
+  sectName: string;
   sectLevel: SectLevel;
   reputation: number;
+  sectContribution: number; // 宗门贡献池：用于建筑升级等宗门级消耗
   spiritStones: number;
   disciples: Disciple[];
   buildings: Building[];
@@ -53,17 +67,27 @@ interface GameState {
   showMainMenu: boolean;
   libraryBooks: BookConfig[]; // 藏经阁拥有的书籍
   libraryCosts: Record<BookTier, number>; // 每层藏经阁学习消耗贡献点
+  otherSects: OtherSect[]; // 天下其他宗门
+  followedDiscipleIds: string[]; // 关注的弟子ID列表
+  // 大比系统
+  sectTournamentConfig: TournamentConfig;        // 山门大比配置（三频率独立）
+  interSectTournamentConfig: TournamentConfig;  // 宗门大比配置（三频率独立）
+  lastSectTournamentResults: Record<TournamentFrequency, TournamentResult | null>;
+  lastInterSectTournamentResults: Record<TournamentFrequency, TournamentResult | null>;
+  lastSectTournamentYears: Record<TournamentFrequency, number>;
+  lastInterSectTournamentYears: Record<TournamentFrequency, number>;
   
   nextMonth: () => void;
   dismissReport: () => void;
   startGame: () => void;
   resetGame: () => void;
-  newGame: () => void;
+  newGame: (sectName?: string) => void;
   returnToMenu: () => void;
   markNotificationRead: (id: string) => void;
   assignDiscipleToBuilding: (discipleId: string, buildingId: string | null) => void;
   setBuildingManager: (buildingId: string, discipleId: string | null) => void;
   upgradeBuilding: (buildingId: string) => boolean;
+  downgradeBuilding: (buildingId: string) => { success: boolean; refundSpiritStones: number; reason?: string };
   toggleBuilding: (buildingId: string) => void;
   recruitDisciple: () => void;
   getDiscipleById: (id: string) => Disciple | undefined;
@@ -77,6 +101,19 @@ interface GameState {
   buyCaveMansion: (elderId: string) => boolean; // 长老购买洞府
   canPromoteSect: () => { canPromote: boolean; nextLevel: SectLevel | null; reasons: string[] }; // 检查是否可以晋升
   promoteSect: () => boolean; // 晋升宗门
+  refreshOtherSects: () => void; // 刷新其他宗门列表
+  toggleFollowDisciple: (discipleId: string) => void; // 关注/取消关注弟子
+  updateSectTournamentFreqConfig: (frequency: TournamentFrequency, config: Partial<FrequencyTournamentConfig>) => void;   // 更新山门大比指定频率配置
+  updateInterSectTournamentFreqConfig: (frequency: TournamentFrequency, config: Partial<FrequencyTournamentConfig>) => void; // 更新宗门大比指定频率配置
+  triggerSectTournament: (frequency: TournamentFrequency) => void;       // 手动触发山门大比（指定频率）
+  triggerInterSectTournament: (frequency: TournamentFrequency) => void;  // 手动触发宗门大比（指定频率）
+  // 宗门互动系统
+  changeSectFavorability: (sectId: string, delta: number) => void;       // 增减好感度
+  setSectDiplomaticStatus: (sectId: string, status: DiplomaticStatus) => void;  // 设置外交状态（同盟/宿敌/附庸/中立）
+  toggleSectTrade: (sectId: string) => boolean;                          // 开启/关闭交易
+  // 存档槽系统
+  saveToSlot: (slotIndex: number) => void;                              // 保存当前游戏到指定槽位
+  loadFromSlot: (slotIndex: number) => boolean;                         // 从槽位读取游戏（成功返回 true）
 }
 
 const createInitialState = () => {
@@ -86,6 +123,29 @@ const createInitialState = () => {
   for (let i = 0; i < 10; i++) {
     const disciple = createInitialDisciple('servant', 'qi');
     disciples.push(disciple);
+  }
+  
+  // 为初始弟子生成师承和好友关系
+  // 前两位弟子互为好友
+  if (disciples.length >= 2) {
+    disciples[0].friends.push(disciples[1].name);
+    disciples[1].friends.push(disciples[0].name);
+  }
+  // 后面的弟子从前面选一位师傅
+  for (let i = 2; i < disciples.length; i++) {
+    const masterCandidate = disciples[i % 2]; // 选前面的弟子做师傅
+    disciples[i].master = masterCandidate.name;
+    if (!masterCandidate.friends.includes(disciples[i].name)) {
+      masterCandidate.friends.push(disciples[i].name);
+    }
+    // 随机选一位好友
+    const friendIdx = randomInt(0, i - 1);
+    if (friendIdx !== i && !disciples[i].friends.includes(disciples[friendIdx].name)) {
+      disciples[i].friends.push(disciples[friendIdx].name);
+      if (!disciples[friendIdx].friends.includes(disciples[i].name)) {
+        disciples[friendIdx].friends.push(disciples[i].name);
+      }
+    }
   }
   
   const servantHall = buildings.find(b => b.type === 'servant_hall');
@@ -100,12 +160,15 @@ const createInitialState = () => {
   });
   
   const libraryBooks = generateInitialLibraryBooks();
+  const otherSects = generateOtherSects(8, 'founding');
   
   return {
     year: 1,
     month: 1,
+    sectName: '修仙宗门',
     sectLevel: 'founding' as SectLevel,
     reputation: 10,
+    sectContribution: 0,
     spiritStones: 500,
     disciples,
     buildings,
@@ -122,13 +185,95 @@ const createInitialState = () => {
     showMainMenu: true,
     libraryBooks,
     libraryCosts: {
-      foundation: 100,
-      golden: 200,
-      nascent: 400,
-      spirit: 800,
+      qi: 100,
+      foundation: 300,
+      golden: 800,
+      nascent: 2000,
     },
+    otherSects,
+    followedDiscipleIds: [],
+    sectTournamentConfig: getDefaultTournamentConfig('sect'),
+    interSectTournamentConfig: getDefaultTournamentConfig('inter-sect'),
+    lastSectTournamentResults: { yearly: null, every5years: null, every10years: null },
+    lastInterSectTournamentResults: { yearly: null, every5years: null, every10years: null },
+    lastSectTournamentYears: { yearly: 0, every5years: 0, every10years: 0 },
+    lastInterSectTournamentYears: { yearly: 0, every5years: 0, every10years: 0 },
   };
 };
+
+// 应用大比奖励：奖励发放给本宗冠军弟子（贡献/丹药）和宗门（灵石/声望）
+function applyTournamentRewards(
+  state: GameState,
+  result: TournamentResult,
+  freqConfig: FrequencyTournamentConfig,
+) {
+  let newSpiritStones = state.spiritStones;
+  let newReputation = state.reputation;
+  let newPillInventory = [...state.pillInventory];
+  let newDisciples = state.disciples.map(d => ({ ...d }));
+
+  if (result.ourRank > 0) {
+    const earnedRewards = freqConfig.rewards.filter(r => r.rank === result.ourRank as 1 | 2 | 3);
+    // 找到本宗冠军弟子（若存在）
+    const championDisciple = result.ourChampionName
+      ? newDisciples.find(d => d.name === result.ourChampionName)
+      : undefined;
+
+    // 构建奖励描述文本
+    const rewardDescs: string[] = [];
+    earnedRewards.forEach(reward => {
+      const desc = reward.type === 'pill'
+        ? `${reward.pillType ?? '丹药'} ×${reward.amount}`
+        : `${TournamentRewardTypeNames[reward.type]} +${reward.amount}`;
+      rewardDescs.push(desc);
+    });
+
+    // 给冠军弟子记录大比历史
+    if (championDisciple) {
+      const freqName = result.frequency === 'yearly' ? '年度' : result.frequency === 'every5years' ? '五年' : '十年';
+      const scopeName = result.scope === 'sect' ? '山门' : '宗门';
+      championDisciple.tournamentHistory = [
+        ...(championDisciple.tournamentHistory || []),
+        {
+          year: result.date.year,
+          scope: result.scope,
+          frequency: freqName,
+          rank: result.ourRank,
+          rewards: rewardDescs,
+        },
+      ];
+    }
+
+    earnedRewards.forEach(reward => {
+      switch (reward.type) {
+        case 'spiritStones':
+          newSpiritStones += reward.amount;
+          break;
+        case 'reputation':
+          newReputation += reward.amount;
+          break;
+        case 'contribution':
+          // 贡献点发放给冠军弟子
+          if (championDisciple) {
+            championDisciple.contributionPoints += reward.amount;
+          }
+          break;
+        case 'pill':
+          if (reward.pillType) {
+            const existing = newPillInventory.find(p => p.type === reward.pillType);
+            if (existing) {
+              existing.quantity += reward.amount;
+            } else {
+              newPillInventory.push({ type: reward.pillType, quantity: reward.amount });
+            }
+          }
+          break;
+      }
+    });
+  }
+
+  return { newSpiritStones, newReputation, newPillInventory, newDisciples };
+}
 
 export const useGameStore = create<GameState>()(
   persist(
@@ -143,9 +288,14 @@ export const useGameStore = create<GameState>()(
         set(createInitialState());
       },
       
-      newGame: () => {
+      newGame: (sectName?: string) => {
         const newState = createInitialState();
-        set({ ...newState, showMainMenu: false, gameStarted: true });
+        set({
+          ...newState,
+          sectName: sectName && sectName.trim() ? sectName.trim() : '修仙宗门',
+          showMainMenu: false,
+          gameStarted: true,
+        });
       },
       
       returnToMenu: () => {
@@ -155,7 +305,7 @@ export const useGameStore = create<GameState>()(
       nextMonth: () => {
         const state = get();
         let { year, month, spiritStones, reputation, herbInventory } = state;
-        const { disciples, buildings, promotionRules, pillInventory } = state;
+        const { disciples, buildings, promotionRules, pillInventory, libraryBooks } = state;
         
         const spiritStoneIncome: { source: string; amount: number }[] = [];
         const spiritStoneExpense: { source: string; amount: number }[] = [];
@@ -208,14 +358,13 @@ export const useGameStore = create<GameState>()(
           let bonusBuffs = [...disciple.buffs];
           
           // 居所加成
-          const residence = buildings.find(b => 
-            (b.type === 'servant_residence' || b.type === 'outer_residence' || 
-             b.type === 'inner_residence' || b.type === 'core_residence') && 
+          const residence = buildings.find(b =>
+            (b.type === 'outer_residence' ||
+             b.type === 'inner_residence' || b.type === 'core_residence') &&
             b.assignedDisciples.includes(disciple.id)
           );
           if (residence) {
             const residenceBonusMap: Record<string, number> = {
-              servant_residence: 0,
               outer_residence: 10,
               inner_residence: 20,
               core_residence: 30,
@@ -257,7 +406,7 @@ export const useGameStore = create<GameState>()(
           if (lectureHall) {
             // 获取讲师
             const lecturer = disciples.find(d => d.id === lectureHall.managerId);
-            const lectureBonus = calculateLectureBonus(lecturer || null);
+            const lectureBonus = calculateLectureBonus(lecturer || null, lectureHall.level);
             if (lectureBonus > 0) {
               bonusBuffs.push({
                 id: `lecture_${lectureHall.id}`,
@@ -272,11 +421,9 @@ export const useGameStore = create<GameState>()(
           }
 
           const discipleWithBonus = { ...disciple, buffs: bonusBuffs };
-          
-          // 满意度影响修炼速度：每降低1%效率降低2%
-          const satisfactionPenalty = (100 - disciple.satisfaction) * 0.02;
-          const adjustedCultivationSpeed = disciple.cultivationSpeed * (1 - satisfactionPenalty);
-          discipleWithBonus.cultivationSpeed = adjustedCultivationSpeed;
+
+          // 满意度影响修炼速度：每降低1%效率降低2%，但下限 20%（绝不出现负值/归零）。
+          discipleWithBonus.cultivationSpeed = applySatisfactionPenalty(disciple.cultivationSpeed, disciple.satisfaction);
           
           let d2 = processMonthlyCultivation(discipleWithBonus);
           d2 = { ...d2, buffs: disciple.buffs, cultivationSpeed: disciple.cultivationSpeed }; // 恢复原始buffs和基础修炼速度
@@ -285,33 +432,29 @@ export const useGameStore = create<GameState>()(
           d2 = processMonthlyLearning(d2);
           
           const building = buildings.find(b => b.assignedDisciples.includes(d2.id));
-          if (building) {
-            const workContribution = processMonthlyWork(d2, building);
-            d2 = { ...d2, contributionPoints: d2.contributionPoints + workContribution };
-            if (workContribution > 0) {
-            }
-          }
+          // 贡献点按身份发放，不依赖建筑分配
+          const workContribution = processMonthlyWork(d2, building || null);
+          d2 = { ...d2, contributionPoints: d2.contributionPoints + workContribution };
           
           // 满意度系统计算
           // 检查是否有工作
           const hasWork = building !== undefined || d2.status === 'elder';
-          const currentResidence = buildings.find(b => 
-            (b.type === 'servant_residence' || b.type === 'outer_residence' || 
-             b.type === 'inner_residence' || b.type === 'core_residence' ||
+          const currentResidence = buildings.find(b =>
+            (b.type === 'outer_residence' || b.type === 'inner_residence' ||
+             b.type === 'core_residence' ||
              b.type === 'cave_mansion') && b.assignedDisciples.includes(d2.id)
           );
-          
-          // 计算居所等级需求
+
+          // 计算居所等级需求（杂役弟子不需要居所）
           const requiredResidenceTypeMap: Record<string, string> = {
-            servant: 'servant_residence',
             outer: 'outer_residence',
             inner: 'inner_residence',
             core: 'core_residence',
             elder: 'core_residence',
           };
-          const residenceTypeOrder = ['servant_residence', 'outer_residence', 'inner_residence', 'core_residence'];
-          const requiredType = requiredResidenceTypeMap[d2.status] || 'servant_residence';
-          const requiredIndex = residenceTypeOrder.indexOf(requiredType);
+          const residenceTypeOrder = ['outer_residence', 'inner_residence', 'core_residence'];
+          const requiredType = requiredResidenceTypeMap[d2.status] || '';
+          const requiredIndex = requiredType ? residenceTypeOrder.indexOf(requiredType) : -1;
           const actualType = currentResidence ? currentResidence.type : null;
           const actualIndex = actualType ? residenceTypeOrder.indexOf(actualType) : -1;
           
@@ -403,14 +546,21 @@ export const useGameStore = create<GameState>()(
             });
             
             if (result.success) {
+              // 突破后境界提升，按新境界重算修炼速度（修复旧实现不重算的 Bug A）。
+              const breakthroughed = { ...d2, realm: result.newRealm };
               d2 = {
                 ...d2,
                 realm: result.newRealm,
                 realmProgress: result.newProgress,
+                cultivationSpeed: recomputeCultivationSpeed(breakthroughed),
+                // 突破后寿命上限随新境界重算（金丹寿命 260 >> 炼气 80）。
+                maxAge: recomputeLifespan(breakthroughed),
                 breakthroughAttempts: 0,
                 breakthroughBonus: 0,
                 isBreakingThrough: false,
               };
+              // 突破后自动去藏经阁学习更优秀的功法（可替换旧功法，玩家无需手动操作）
+              d2 = autoLearnTechniqueOnBreakthrough(d2, libraryBooks);
               
               if (hasPill) {
                 const nextRealm = result.newRealm;
@@ -473,10 +623,13 @@ export const useGameStore = create<GameState>()(
                 to: DiscipleStatusNames.outer,
               });
               
-              // 从杂役堂口移除
+              // 从工作建筑中移除（居所由 autoAssignResidence 处理）
               currentBuildings = currentBuildings.map(b => ({
                 ...b,
-                assignedDisciples: b.assignedDisciples.filter(id => id !== d.id)
+                assignedDisciples: (b.type === 'outer_residence' ||
+                   b.type === 'inner_residence' || b.type === 'core_residence' || b.type === 'cave_mansion')
+                  ? b.assignedDisciples
+                  : b.assignedDisciples.filter(id => id !== d.id)
               }));
               
               // 自动分配岗位
@@ -518,10 +671,21 @@ export const useGameStore = create<GameState>()(
                 from: DiscipleStatusNames[d.status],
                 to: DiscipleStatusNames.inner,
               });
+              // 从旧工作建筑中移除（居所由 autoAssignResidence 处理）
+              currentBuildings = currentBuildings.map(b => ({
+                ...b,
+                assignedDisciples: (b.type === 'outer_residence' ||
+                   b.type === 'inner_residence' || b.type === 'core_residence' || b.type === 'cave_mansion')
+                  ? b.assignedDisciples
+                  : b.assignedDisciples.filter(id => id !== d.id)
+              }));
+              // 重新分配工作建筑
+              const innerWorkResult = autoAssignBuilding({ ...d, status: 'inner' }, currentBuildings);
+              currentBuildings = innerWorkResult.newBuildings;
               // 晋升后重新分配居所
               const residenceResult = autoAssignResidence({ ...d, status: 'inner' }, currentBuildings);
               currentBuildings = residenceResult.newBuildings;
-              d = { ...d, status: 'inner' };
+              d = { ...d, status: 'inner', assignedBuilding: innerWorkResult.buildingId };
             }
           }
           
@@ -539,10 +703,21 @@ export const useGameStore = create<GameState>()(
                 from: DiscipleStatusNames[d.status],
                 to: DiscipleStatusNames.core,
               });
+              // 从旧工作建筑中移除
+              currentBuildings = currentBuildings.map(b => ({
+                ...b,
+                assignedDisciples: (b.type === 'outer_residence' ||
+                   b.type === 'inner_residence' || b.type === 'core_residence' || b.type === 'cave_mansion')
+                  ? b.assignedDisciples
+                  : b.assignedDisciples.filter(id => id !== d.id)
+              }));
+              // 重新分配工作建筑
+              const coreWorkResult = autoAssignBuilding({ ...d, status: 'core' }, currentBuildings);
+              currentBuildings = coreWorkResult.newBuildings;
               // 晋升后重新分配居所
               const residenceResult = autoAssignResidence({ ...d, status: 'core' }, currentBuildings);
               currentBuildings = residenceResult.newBuildings;
-              d = { ...d, status: 'core' };
+              d = { ...d, status: 'core', assignedBuilding: coreWorkResult.buildingId };
             }
           }
           
@@ -567,55 +742,47 @@ export const useGameStore = create<GameState>()(
           for (let i = 0; i < actualNew; i++) {
             const newDisciple = createInitialDisciple('mortal', 'mortal');
             newDisciple.joinDate = { year, month };
-            
+
             // 根据声望影响弟子资质
             const bonusChance = Math.min(0.3, reputation / 1000);
             if (Math.random() < bonusChance) {
               // 高声望有概率获得更好的弟子
               newDisciple.hiddenTalents.rootBone = Math.min(100, newDisciple.hiddenTalents.rootBone + randomInt(10, 30));
             }
-            
-            // 新的招收规则检查
-            const { rootBone, spiritRhythm, constitution, daoFate } = newDisciple.hiddenTalents;
-            const rec = promotionRules.recruitment;
-            
-            // 检查是否满足所有最低要求
-            const allRequirementsMet = 
-              rootBone >= rec.minRootBone &&
-              spiritRhythm >= rec.minSpiritRhythm &&
-              constitution >= rec.minConstitution &&
-              daoFate >= rec.minDaoFate;
-            
-            // 检查是否满足破例条件（任一属性超过阈值）
-            const exceptional = 
-              rootBone >= rec.exceptionalThreshold ||
-              spiritRhythm >= rec.exceptionalThreshold ||
-              constitution >= rec.exceptionalThreshold ||
-              daoFate >= rec.exceptionalThreshold;
-            
-            if (allRequirementsMet || exceptional) {
-              newDisciple.status = 'outer';
-              newDisciple.realm = 'qi';
-              newDisciple.realmProgress = 0;
-              // 外门弟子自动分配岗位
-              const { buildingId, newBuildings } = autoAssignBuilding(newDisciple, currentBuildings);
-              currentBuildings = newBuildings;
-              newDisciple.assignedBuilding = buildingId;
-            } else {
-              newDisciple.status = 'servant';
-              newDisciple.realm = 'qi';
-              newDisciple.realmProgress = randomInt(10, 40);
-              const servantHall = currentBuildings.find(b => b.type === 'servant_hall');
-              if (servantHall && servantHall.assignedDisciples.length < servantHall.discipleCapacity) {
-                servantHall.assignedDisciples.push(newDisciple.id);
-              }
+
+            // 新拜师弟子一律从杂役做起，积累贡献后晋升为外门
+            newDisciple.status = 'servant';
+            newDisciple.realm = 'qi';
+            newDisciple.realmProgress = randomInt(10, 40);
+            const servantHall = currentBuildings.find(b => b.type === 'servant_hall');
+            if (servantHall && servantHall.assignedDisciples.length < servantHall.discipleCapacity) {
+              currentBuildings = currentBuildings.map(b =>
+                b.id === servantHall.id
+                  ? { ...b, assignedDisciples: [...b.assignedDisciples, newDisciple.id] }
+                  : b
+              );
+              newDisciple.assignedBuilding = servantHall.id;
             }
-            
+
+            // 自动分配居所（不影响工作建筑）
+            const residenceResult = autoAssignResidence(newDisciple, currentBuildings);
+            currentBuildings = residenceResult.newBuildings;
+
             finalDisciples.push(newDisciple);
             newDisciples.push({ id: newDisciple.id, name: newDisciple.name, status: DiscipleStatusNames[newDisciple.status] });
           }
         }
-        
+
+        // 每月重新分配：确保无工作弟子被分配到有空缺的建筑，居所不匹配的弟子重新匹配
+        const reassignResult = monthlyReassign(finalDisciples, currentBuildings);
+        finalDisciples = reassignResult.disciples;
+        currentBuildings = reassignResult.buildings;
+
+        // 每月自动任命堂主：为每座工作堂口选出堂内身份最高的弟子担任堂主（玩家无需手动分配）
+        const managerResult = autoAssignManagers(finalDisciples, currentBuildings);
+        finalDisciples = managerResult.disciples;
+        currentBuildings = managerResult.buildings;
+
         spiritStones += totalSpiritStoneIncome - totalMaintenance;
         herbInventory += totalHerbIncome;
         reputation += reputationChange;
@@ -666,19 +833,113 @@ export const useGameStore = create<GameState>()(
           );
         });
         
+        // 刷新天下宗门关系（每月关系可能微调）
+        const refreshedOtherSects = refreshSectRelations(state.otherSects);
+
+        // 大比自动触发（仅在每年1月检查，三频率独立判断）
+        const FREQUENCIES: TournamentFrequency[] = ['yearly', 'every5years', 'every10years'];
+        const sectTournamentResults = { ...state.lastSectTournamentResults };
+        const interSectTournamentResults = { ...state.lastInterSectTournamentResults };
+        const sectYears = { ...state.lastSectTournamentYears };
+        const interSectYears = { ...state.lastInterSectTournamentYears };
+        let finalSpiritStones = spiritStones;
+        let finalReputation = reputation;
+        let finalPillInventory = [...pillInventory];
+        const tournamentNotifs: Notification[] = [];
+
+        if (month === 1) {
+          // 山门大比（三个频率分别检查）
+          for (const freq of FREQUENCIES) {
+            const freqConfig = state.sectTournamentConfig[freq];
+            if (shouldTournamentTrigger(freq, freqConfig, year, month, sectYears[freq])) {
+              const result = runTournament({
+                scope: 'sect',
+                frequency: freq,
+                config: freqConfig,
+                disciples: finalDisciples,
+                otherSects: refreshedOtherSects,
+                date: { year, month },
+              });
+              sectTournamentResults[freq] = result;
+              sectYears[freq] = year;
+              const rewards = applyTournamentRewards(
+                { ...state, spiritStones: finalSpiritStones, reputation: finalReputation, pillInventory: finalPillInventory, disciples: finalDisciples } as GameState,
+                result,
+                freqConfig,
+              );
+              finalSpiritStones = rewards.newSpiritStones;
+              finalReputation = rewards.newReputation;
+              finalPillInventory = rewards.newPillInventory;
+              finalDisciples = rewards.newDisciples;
+              const freqName = freq === 'yearly' ? '年度' : freq === 'every5years' ? '五年' : '十年';
+              tournamentNotifs.push(createNotification(
+                result.ourRank > 0 ? 'success' : 'info',
+                `山门${freqName}大比`,
+                result.ourRank === 1
+                  ? `${result.ourChampionName} 夺得山门${freqName}大比冠军！${result.rewardSummary.join('、')}`
+                  : result.ourRank > 0
+                    ? `山门${freqName}大比结束，本宗弟子获第${result.ourRank}名。${result.rewardSummary.join('、')}`
+                    : `山门${freqName}大比结束，本宗弟子未入三甲。`,
+                { year, month },
+              ));
+            }
+          }
+          // 宗门大比（三个频率分别检查）
+          for (const freq of FREQUENCIES) {
+            const freqConfig = state.interSectTournamentConfig[freq];
+            if (shouldTournamentTrigger(freq, freqConfig, year, month, interSectYears[freq])) {
+              const result = runTournament({
+                scope: 'inter-sect',
+                frequency: freq,
+                config: freqConfig,
+                disciples: finalDisciples,
+                otherSects: refreshedOtherSects,
+                date: { year, month },
+              });
+              interSectTournamentResults[freq] = result;
+              interSectYears[freq] = year;
+              const rewards = applyTournamentRewards(
+                { ...state, spiritStones: finalSpiritStones, reputation: finalReputation, pillInventory: finalPillInventory, disciples: finalDisciples } as GameState,
+                result,
+                freqConfig,
+              );
+              finalSpiritStones = rewards.newSpiritStones;
+              finalReputation = rewards.newReputation;
+              finalPillInventory = rewards.newPillInventory;
+              finalDisciples = rewards.newDisciples;
+              const freqName = freq === 'yearly' ? '年度' : freq === 'every5years' ? '五年' : '十年';
+              tournamentNotifs.push(createNotification(
+                result.ourRank > 0 ? 'success' : 'info',
+                `宗门${freqName}大比`,
+                result.ourRank === 1
+                  ? `${result.ourChampionName} 夺得宗门${freqName}大比冠军，扬名天下！${result.rewardSummary.join('、')}`
+                  : result.ourRank > 0
+                    ? `宗门${freqName}大比结束，本宗弟子获第${result.ourRank}名。${result.rewardSummary.join('、')}`
+                    : `宗门${freqName}大比结束，本宗弟子未入三甲，须勤加修炼。`,
+                { year, month },
+              ));
+            }
+          }
+        }
+
         set({
           year,
           month,
           sectLevel: state.sectLevel,
-          reputation,
-          spiritStones,
+          reputation: finalReputation,
+          spiritStones: finalSpiritStones,
           herbInventory,
           disciples: finalDisciples,
           buildings: [...currentBuildings],
-          pillInventory: [...pillInventory],
+          pillInventory: finalPillInventory,
           monthlyReport: report,
           showReport: true,
-          notifications: [...newNotifications, ...state.notifications].slice(0, 50),
+          notifications: [...tournamentNotifs, ...newNotifications, ...state.notifications].slice(0, 50),
+          otherSects: refreshedOtherSects,
+          lastSectTournamentResults: sectTournamentResults,
+          lastInterSectTournamentResults: interSectTournamentResults,
+          lastSectTournamentYears: sectYears,
+          lastInterSectTournamentYears: interSectYears,
         });
       },
       
@@ -700,35 +961,41 @@ export const useGameStore = create<GameState>()(
           if (buildingId) {
             const building = state.buildings.find(b => b.id === buildingId);
             const disciple = state.disciples.find(d => d.id === discipleId);
-            
+
             if (building && disciple) {
               // 检查准入条件
               if (building.minDiscipleStatus) {
                 const statusOrder: DiscipleStatus[] = ['mortal', 'servant', 'outer', 'inner', 'core', 'elder'];
                 const buildingMinIndex = statusOrder.indexOf(building.minDiscipleStatus);
                 const discipleIndex = statusOrder.indexOf(disciple.status as DiscipleStatus);
-                
+
                 if (discipleIndex < buildingMinIndex) {
                   return state; // 不允许分配，弟子身份太低
                 }
               }
-              
+
               // 检查容量
               if (building.assignedDisciples.length >= building.discipleCapacity) {
                 return state; // 不允许分配，建筑已满
               }
             }
           }
-          
+
+          // 居所类建筑类型
+          const residenceTypes = ['outer_residence', 'inner_residence', 'core_residence', 'cave_mansion'];
+
+          // 只从工作建筑中移除弟子，保留居所分配
           const newBuildings = state.buildings.map(b => ({
             ...b,
-            assignedDisciples: b.assignedDisciples.filter(id => id !== discipleId),
+            assignedDisciples: residenceTypes.includes(b.type)
+              ? b.assignedDisciples
+              : b.assignedDisciples.filter(id => id !== discipleId),
           }));
-          
-          const newDisciples = state.disciples.map(d => 
+
+          const newDisciples = state.disciples.map(d =>
             d.id === discipleId ? { ...d, assignedBuilding: buildingId } : d
           );
-          
+
           if (buildingId) {
             const buildingIndex = newBuildings.findIndex(b => b.id === buildingId);
             if (buildingIndex >= 0) {
@@ -738,12 +1005,22 @@ export const useGameStore = create<GameState>()(
               };
             }
           }
-          
+
           return { buildings: newBuildings, disciples: newDisciples };
         });
       },
 
       setBuildingManager: (buildingId: string, discipleId: string | null) => {
+        const state = get();
+        // 堂主任命规则：必须金丹期（golden）及以上
+        if (discipleId) {
+          const candidate = state.disciples.find(d => d.id === discipleId);
+          if (!candidate) return;
+          const goldenIndex = RealmOrder.indexOf('golden');
+          const candidateIndex = RealmOrder.indexOf(candidate.realm);
+          if (candidateIndex < goldenIndex) return; // 修为不足，禁止任命
+        }
+
         set(state => {
           // 先移除该弟子可能担任的其他建筑管理者身份
           const newDisciples = state.disciples.map(d => {
@@ -784,42 +1061,88 @@ export const useGameStore = create<GameState>()(
         const building = state.buildings.find(b => b.id === buildingId);
 
         if (!building) return false;
+        if (building.level >= building.maxLevel) return false;
 
-        const isResidence = building.type === 'servant_residence' ||
-                           building.type === 'outer_residence' ||
-                           building.type === 'inner_residence' ||
-                           building.type === 'core_residence';
-
-        if (!isResidence && building.level >= building.maxLevel) return false;
-
+        // 统一使用配置中的升级费用
         let upgradeCost;
+        const isResidence = ['outer_residence', 'inner_residence', 'core_residence'].includes(building.type);
         if (isResidence) {
           upgradeCost = getResidenceUpgradeCost(building);
           if (!upgradeCost) return false;
         } else {
-          upgradeCost = building.upgradeCosts[building.level];
+          upgradeCost = building.upgradeCosts[building.level - 1];
           if (!upgradeCost) return false;
         }
 
         if (state.spiritStones < upgradeCost.spiritStones) return false;
 
+        // 计算升级后的新容量
+        const newLevel = building.level + 1;
         let newCapacity = building.discipleCapacity;
         if (isResidence) {
+          newCapacity = getResidenceCapacityByLevel(building.type, newLevel);
+        } else if (building.discipleCapacity > 0) {
+          // 非居所功能建筑升级也增加容量
           newCapacity = building.discipleCapacity + 10;
         }
+
+        // 计算升级后的新维护费
+        const newMaintenanceCost = getMaintenanceCostByLevel(building.type, newLevel);
 
         set(state => ({
           spiritStones: state.spiritStones - upgradeCost.spiritStones,
           buildings: state.buildings.map(b =>
             b.id === buildingId
-              ? { ...b, level: b.level + 1, discipleCapacity: newCapacity }
+              ? { ...b, level: newLevel, discipleCapacity: newCapacity, baseMaintenanceCost: newMaintenanceCost }
               : b
           ),
         }));
 
         return true;
       },
-      
+
+      downgradeBuilding: (buildingId: string): { success: boolean; refundSpiritStones: number; reason?: string } => {
+        const state = get();
+        const building = state.buildings.find(b => b.id === buildingId);
+
+        if (!building) return { success: false, refundSpiritStones: 0, reason: '建筑不存在' };
+        if (building.level <= 1) return { success: false, refundSpiritStones: 0, reason: '已是最低等级' };
+
+        const isResidence = ['outer_residence', 'inner_residence', 'core_residence'].includes(building.type);
+
+        // 计算返还资源：从 (level-1) 升级到 level 时花费的灵石（升级时仅扣除灵石）
+        let refundSpiritStones = 0;
+        if (isResidence) {
+          const prevLevelBuilding = { ...building, level: building.level - 1 };
+          const cost = getResidenceUpgradeCost(prevLevelBuilding);
+          if (cost) refundSpiritStones = cost.spiritStones;
+        } else {
+          const cost = building.upgradeCosts[building.level - 2];
+          if (cost) refundSpiritStones = cost.spiritStones;
+        }
+
+        const newLevel = building.level - 1;
+        let newCapacity = building.discipleCapacity;
+        if (isResidence) {
+          newCapacity = getResidenceCapacityByLevel(building.type, newLevel);
+        } else if (building.discipleCapacity > 0) {
+          newCapacity = Math.max(0, building.discipleCapacity - 10);
+        }
+
+        const newMaintenanceCost = getMaintenanceCostByLevel(building.type, newLevel);
+
+        set(state => ({
+          spiritStones: state.spiritStones + refundSpiritStones,
+          buildings: state.buildings.map(b =>
+            b.id === buildingId
+              ? { ...b, level: newLevel, discipleCapacity: newCapacity, baseMaintenanceCost: newMaintenanceCost }
+              : b
+          ),
+        }));
+
+        return { success: true, refundSpiritStones };
+      },
+
       toggleBuilding: (buildingId: string) => {
         set(state => ({
           buildings: state.buildings.map(b =>
@@ -834,26 +1157,69 @@ export const useGameStore = create<GameState>()(
         const state = get();
         const newDisciple = createInitialDisciple('mortal', 'mortal');
         newDisciple.joinDate = { year: state.year, month: state.month };
-        
-        const rootBoneOk = newDisciple.hiddenTalents.rootBone >= state.promotionRules.servantToOuter.minRootBone;
-        const exceptional = state.promotionRules.servantToOuter.enableExceptional &&
-          newDisciple.hiddenTalents.rootBone >= state.promotionRules.servantToOuter.exceptionalThreshold;
-        
-        if (rootBoneOk || exceptional) {
-          newDisciple.status = 'outer';
-          newDisciple.realm = 'qi';
-        } else {
-          newDisciple.status = 'servant';
-          newDisciple.realm = 'qi';
+
+        // 新招入弟子一律从杂役做起，通过积累贡献后晋升为外门
+        newDisciple.status = 'servant';
+        newDisciple.realm = 'qi';
+
+        // 自动生成师承关系：从高境界弟子中选一位作为师傅
+        const potentialMasters = state.disciples.filter(
+          d => d.id !== newDisciple.id && (d.status === 'inner' || d.status === 'core' || d.status === 'elder'),
+        );
+        if (potentialMasters.length > 0) {
+          const master = potentialMasters[randomInt(0, potentialMasters.length - 1)];
+          newDisciple.master = master.name;
+          // 师傅将新弟子加入好友
+          if (!master.friends.includes(newDisciple.name)) {
+            master.friends = [...master.friends, newDisciple.name];
+          }
         }
-        
-        // 自动分配居所
-        const { newBuildings } = autoAssignResidence(newDisciple, state.buildings);
-        
+
+        // 自动生成好友：从同境界弟子中选 1-2 位
+        const potentialFriends = state.disciples.filter(
+          d => d.id !== newDisciple.id && d.name !== newDisciple.master,
+        );
+        if (potentialFriends.length > 0) {
+          const friendCount = Math.min(randomInt(1, 2), potentialFriends.length);
+          const shuffled = [...potentialFriends].sort(() => Math.random() - 0.5);
+          newDisciple.friends = shuffled.slice(0, friendCount).map(d => d.name);
+          // 双向好友关系
+          newDisciple.friends.forEach(fname => {
+            const friend = state.disciples.find(d => d.name === fname);
+            if (friend && !friend.friends.includes(newDisciple.name)) {
+              friend.friends = [...friend.friends, newDisciple.name];
+            }
+          });
+        }
+
+        let currentBuildings = state.buildings;
+
+        // 杂役弟子分配到杂役堂
+        const servantHall = currentBuildings.find(b => b.type === 'servant_hall');
+        if (servantHall && servantHall.assignedDisciples.length < servantHall.discipleCapacity) {
+          currentBuildings = currentBuildings.map(b =>
+            b.id === servantHall.id
+              ? { ...b, assignedDisciples: [...b.assignedDisciples, newDisciple.id] }
+              : b
+          );
+          newDisciple.assignedBuilding = servantHall.id;
+        }
+
+        // 自动分配居所（不影响工作建筑）
+        const { newBuildings } = autoAssignResidence(newDisciple, currentBuildings);
+
+        const joinNotif = createNotification(
+          'success',
+          '新弟子加入',
+          `${newDisciple.name} 已拜入山门，从杂役做起。`,
+          { year: state.year, month: state.month },
+        );
+
         set(state => ({
           disciples: [...state.disciples, newDisciple],
           buildings: newBuildings,
           spiritStones: state.spiritStones - 50,
+          notifications: [joinNotif, ...state.notifications].slice(0, 50),
         }));
       },
       
@@ -878,6 +1244,12 @@ export const useGameStore = create<GameState>()(
 
         if (state.spiritStones < buildCost.spiritStones) return false;
 
+        // 居所使用容量表
+        const isResidenceType = ['outer_residence', 'inner_residence', 'core_residence'].includes(type);
+        const initialCapacity = isResidenceType
+          ? getResidenceCapacityByLevel(type, 1)
+          : config.discipleCapacity;
+
         const newBuilding: Building = {
           id: `${type}_${Date.now()}`,
           type: type as BuildingType,
@@ -889,7 +1261,7 @@ export const useGameStore = create<GameState>()(
           baseMaintenanceCost: config.baseMaintenanceCost,
           upgradeCosts: config.upgradeCosts,
           elderBonus: 0,
-          discipleCapacity: config.discipleCapacity,
+          discipleCapacity: initialCapacity,
           assignedDisciples: [],
           managerId: null,
           description: config.description,
@@ -903,7 +1275,6 @@ export const useGameStore = create<GameState>()(
 
         set(state => ({
           spiritStones: state.spiritStones - buildCost.spiritStones,
-          reputation: buildCost.reputation ? state.reputation - buildCost.reputation : state.reputation,
           buildings: [...state.buildings, newBuilding],
         }));
 
@@ -933,10 +1304,10 @@ export const useGameStore = create<GameState>()(
         
         // 境界检查
         const tierRealmMap: Record<string, string> = {
+          qi: 'qi',
           foundation: 'foundation',
           golden: 'golden',
           nascent: 'nascent',
-          spirit: 'spirit',
         };
         const requiredRealm = tierRealmMap[book.tier];
         if (!requiredRealm) return false;
@@ -1197,6 +1568,14 @@ export const useGameStore = create<GameState>()(
           }
         }
         
+        // 长老数量检查
+        if (req.elderCount) {
+          const elderCount = state.disciples.filter(d => d.status === 'elder').length;
+          if (elderCount < req.elderCount) {
+            reasons.push(`长老数量不足（${elderCount}/${req.elderCount}）`);
+          }
+        }
+        
         // 晋升消耗检查
         if (state.spiritStones < req.promotionCost) {
           reasons.push(`晋升消耗不足（${Math.floor(state.spiritStones)}/${req.promotionCost}灵石）`);
@@ -1237,19 +1616,215 @@ export const useGameStore = create<GameState>()(
         
         return true;
       },
+
+      refreshOtherSects: () => {
+        const state = get();
+        const newSects = generateOtherSects(8, state.sectLevel);
+        set({ otherSects: newSects });
+      },
+
+      toggleFollowDisciple: (discipleId: string) => {
+        const state = get();
+        const exists = state.followedDiscipleIds.includes(discipleId);
+        const newList = exists
+          ? state.followedDiscipleIds.filter(id => id !== discipleId)
+          : [...state.followedDiscipleIds, discipleId];
+        set({ followedDiscipleIds: newList });
+      },
+
+      updateSectTournamentFreqConfig: (frequency, partial) => {
+        const state = get();
+        const freqConfig = { ...state.sectTournamentConfig[frequency], ...partial };
+        set({
+          sectTournamentConfig: {
+            ...state.sectTournamentConfig,
+            [frequency]: freqConfig,
+          },
+        });
+      },
+
+      updateInterSectTournamentFreqConfig: (frequency, partial) => {
+        const state = get();
+        const freqConfig = { ...state.interSectTournamentConfig[frequency], ...partial };
+        set({
+          interSectTournamentConfig: {
+            ...state.interSectTournamentConfig,
+            [frequency]: freqConfig,
+          },
+        });
+      },
+
+      triggerSectTournament: (frequency) => {
+        const state = get();
+        const freqConfig = state.sectTournamentConfig[frequency];
+        const result = runTournament({
+          scope: 'sect',
+          frequency,
+          config: freqConfig,
+          disciples: state.disciples,
+          otherSects: state.otherSects,
+          date: { year: state.year, month: state.month },
+        });
+
+        const { newSpiritStones, newReputation, newPillInventory, newDisciples } =
+          applyTournamentRewards(state, result, freqConfig);
+
+        const freqName = frequency === 'yearly' ? '年度' : frequency === 'every5years' ? '五年' : '十年';
+        const notif = createNotification(
+          result.ourRank > 0 ? 'success' : 'info',
+          `山门${freqName}大比`,
+          result.ourRank === 1
+            ? `${result.ourChampionName} 夺得山门${freqName}大比冠军！${result.rewardSummary.join('、')}`
+            : result.ourRank > 0
+              ? `山门${freqName}大比结束，本宗弟子获得第${result.ourRank}名。${result.rewardSummary.join('、')}`
+              : `山门${freqName}大比结束，本宗弟子未入三甲。`,
+          { year: state.year, month: state.month },
+        );
+
+        set({
+          lastSectTournamentResults: {
+            ...state.lastSectTournamentResults,
+            [frequency]: result,
+          },
+          lastSectTournamentYears: {
+            ...state.lastSectTournamentYears,
+            [frequency]: state.year,
+          },
+          spiritStones: newSpiritStones,
+          reputation: newReputation,
+          pillInventory: newPillInventory,
+          disciples: newDisciples,
+          notifications: [notif, ...state.notifications].slice(0, 50),
+        });
+      },
+
+      triggerInterSectTournament: (frequency) => {
+        const state = get();
+        const freqConfig = state.interSectTournamentConfig[frequency];
+        const result = runTournament({
+          scope: 'inter-sect',
+          frequency,
+          config: freqConfig,
+          disciples: state.disciples,
+          otherSects: state.otherSects,
+          date: { year: state.year, month: state.month },
+        });
+
+        const { newSpiritStones, newReputation, newPillInventory, newDisciples } =
+          applyTournamentRewards(state, result, freqConfig);
+
+        const freqName = frequency === 'yearly' ? '年度' : frequency === 'every5years' ? '五年' : '十年';
+        const notif = createNotification(
+          result.ourRank > 0 ? 'success' : 'info',
+          `宗门${freqName}大比`,
+          result.ourRank === 1
+            ? `${result.ourChampionName} 夺得宗门${freqName}大比冠军，扬名天下！${result.rewardSummary.join('、')}`
+            : result.ourRank > 0
+              ? `宗门${freqName}大比结束，本宗弟子获得第${result.ourRank}名。${result.rewardSummary.join('、')}`
+              : `宗门${freqName}大比结束，本宗弟子未入三甲，须勤加修炼。`,
+          { year: state.year, month: state.month },
+        );
+
+        set({
+          lastInterSectTournamentResults: {
+            ...state.lastInterSectTournamentResults,
+            [frequency]: result,
+          },
+          lastInterSectTournamentYears: {
+            ...state.lastInterSectTournamentYears,
+            [frequency]: state.year,
+          },
+          spiritStones: newSpiritStones,
+          reputation: newReputation,
+          pillInventory: newPillInventory,
+          disciples: newDisciples,
+          notifications: [notif, ...state.notifications].slice(0, 50),
+        });
+      },
+
+      // ===== 宗门互动系统 =====
+      changeSectFavorability: (sectId, delta) => {
+        const state = get();
+        const newSects = state.otherSects.map(sect => {
+          if (sect.id !== sectId) return sect;
+          const newFav = Math.max(0, Math.min(100, (sect.favorability ?? 50) + delta));
+          return { ...sect, favorability: newFav };
+        });
+        set({ otherSects: newSects });
+      },
+
+      setSectDiplomaticStatus: (sectId, status) => {
+        const state = get();
+        const newSects = state.otherSects.map(sect =>
+          sect.id === sectId ? { ...sect, diplomaticStatus: status } : sect,
+        );
+        set({ otherSects: newSects });
+      },
+
+      toggleSectTrade: (sectId) => {
+        const state = get();
+        const sect = state.otherSects.find(s => s.id === sectId);
+        if (!sect) return false;
+        // 开启交易需消耗灵石
+        if (!sect.tradeActive) {
+          const cost = 50;
+          if (state.spiritStones < cost) return false;
+          const newSects = state.otherSects.map(s =>
+            s.id === sectId ? { ...s, tradeActive: true } : s,
+          );
+          set({ otherSects: newSects, spiritStones: state.spiritStones - cost });
+          return true;
+        } else {
+          // 关闭交易，获得收益
+          const income = Math.floor(sect.combatPower * 0.01) + 20;
+          const newSects = state.otherSects.map(s =>
+            s.id === sectId ? { ...s, tradeActive: false } : s,
+          );
+          set({
+            otherSects: newSects,
+            spiritStones: state.spiritStones + income,
+            reputation: state.reputation + 2,
+          });
+          return true;
+        }
+      },
+
+      // ===== 存档槽系统 =====
+      saveToSlot: (slotIndex: number) => {
+        const state = get();
+        saveToSlotUtil(slotIndex, state as any);
+      },
+      loadFromSlot: (slotIndex: number) => {
+        const snapshot = loadFromSlotUtil(slotIndex);
+        if (!snapshot) return false;
+        // 读取快照后替换全部 state，保留 action 函数（set 会合并）
+        set({ ...snapshot, showMainMenu: false, gameStarted: true });
+        return true;
+      },
     }),
     {
       name: 'sect-game-save',
+      version: 7,
       migrate: (persistedState: any, version) => {
         if (!persistedState) return persistedState;
         const state = persistedState as GameState;
+        // v7: 新增 sectName 字段，旧存档默认为「修仙宗门」
+        if (!state.sectName) {
+          state.sectName = '修仙宗门';
+        }
+        // v7: 新增 sectContribution 字段，旧存档默认 0
+        if (state.sectContribution === undefined) {
+          state.sectContribution = 0;
+        }
         if (state.buildings) {
+          // 有效建筑类型（杂役居所已移除，旧存档中的杂役居所会被过滤）
           const validTypes = new Set([
             'mountain_gate', 'lecture_hall', 'servant_hall',
             'pill_hall', 'sutra_hall', 'artifact_hall',
             'secret_library', 'array_hall', 'spirit_beast_garden',
             'guardian_array', 'skyscraper_tower',
-            'residence', 'cave_mansion'
+            'outer_residence', 'inner_residence', 'core_residence',
+            'cave_mansion'
           ]);
           const removedIds = new Set(
             state.buildings
@@ -1260,11 +1835,116 @@ export const useGameStore = create<GameState>()(
           if (state.disciples && removedIds.size > 0) {
             state.disciples = state.disciples.map((d: any) => ({
               ...d,
-              assignedBuilding: d.assignedBuilding && removedIds.has(d.assignedBuilding) 
-                ? null 
+              assignedBuilding: d.assignedBuilding && removedIds.has(d.assignedBuilding)
+                ? null
                 : d.assignedBuilding
             }));
           }
+
+          // 修复弟子建筑分配
+          if (state.disciples && version < 3) {
+            state.buildings = state.buildings.map((b: any) => ({
+              ...b,
+              assignedDisciples: [],
+            }));
+            state.disciples.forEach((disciple: any) => {
+              if (disciple.status !== 'elder' && disciple.status !== 'mortal') {
+                const workResult = autoAssignBuilding(disciple, state.buildings);
+                state.buildings = workResult.newBuildings;
+                disciple.assignedBuilding = workResult.buildingId;
+              }
+              const residenceResult = autoAssignResidence(disciple, state.buildings);
+              state.buildings = residenceResult.newBuildings;
+            });
+          }
+        }
+        // 补齐 otherSects（旧存档没有此字段）
+        if (!state.otherSects || state.otherSects.length === 0) {
+          state.otherSects = generateOtherSects(8, state.sectLevel || 'founding');
+        }
+        // 关注弟子列表
+        if (!state.followedDiscipleIds) {
+          state.followedDiscipleIds = [];
+        }
+        // 大比配置迁移：旧版单配置 -> 新版三频率独立配置（version < 4）
+        const defaultSectCfg = getDefaultTournamentConfig('sect');
+        const defaultInterCfg = getDefaultTournamentConfig('inter-sect');
+        const oldSect: any = state.sectTournamentConfig;
+        const oldInter: any = state.interSectTournamentConfig;
+        if (!oldSect || typeof oldSect.yearly === 'undefined') {
+          // 旧格式或不存在：若旧配置有频率字段，则保留到对应频率槽位；其余用默认
+          if (oldSect && oldSect.frequency && typeof oldSect.division === 'object') {
+            const freqKey: TournamentFrequency = oldSect.frequency;
+            state.sectTournamentConfig = {
+              ...defaultSectCfg,
+              [freqKey]: {
+                enabled: !!oldSect.enabled,
+                division: oldSect.division,
+                rewards: oldSect.rewards || defaultSectCfg[freqKey].rewards,
+              },
+            };
+          } else {
+            state.sectTournamentConfig = defaultSectCfg;
+          }
+        }
+        if (!oldInter || typeof oldInter.yearly === 'undefined') {
+          if (oldInter && oldInter.frequency && typeof oldInter.division === 'object') {
+            const freqKey: TournamentFrequency = oldInter.frequency;
+            state.interSectTournamentConfig = {
+              ...defaultInterCfg,
+              [freqKey]: {
+                enabled: !!oldInter.enabled,
+                division: oldInter.division,
+                rewards: oldInter.rewards || defaultInterCfg[freqKey].rewards,
+              },
+            };
+          } else {
+            state.interSectTournamentConfig = defaultInterCfg;
+          }
+        }
+        // 大比结果和年份迁移
+        const FREQS: TournamentFrequency[] = ['yearly', 'every5years', 'every10years'];
+        if (!state.lastSectTournamentResults || typeof state.lastSectTournamentResults === 'object' && FREQS.every(f => !((state.lastSectTournamentResults as any)[f] !== undefined))) {
+          state.lastSectTournamentResults = { yearly: null, every5years: null, every10years: null };
+          // 旧的单一结果尽量塞到 yearly 槽
+          if ((state as any).lastSectTournamentResult) {
+            state.lastSectTournamentResults.yearly = (state as any).lastSectTournamentResult as any;
+            delete (state as any).lastSectTournamentResult;
+          }
+        }
+        if (!state.lastInterSectTournamentResults || typeof state.lastInterSectTournamentResults === 'object' && FREQS.every(f => !((state.lastInterSectTournamentResults as any)[f] !== undefined))) {
+          state.lastInterSectTournamentResults = { yearly: null, every5years: null, every10years: null };
+          if ((state as any).lastInterSectTournamentResult) {
+            state.lastInterSectTournamentResults.yearly = (state as any).lastInterSectTournamentResult as any;
+            delete (state as any).lastInterSectTournamentResult;
+          }
+        }
+        if (!state.lastSectTournamentYears || typeof (state.lastSectTournamentYears as any).yearly === 'undefined') {
+          const oldYear = typeof (state as any).lastSectTournamentYear === 'number' ? (state as any).lastSectTournamentYear : 0;
+          state.lastSectTournamentYears = { yearly: oldYear, every5years: oldYear, every10years: oldYear };
+          delete (state as any).lastSectTournamentYear;
+        }
+        if (!state.lastInterSectTournamentYears || typeof (state.lastInterSectTournamentYears as any).yearly === 'undefined') {
+          const oldYear = typeof (state as any).lastInterSectTournamentYear === 'number' ? (state as any).lastInterSectTournamentYear : 0;
+          state.lastInterSectTournamentYears = { yearly: oldYear, every5years: oldYear, every10years: oldYear };
+          delete (state as any).lastInterSectTournamentYear;
+        }
+        // version 5: 补齐弟子的师承/好友/大比历史字段；补齐其他宗门的好感度/外交/交易字段
+        if (state.disciples) {
+          state.disciples = state.disciples.map((d: any) => ({
+            ...d,
+            master: d.master ?? null,
+            friends: d.friends ?? [],
+            tournamentHistory: d.tournamentHistory ?? [],
+          }));
+        }
+        if (state.otherSects) {
+          state.otherSects = state.otherSects.map((s: any) => ({
+            ...s,
+            favorability: s.favorability ?? 50,
+            diplomaticStatus: s.diplomaticStatus ?? 'neutral',
+            tradeActive: s.tradeActive ?? false,
+          }));
         }
         return state;
       },
