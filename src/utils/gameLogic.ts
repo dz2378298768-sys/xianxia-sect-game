@@ -10,6 +10,9 @@ import { generateTalentDisplay, calculateLifespan, calculateCultivationSpeed, ge
 import { canLearnBook } from '@/utils/bookGenerator';
 import type { MonthlyReport, GameDate, Notification } from '@/types/game';
 import { computeBuildingOutput, computeMaintenance, recomputeCultivationSpeed, computeMonthlyContribution } from '@/domain/balance';
+import { ARTIFACT_CONFIGS } from '@/data/artifacts';
+import { TALISMAN_CONFIGS } from '@/data/talismans';
+import { BEAST_CONFIGS } from '@/data/beasts';
 
 export function autoAssignBuilding(disciple: Disciple, buildings: Building[]): { buildingId: string | null; newBuildings: Building[] } {
   const statusOrder: DiscipleStatus[] = ['mortal', 'servant', 'outer', 'inner', 'core', 'elder'];
@@ -935,8 +938,24 @@ export function calculateDiscipleCombatPower(disciple: Disciple): number {
   }
   
   const totalBookBonus = secretBonus + techniqueBonus + battleBonus;
-  
-  return Math.floor(basePower * (1 + totalBookBonus / 100));
+
+  // 装备加成
+  let equipmentBonus = 0;
+  if (disciple.equippedArtifact) {
+    const cfg = ARTIFACT_CONFIGS[disciple.equippedArtifact];
+    if (cfg?.combatPowerBonus) equipmentBonus += cfg.combatPowerBonus;
+  }
+  if (disciple.equippedTalisman) {
+    const cfg = TALISMAN_CONFIGS[disciple.equippedTalisman];
+    // 符箓 defenseBonus 转化为战力：每 1 防御 = 0.5 战力
+    if (cfg?.defenseBonus) equipmentBonus += cfg.defenseBonus * 0.5;
+  }
+  if (disciple.equippedBeast) {
+    const cfg = BEAST_CONFIGS[disciple.equippedBeast];
+    if (cfg?.combatPowerBonus) equipmentBonus += cfg.combatPowerBonus;
+  }
+
+  return Math.floor(basePower * (1 + totalBookBonus / 100) + equipmentBonus);
 }
 
 // 计算宗门总战力
