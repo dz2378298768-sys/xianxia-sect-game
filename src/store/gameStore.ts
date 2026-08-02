@@ -425,7 +425,7 @@ export const useGameStore = create<GameState>()(
       nextMonth: () => {
         const state = get();
         let { year, month, spiritStones, reputation, herbInventory } = state;
-        const { disciples, buildings, promotionRules, pillInventory, libraryBooks } = state;
+        const { disciples, buildings, promotionRules, pillInventory, libraryBooks, libraryCosts } = state;
         
         const spiritStoneIncome: { source: string; amount: number }[] = [];
         const spiritStoneExpense: { source: string; amount: number }[] = [];
@@ -610,7 +610,48 @@ export const useGameStore = create<GameState>()(
           
           // 处理每月学习进度
           d2 = processMonthlyLearning(d2);
-          
+
+          // AI 行为：贡献足够时优先自动学习功法（未在学习中且有贡献）
+          if (!d2.learningBook && d2.contributionPoints > 0) {
+            const learnableBooks = libraryBooks.filter(book => {
+              if (book.type !== 'technique') return false;
+              // 境界要求：tier 即藏经阁层级，弟子境界需不低于该层级
+              const reqIdx = RealmOrder.indexOf(book.tier as any);
+              const curIdx = RealmOrder.indexOf(d2.realm);
+              if (curIdx < reqIdx) return false;
+              // 灵根匹配
+              if (!canLearnBook(d2.hiddenTalents.spiritRoots || [], book)) return false;
+              // 贡献足够
+              const cost = libraryCosts[book.tier] || 0;
+              if (d2.contributionPoints < cost) return false;
+              // 已学功法不重复
+              if (d2.learnedTechnique && d2.learnedTechnique.bookId === book.id) return false;
+              return true;
+            });
+            if (learnableBooks.length > 0) {
+              // 选 cultivationBonus 最高的
+              const best = learnableBooks.sort((a, b) => (b.cultivationBonus || 0) - (a.cultivationBonus || 0))[0];
+              const cost = libraryCosts[best.tier] || 0;
+              d2 = {
+                ...d2,
+                contributionPoints: d2.contributionPoints - cost,
+                learningBook: {
+                  bookId: best.id,
+                  name: best.name,
+                  type: 'technique',
+                  tier: best.tier,
+                  attribute: best.attribute,
+                  cultivationBonus: best.cultivationBonus,
+                  combatBonus: best.combatBonus,
+                  progress: 0,
+                  totalDays: best.learnDays,
+                  isLearned: false,
+                },
+                isLearningSecret: true,
+              };
+            }
+          }
+
           const building = buildings.find(b => b.assignedDisciples.includes(d2.id));
           // 贡献点按身份发放，不依赖建筑分配
           const workContribution = processMonthlyWork(d2, building || null);
