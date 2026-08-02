@@ -52,12 +52,14 @@ export type BuildingCategory = 'service' | 'production' | 'special';
 export interface BuildingOutput {
   spiritStones?: number;
   contribution?: number;
-  herbs?: number;
+  herbs?: number;       // 灵草（丹堂原料）
+  iron?: number;        // 灵铁（炼器堂原料）
+  paper?: number;       // 符纸（符堂原料）
   reputation?: number;
-  pills?: number;      // 丹药产出
+  pills?: number;       // 丹药产出
   artifacts?: number;   // 法器产出
-  talismans?: number;  // 符箓产出
-  beasts?: number;     // 灵兽产出（灵兽原专属）
+  talismans?: number;   // 符箓产出
+  beasts?: number;      // 灵兽产出（灵兽原专属）
 }
 
 export interface BuildingUpgradeCost {
@@ -120,4 +122,11 @@ export interface Building {
     buildings?: { type: BuildingType; level: number }[];
   };
   discipleEffect?: BuildingDiscipleEffect;
+  // 生产目标：玩家可调整工作建筑生产哪种成品
+  // 丹堂→PillType，炼器堂→ArtifactType，符堂→TalismanType
+  productionTarget?: {
+    pillType?: import('@/types/pill').PillType;
+    artifactType?: import('@/types/artifact').ArtifactType;
+    talismanType?: import('@/types/talisman').TalismanType;
+  };
 }
