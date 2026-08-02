@@ -561,6 +561,8 @@ export interface OutputBreakdown {
 export function calculateBuildingOutput(building: Building, disciples: Disciple[]): {
   spiritStones: number;
   herbs: number;
+  iron: number;
+  paper: number;
   reputation: number;
   pills: number;
   artifacts: number;

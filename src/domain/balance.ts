@@ -24,6 +24,8 @@ export interface BuildingOutputInput {
   baseOutput: {
     spiritStones?: number;
     herbs?: number;
+    iron?: number;
+    paper?: number;
     reputation?: number;
     pills?: number;
     artifacts?: number;
@@ -35,6 +37,8 @@ export interface BuildingOutputInput {
 export interface BuildingOutputResult {
   spiritStones: number;
   herbs: number;
+  iron: number;
+  paper: number;
   reputation: number;
   pills: number;
   artifacts: number;
@@ -93,7 +97,7 @@ export function computeBuildingOutput(
   disciples: Disciple[],
 ): BuildingOutputResult {
   if (building.status !== 'active') {
-    return { spiritStones: 0, herbs: 0, reputation: 0, pills: 0, artifacts: 0, talismans: 0, beasts: 0, breakdown: ZERO_BREAKDOWN };
+    return { spiritStones: 0, herbs: 0, iron: 0, paper: 0, reputation: 0, pills: 0, artifacts: 0, talismans: 0, beasts: 0, breakdown: ZERO_BREAKDOWN };
   }
 
   const levelMultiplier = 1 + (building.level - 1) * 0.5;
@@ -147,6 +151,8 @@ export function computeBuildingOutput(
   return {
     spiritStones: mul(building.baseOutput.spiritStones),
     herbs: mul(building.baseOutput.herbs),
+    iron: mul(building.baseOutput.iron),
+    paper: mul(building.baseOutput.paper),
     reputation: (building.baseOutput.reputation || 0) > 0 ? mul(building.baseOutput.reputation) : 0,
     pills: mul(building.baseOutput.pills),
     artifacts: mul(building.baseOutput.artifacts),
