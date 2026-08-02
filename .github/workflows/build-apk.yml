@@ -28,7 +28,9 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-          cache: gradle
+
+      - name: 配置 Gradle（缓存发行版与依赖，避免重复下载）
+        uses: gradle/actions/setup-gradle@v4
 
       - name: 安装 Android SDK（compileSdk 36）
         uses: android-actions/setup-android@v3
