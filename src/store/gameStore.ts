@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 import type { Disciple, PromotionRules } from '@/types/disciple';
 import { DiscipleStatusNames, RealmNames, RealmOrder } from '@/types/disciple';
 import type { Building, BuildingType } from '@/types/building';
+import { RESIDENCE_TYPES } from '@/types/building';
 import { BUILDING_CONFIGS } from '@/data/buildings';
 import type { BookConfig, BookTier } from '@/data/buildings';
 import { generateInitialLibraryBooks, generateRandomBook, getBookPrice, canLearnBook } from '@/utils/bookGenerator';
@@ -1065,7 +1066,7 @@ export const useGameStore = create<GameState>()(
 
         // 统一使用配置中的升级费用
         let upgradeCost;
-        const isResidence = ['outer_residence', 'inner_residence', 'core_residence'].includes(building.type);
+        const isResidence = RESIDENCE_TYPES.includes(building.type);
         if (isResidence) {
           upgradeCost = getResidenceUpgradeCost(building);
           if (!upgradeCost) return false;
@@ -1074,7 +1075,12 @@ export const useGameStore = create<GameState>()(
           if (!upgradeCost) return false;
         }
 
+        // 三类资源校验
         if (state.spiritStones < upgradeCost.spiritStones) return false;
+        const needContribution = upgradeCost.contribution ?? 0;
+        if (state.sectContribution < needContribution) return false;
+        const needReputation = upgradeCost.reputation ?? 0;
+        if (state.reputation < needReputation) return false;
 
         // 计算升级后的新容量
         const newLevel = building.level + 1;
@@ -1091,6 +1097,8 @@ export const useGameStore = create<GameState>()(
 
         set(state => ({
           spiritStones: state.spiritStones - upgradeCost.spiritStones,
+          sectContribution: state.sectContribution - needContribution,
+          reputation: state.reputation - needReputation,
           buildings: state.buildings.map(b =>
             b.id === buildingId
               ? { ...b, level: newLevel, discipleCapacity: newCapacity, baseMaintenanceCost: newMaintenanceCost }
