@@ -4,8 +4,9 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
+import { SimpleAvatar, DiscipleAvatar } from '@/components/ui/Avatar';
 import { BuildingTypeNames } from '@/types/building';
-import { DiscipleStatusNames, RealmNames } from '@/types/disciple';
+import { DiscipleStatusNames, RealmNames, RealmOrder } from '@/types/disciple';
 import type { DiscipleStatus } from '@/types/disciple';
 import { 
   Users, Building2, Sparkles, TrendingUp, 
@@ -74,9 +75,10 @@ export const AllocationPanel: React.FC = () => {
     disciples.filter(d => !d.assignedBuilding && d.status !== 'servant'), 
   [disciples]);
   
-  const eligibleManagers = useMemo(() => 
-    disciples.filter(d => ['inner', 'core', 'elder'].includes(d.status)), 
-  [disciples]);
+  const eligibleManagers = useMemo(() => {
+    const goldenIndex = RealmOrder.indexOf('golden');
+    return disciples.filter(d => RealmOrder.indexOf(d.realm) >= goldenIndex);
+  }, [disciples]);
   
   const handleAutoAssign = () => {
     const unassigned = disciples.filter(d => 
@@ -242,15 +244,7 @@ export const AllocationPanel: React.FC = () => {
                 onClick={() => setSelectedDisciple(disciple.id)}
               >
                 <div className="flex items-start gap-3">
-                  <div 
-                    className="w-10 h-10 rounded-full flex items-center justify-center border-2 border-sect-gold/30"
-                    style={{
-                      backgroundColor: `hsl(${(disciple.avatarSeed * 137.5) % 360}, 30%, 25%)`,
-                      color: `hsl(${(disciple.avatarSeed * 137.5) % 360}, 60%, 70%)`,
-                    }}
-                  >
-                    {disciple.name.charAt(0)}
-                  </div>
+                  <SimpleAvatar seed={disciple.avatarSeed} size={40} status={disciple.status} realm={disciple.realm} name={disciple.name} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-display text-sect-jade truncate">
@@ -360,15 +354,7 @@ export const AllocationPanel: React.FC = () => {
                         }}
                       >
                         <div className="flex items-center gap-3">
-                          <div 
-                            className="w-10 h-10 rounded-full flex items-center justify-center border-2 border-sect-gold/30"
-                            style={{
-                              backgroundColor: `hsl(${(disciple.avatarSeed * 137.5) % 360}, 30%, 25%)`,
-                              color: `hsl(${(disciple.avatarSeed * 137.5) % 360}, 60%, 70%)`,
-                            }}
-                          >
-                            {disciple.name.charAt(0)}
-                          </div>
+                          <SimpleAvatar seed={disciple.avatarSeed} size={40} status={disciple.status} realm={disciple.realm} name={disciple.name} />
                           <div>
                             <div className="font-display text-sect-jade text-sm">
                               {disciple.name}
@@ -454,15 +440,7 @@ export const AllocationPanel: React.FC = () => {
                         onClick={() => handleSetManager(selectedBuildingForManagerData.id, disciple.id)}
                       >
                         <div className="flex items-center gap-3">
-                          <div 
-                            className="w-10 h-10 rounded-full flex items-center justify-center border-2 border-sect-gold/30"
-                            style={{
-                              backgroundColor: `hsl(${(disciple.avatarSeed * 137.5) % 360}, 30%, 25%)`,
-                              color: `hsl(${(disciple.avatarSeed * 137.5) % 360}, 60%, 70%)`,
-                            }}
-                          >
-                            {disciple.name.charAt(0)}
-                          </div>
+                          <SimpleAvatar seed={disciple.avatarSeed} size={40} status={disciple.status} realm={disciple.realm} name={disciple.name} />
                           <div>
                             <div className="flex items-center gap-2">
                               <span className="font-display text-sect-jade">
@@ -525,15 +503,7 @@ export const AllocationPanel: React.FC = () => {
         {selectedDiscipleData && (
           <div className="space-y-4">
             <div className="flex items-center gap-3 p-3 rounded-lg bg-sect-ink-light/30">
-              <div 
-                className="w-12 h-12 rounded-full flex items-center justify-center border-2 border-sect-gold/30"
-                style={{
-                  backgroundColor: `hsl(${(selectedDiscipleData.avatarSeed * 137.5) % 360}, 30%, 25%)`,
-                  color: `hsl(${(selectedDiscipleData.avatarSeed * 137.5) % 360}, 60%, 70%)`,
-                }}
-              >
-                {selectedDiscipleData.name.charAt(0)}
-              </div>
+              <DiscipleAvatar seed={selectedDiscipleData.avatarSeed} size={48} status={selectedDiscipleData.status} realm={selectedDiscipleData.realm} name={selectedDiscipleData.name} />
               <div>
                 <div className="font-display text-sect-gold">
                   {selectedDiscipleData.name}
@@ -593,7 +563,7 @@ export const AllocationPanel: React.FC = () => {
                                   准入：{DiscipleStatusDisplayNames[building.minDiscipleStatus]}及以上
                                 </span>
                               )}
-                              {['inner', 'core', 'elder'].includes(selectedDiscipleData.status) && (
+                              {RealmOrder.indexOf(selectedDiscipleData.realm) >= RealmOrder.indexOf('golden') && (
                                 <span className="text-sect-gold/70">可担任管理者</span>
                               )}
                             </div>

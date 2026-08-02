@@ -4,6 +4,7 @@ import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { Crown, Users, Building2, Star, Award, X } from 'lucide-react';
+import { RESIDENCE_TYPES } from '@/types/building';
 
 export const EldersPanel: React.FC = () => {
   const { disciples, buildings } = useGameStore();
@@ -14,7 +15,6 @@ export const EldersPanel: React.FC = () => {
     d.status === 'core' && d.contributionPoints >= 1000
   );
   
-  const RESIDENCE_TYPES = ['servant_residence', 'outer_residence', 'inner_residence', 'core_residence'];
   const vacantBuildings = buildings.filter(b => 
     b.status === 'active' && 
     !b.managerId && 

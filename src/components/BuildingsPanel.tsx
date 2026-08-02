@@ -6,19 +6,45 @@ import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Modal } from '@/components/ui/Modal';
-import { 
-  Building2, Wrench, Users, ArrowUp, Power, 
+import {
+  Building2, Wrench, Users, ArrowUp, ArrowDown, Power,
   Lock, Gem, Star, DoorOpen, Heart, Sparkles,
   TrendingUp, Plus, Shield, BookOpen, FlaskConical,
-  Hammer, Scroll, Zap, TreePine, Crown, Info
+  Hammer, Scroll, Zap, TreePine, Crown, Info, X
 } from 'lucide-react';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { LibraryPanel } from '@/components/LibraryPanel';
 import { calculateBuildingMaintenance, calculateBuildingOutput, getResidenceUpgradeCost } from '@/utils/gameLogic';
-import { RealmNames, DiscipleStatusNames } from '@/types/disciple';
+import { RealmNames, RealmOrder, DiscipleStatusNames } from '@/types/disciple';
 import type { BuildingType } from '@/types/building';
+import { RESIDENCE_TYPES, RESIDENCE_TYPES_WITH_CAVE, isResidenceType } from '@/types/building';
 import { BUILDING_CONFIGS } from '@/data/buildings';
 import { SectLevelNames } from '@/types/game';
+import { SectIcon } from '@/components/icons/SectIcons';
+import { SimpleAvatar } from '@/components/ui/Avatar';
+import { getBuildingImage } from '@/data/buildingImages';
+import { BUILDING_CONTRIBUTION_BONUS } from '@/domain/balance';
+
+/** 建筑圆形缩略图：优先用生成的水墨建筑图，无图则回退图标 */
+const BuildingThumb: React.FC<{ type: string; size?: number; locked?: boolean; className?: string }> = ({
+  type, size = 48, locked = false, className = '',
+}) => {
+  const img = getBuildingImage(type);
+  return (
+    <div
+      className={`building-thumb shrink-0 ${locked ? 'building-thumb-locked' : ''} ${className}`}
+      style={{ width: size, height: size }}
+    >
+      {img ? (
+        <img src={img} alt="" className="building-thumb-img" />
+      ) : (
+        <span className={`text-sect-gold flex items-center justify-center w-full h-full`}>
+          {getBuildingIcon(type)}
+        </span>
+      )}
+    </div>
+  );
+};
 
 const DiscipleStatusDisplayNames: Record<string, string> = {
   servant: '杂役',
@@ -64,13 +90,16 @@ function getBuildingIcon(type: string) {
 }
 
 export const BuildingsPanel: React.FC = () => {
-  const { 
+  const {
     buildings, disciples, spiritStones, reputation, sectLevel,
-    upgradeBuilding, toggleBuilding, buildBuilding 
+    upgradeBuilding, downgradeBuilding, toggleBuilding, buildBuilding, setBuildingManager
   } = useGameStore();
   const { selectedBuildingId, setSelectedBuildingId } = useUIStore();
   const [showBuildModal, setShowBuildModal] = useState(false);
   const [buildError, setBuildError] = useState<string | null>(null);
+  const [showVacant, setShowVacant] = useState(false);
+  const [showManagerPicker, setShowManagerPicker] = useState(false);
+  const [expandedBuildingId, setExpandedBuildingId] = useState<string | null>(null);
 
   // 显示错误提示
   const showError = (message: string) => {
@@ -83,37 +112,34 @@ export const BuildingsPanel: React.FC = () => {
   };
   
   const canUpgrade = (building: any) => {
-    const isResidence = ['servant_residence', 'outer_residence', 'inner_residence', 'core_residence'].includes(building.type);
+    if (building.level >= building.maxLevel) return false;
 
-    if (!isResidence && building.level >= building.maxLevel) return false;
+    const isResidence = RESIDENCE_TYPES.includes(building.type);
 
     let cost;
     if (isResidence) {
       cost = getResidenceUpgradeCost(building);
       if (!cost) return false;
     } else {
-      cost = building.upgradeCosts[building.level];
+      cost = building.upgradeCosts[building.level - 1];
       if (!cost) return false;
     }
 
     if (spiritStones < cost.spiritStones) return false;
-    if (cost.reputation && reputation < cost.reputation) return false;
     return true;
   };
 
   const getUpgradeCost = (building: any) => {
-    const isResidence = ['servant_residence', 'outer_residence', 'inner_residence', 'core_residence'].includes(building.type);
+    if (building.level >= building.maxLevel) return null;
+    const isResidence = RESIDENCE_TYPES.includes(building.type);
     if (isResidence) {
       return getResidenceUpgradeCost(building);
     }
-    if (building.level < building.maxLevel) {
-      return building.upgradeCosts[building.level];
-    }
-    return null;
+    return building.upgradeCosts[building.level - 1] || null;
   };
 
   const isResidenceBuilding = (type: string) => {
-    return ['servant_residence', 'outer_residence', 'inner_residence', 'core_residence'].includes(type);
+    return isResidenceType(type);
   };
   
   const canBuild = (type: BuildingType) => {
@@ -180,6 +206,15 @@ export const BuildingsPanel: React.FC = () => {
   };
   
   const activeBuildings = buildings.filter(b => b.status === 'active');
+
+  // 空缺堂口：活跃、无管理者、有容量、非居所类建筑（居所无需长老管理）
+  const RESIDENCE_TYPES_FOR_VACANT = RESIDENCE_TYPES_WITH_CAVE;
+  const vacantBuildings = buildings.filter(b =>
+    b.status === 'active' &&
+    !b.managerId &&
+    b.discipleCapacity > 0 &&
+    !RESIDENCE_TYPES_FOR_VACANT.includes(b.type)
+  );
   
   const allBuildingsToShow = useMemo(() => {
     return Object.keys(BUILDING_CONFIGS).filter(type =>
@@ -280,493 +315,345 @@ export const BuildingsPanel: React.FC = () => {
             已启用 {activeBuildings.length} / 共 {buildings.length} 座建筑
           </p>
         </div>
-        <Button 
-          variant="gold" 
+        <Button
+          variant="gold"
           onClick={() => setShowBuildModal(true)}
         >
           <Plus size={18} className="mr-1.5" />
           新建建筑
         </Button>
       </div>
-      
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+
+      {/* 空缺堂口管理：列出无长老管理的堂口，点击跳转详情分配长老 */}
+      {vacantBuildings.length > 0 && (
+        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3">
+          <button
+            onClick={() => setShowVacant(!showVacant)}
+            className="w-full flex items-center justify-between cursor-pointer"
+          >
+            <div className="flex items-center gap-2 text-yellow-400">
+              <Building2 size={16} />
+              <span className="font-display">空缺堂口 · {vacantBuildings.length} 个待管理</span>
+            </div>
+            <span className="text-xs text-sect-jade/50">{showVacant ? '收起' : '展开'}</span>
+          </button>
+          {showVacant && (
+            <div className="mt-3 space-y-2">
+              <p className="text-xs text-sect-jade/50 mb-2">以下堂口暂无长老管辖，点击前往分配长老</p>
+              {vacantBuildings.map(b => (
+                <button
+                  key={b.id}
+                  onClick={() => setSelectedBuildingId(b.id)}
+                  className="w-full flex items-center justify-between p-2 rounded bg-sect-ink-light/30 hover:bg-sect-gold/10 transition-colors cursor-pointer"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-sect-gold">{getBuildingIcon(b.type)}</span>
+                    <span className="text-sm text-sect-jade">{b.name}</span>
+                  </div>
+                  <span className="text-xs text-sect-jade/50">
+                    {b.assignedDisciples.length}/{b.discipleCapacity} 弟子
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 建筑头像网格：一排6个，点击展开3个功能按钮 */}
+      <div className="building-avatar-grid">
         {buildings.map(building => {
-          const buildingDisciples = disciples.filter(d => building.assignedDisciples.includes(d.id));
-          const buildingOutput = calculateBuildingOutput(building, buildingDisciples);
-          const buildingMaintenance = calculateBuildingMaintenance(building);
-          const upgradeCost = getUpgradeCost(building);
-          const isResidence = isResidenceBuilding(building.type);
-          
           const isLocked = building.status === 'locked';
-          
+          const isClosed = building.status === 'closed';
+          const upgradeCost = getUpgradeCost(building);
+          const img = getBuildingImage(building.type);
+          const isExpanded = expandedBuildingId === building.id;
+
+          const statusClass = isLocked
+            ? 'building-avatar-status-locked'
+            : isClosed
+            ? 'building-avatar-status-closed'
+            : '';
+
           return (
-            <Card key={building.id} className={isLocked ? 'opacity-60' : ''}>
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <div className={`p-2 rounded-lg ${
-                    isLocked ? 'bg-gray-500/20' : 'bg-sect-gold/20'
-                  }`}>
-                    {isLocked 
-                      ? <Lock size={24} className="text-gray-500" /> 
-                      : <span className="text-sect-gold">{getBuildingIcon(building.type)}</span>
-                    }
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-display text-sect-jade">
-                        {building.name}
-                      </h3>
-                      <Badge 
-                        variant={building.category === 'production' ? 'herb' : building.category === 'special' ? 'pill' : 'default'} 
-                        size="sm"
-                      >
-                        {getCategoryName(building.category)}
-                      </Badge>
-                    </div>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <Badge 
-                        variant={isLocked ? 'default' : 'gold'} 
-                        size="sm"
-                      >
-                        Lv.{building.level}
-                      </Badge>
-                      {building.status === 'closed' && (
-                        <Badge variant="pill" size="sm">已关闭</Badge>
-                      )}
-                      {building.discipleEffect && building.discipleEffect.type !== 'none' && (
-                        <Badge variant="spirit" size="sm" className="animate-pulse">
-                          {building.discipleEffect.value}
-                        </Badge>
-                      )}
-                    </div>
-                  </div>
+            <div
+              key={building.id}
+              className={`building-avatar-item ${isExpanded ? 'building-avatar-item-expanded' : ''}`}
+            >
+              {/* 头像 + 等级角标 + 人数/维护费叠加层 + 名称：点击切换展开 */}
+              <div
+                className="w-full"
+                onClick={() => setExpandedBuildingId(isExpanded ? null : building.id)}
+              >
+                <div className={`building-avatar-thumb ${statusClass}`}>
+                  {img ? (
+                    <img src={img} alt={building.name} />
+                  ) : (
+                    <span className="text-sect-gold flex items-center justify-center w-full h-full">
+                      {getBuildingIcon(building.type)}
+                    </span>
+                  )}
+                  <span className="building-avatar-level">Lv.{building.level}</span>
+                  {/* 人数/满额叠加层（左下角）— 仅对非锁定建筑显示 */}
+                  {!isLocked && building.discipleCapacity > 0 && (
+                    <span className="building-avatar-count" title={`弟子 ${building.assignedDisciples.length}/${building.discipleCapacity}`}>
+                      {building.assignedDisciples.length}/{building.discipleCapacity}
+                    </span>
+                  )}
+                  {/* 维护费叠加层（右下角）— 仅对开启中建筑显示 */}
+                  {!isLocked && !isClosed && (
+                    <span className="building-avatar-maintenance" title={`月维护 ${calculateBuildingMaintenance(building)} 灵石`}>
+                      -{calculateBuildingMaintenance(building)}
+                    </span>
+                  )}
                 </div>
+                <div className="building-avatar-name">{building.name}</div>
               </div>
-              
-              <p className="text-xs text-sect-jade/60 mb-3">
-                {building.description}
-              </p>
-              
-              {!isLocked && (
-                <>
-                  <div className="space-y-2 text-sm mb-4">
-                    <div className="flex justify-between">
-                      <span className="text-sect-jade/60 flex items-center gap-1">
-                        <Users size={14} /> 弟子
-                      </span>
-                      <span className="text-sect-jade">
-                        {buildingDisciples.length} / {building.discipleCapacity}
-                      </span>
-                    </div>
-                    
-                    {building.minDiscipleStatus && (
-                      <div className="flex justify-between">
-                        <span className="text-sect-jade/60 flex items-center gap-1">
-                          <Shield size={14} /> 准入
-                        </span>
-                        <span className="text-sect-jade">
-                          {DiscipleStatusDisplayNames[building.minDiscipleStatus]}及以上
-                        </span>
-                      </div>
-                    )}
-                    
-                    {building.monthlyContributionCost && building.monthlyContributionCost > 0 && (
-                      <div className="flex justify-between">
-                        <span className="text-sect-jade/60 flex items-center gap-1">
-                          <Sparkles size={14} /> 月耗贡献
-                        </span>
-                        <span className="text-sect-herb-light">
-                          -{building.monthlyContributionCost}/弟子/月
-                        </span>
-                      </div>
-                    )}
-                    
-                    {buildingOutput.spiritStones > 0 && (
-                      <div className="flex justify-between">
-                        <span className="text-sect-jade/60 flex items-center gap-1">
-                          <Gem size={14} /> 灵石产出
-                        </span>
-                        <Tooltip content={renderBreakdownTooltip(buildingOutput.breakdown)} position="left">
-                          <span className="text-green-400 cursor-help flex items-center gap-1">
-                            +{buildingOutput.spiritStones}/月
-                            <Info size={12} className="opacity-60" />
-                          </span>
-                        </Tooltip>
-                      </div>
-                    )}
-                    
-                    {buildingOutput.herbs > 0 && (
-                      <div className="flex justify-between">
-                        <span className="text-sect-jade/60 flex items-center gap-1">
-                          <TreePine size={14} /> 灵草产出
-                        </span>
-                        <Tooltip content={renderBreakdownTooltip(buildingOutput.breakdown)} position="left">
-                          <span className="text-green-400 cursor-help flex items-center gap-1">
-                            +{buildingOutput.herbs}/月
-                            <Info size={12} className="opacity-60" />
-                          </span>
-                        </Tooltip>
-                      </div>
-                    )}
-                    
-                    {buildingOutput.reputation > 0 && (
-                      <div className="flex justify-between">
-                        <span className="text-sect-jade/60 flex items-center gap-1">
-                          <Star size={14} /> 声望产出
-                        </span>
-                        <Tooltip content={renderBreakdownTooltip(buildingOutput.breakdown)} position="left">
-                          <span className="text-green-400 cursor-help flex items-center gap-1">
-                            +{buildingOutput.reputation}/月
-                            <Info size={12} className="opacity-60" />
-                          </span>
-                        </Tooltip>
-                      </div>
-                    )}
-                    
-                    <div className="flex justify-between">
-                      <span className="text-sect-jade/60 flex items-center gap-1">
-                        <Wrench size={14} /> 维护
-                      </span>
-                      <span className="text-red-400">-{buildingMaintenance}/月</span>
-                    </div>
-                    
-                    {building.discipleEffect && building.discipleEffect.type !== 'none' && (
-                      <div className="bg-gradient-to-r from-sect-gold/10 to-transparent border border-sect-gold/30 rounded-lg p-2 -mx-1">
-                        <Tooltip content={building.discipleEffect.description} position="left">
-                          <div className="flex justify-between items-center cursor-help">
-                            <span className="text-sect-gold/80 flex items-center gap-1 font-medium text-sm">
-                              <Sparkles size={14} className="text-sect-gold" /> 
-                              {getEffectTypeName(building.discipleEffect.type)}
-                            </span>
-                            <span className="text-sect-gold font-display font-bold">
-                              {building.discipleEffect.value}
-                            </span>
-                          </div>
-                        </Tooltip>
-                      </div>
-                    )}
-                    
-                    {building.discipleCapacity > 0 && (
-                      <ProgressBar 
-                        value={buildingDisciples.length} 
-                        max={building.discipleCapacity} 
-                        color="herb"
-                        size="sm"
-                      />
-                    )}
-                  </div>
-                  
-                  <div className="flex gap-2">
-                    {upgradeCost && (
-                      <Button
-                        variant="gold"
-                        size="sm"
-                        className="flex-1"
-                        onClick={() => handleUpgrade(building.id)}
-                        disabled={!canUpgrade(building)}
-                      >
-                        <ArrowUp size={14} className="mr-1" />
-                        升级
-                      </Button>
-                    )}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setSelectedBuildingId(building.id)}
-                    >
-                      <DoorOpen size={14} className="mr-1" />
-                      进入
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => toggleBuilding(building.id)}
-                    >
-                      <Power size={14} />
-                    </Button>
-                  </div>
-                  
-                  {upgradeCost && (
-                    <div className="mt-2 text-xs text-sect-jade/50 flex items-center gap-3">
-                      <span className="flex items-center gap-1">
-                        <Gem size={12} /> {upgradeCost.spiritStones}
-                      </span>
-                      {upgradeCost.reputation > 0 && (
-                        <span className="flex items-center gap-1">
-                          <Star size={12} /> {upgradeCost.reputation}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </>
-              )}
-              
-              {isLocked && building.unlockRequirement && (
-                <div className="text-xs text-sect-jade/50">
-                  解锁条件：
-                  {building.unlockRequirement.sectLevel && (
-                    <span className="ml-1">宗门等级达到 {SectLevelNames[building.unlockRequirement.sectLevel as keyof typeof SectLevelNames]}</span>
-                  )}
-                  {building.unlockRequirement.reputation && (
-                    <span className="ml-1">声望 {building.unlockRequirement.reputation}</span>
-                  )}
+
+              {/* 展开后的3个功能按钮：开启/关闭、升级、进入 */}
+              {isExpanded && !isLocked && (
+                <div className="building-avatar-actions">
+                  <button
+                    className="building-action-btn building-action-btn-toggle"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleBuilding(building.id);
+                    }}
+                    title={isClosed ? '开启建筑' : '关闭建筑'}
+                  >
+                    <Power size={12} />
+                    {isClosed ? '开启' : '关闭'}
+                  </button>
+                  <button
+                    className="building-action-btn building-action-btn-upgrade"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (canUpgrade(building)) handleUpgrade(building.id);
+                    }}
+                    disabled={!canUpgrade(building) || !upgradeCost}
+                    title={upgradeCost ? `升级需 ${upgradeCost.spiritStones} 灵石` : '已满级'}
+                  >
+                    <ArrowUp size={12} />
+                    升级
+                  </button>
+                  <button
+                    className="building-action-btn building-action-btn-enter"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedBuildingId(building.id);
+                      setExpandedBuildingId(null);
+                    }}
+                    title="进入建筑详情"
+                  >
+                    <DoorOpen size={12} />
+                    进入
+                  </button>
                 </div>
               )}
-            </Card>
+
+              {/* 锁定状态下展开解锁条件 */}
+              {isExpanded && isLocked && building.unlockRequirement && (
+                <div className="building-avatar-actions">
+                  <div className="text-[9px] text-sect-jade/60 px-1 py-0.5">
+                    解锁：
+                    {building.unlockRequirement.sectLevel && (
+                      <span>{SectLevelNames[building.unlockRequirement.sectLevel as keyof typeof SectLevelNames]}</span>
+                    )}
+                    {building.unlockRequirement.reputation && (
+                      <span> · 声望{building.unlockRequirement.reputation}</span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           );
         })}
+      </div>
+
+      {/* 提示：点击头像展开操作 */}
+      <div className="text-center text-[10px] text-sect-jade/40 mt-2">
+        点击建筑头像展开「开启/关闭 · 升级 · 进入」操作；点击「进入」查看完整描述与详情
       </div>
       
       <Modal
         isOpen={!!selectedBuilding}
         onClose={() => setSelectedBuildingId(null)}
         title={selectedBuilding?.name || '建筑详情'}
-        size="lg"
+        size="md"
       >
         {selectedBuilding && (
-          <div className="space-y-6">
-            <div className="flex items-start gap-4">
-              <div className="p-4 rounded-xl bg-sect-gold/20">
-                <span className="text-sect-gold">{getBuildingIcon(selectedBuilding.type)}</span>
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center gap-3">
-                  <h2 className="font-display text-2xl text-sect-gold">
+          <div className="space-y-3">
+            {/* 顶部：头像缩略 + 标题 + 描述 —— 紧凑一行 */}
+            <div className="flex items-start gap-2">
+              <BuildingThumb type={selectedBuilding.type} size={44} />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <h2 className="font-display text-base text-sect-gold leading-none">
                     {selectedBuilding.name}
                   </h2>
-                  <Badge variant="gold">Lv.{selectedBuilding.level}</Badge>
-                  <Badge variant={selectedBuilding.category === 'production' ? 'herb' : selectedBuilding.category === 'special' ? 'pill' : 'default'}>
+                  <Badge variant="gold" size="sm">Lv.{selectedBuilding.level}</Badge>
+                  <Badge
+                    size="sm"
+                    variant={selectedBuilding.category === 'production' ? 'herb' : selectedBuilding.category === 'special' ? 'pill' : 'default'}
+                  >
                     {getCategoryName(selectedBuilding.category)}
                   </Badge>
                 </div>
-                <p className="text-sect-jade/70 mt-2">
+                <p className="text-[11px] text-sect-jade/70 mt-1 leading-snug">
                   {selectedBuilding.description}
                 </p>
               </div>
             </div>
-            
-            <div className="divider-gold" />
-            
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+
+            <div className="divider-gold !my-0" />
+
+            {/* 概览指标：4 列紧凑网格（不再 md:grid-cols-4，横屏也塞得下） */}
+            <div className="grid grid-cols-4 gap-1.5">
               {output.spiritStones > 0 && (
-                <Card className="text-center">
-                  <Tooltip content={renderBreakdownTooltip(output.breakdown)} position="top">
-                    <div className="text-2xl font-display text-green-400 cursor-help">
-                      +{output.spiritStones}
-                    </div>
-                    <div className="text-xs text-sect-jade/60 mt-1">灵石/月</div>
-                  </Tooltip>
-                </Card>
+                <div className="text-center px-1 py-1 rounded border border-sect-gold/10 bg-sect-ink-light/30">
+                  <div className="text-sm font-display text-green-400">+{output.spiritStones}</div>
+                  <div className="text-[10px] text-sect-jade/60 mt-0.5">灵石/月</div>
+                </div>
               )}
               {output.herbs > 0 && (
-                <Card className="text-center">
-                  <Tooltip content={renderBreakdownTooltip(output.breakdown)} position="top">
-                    <div className="text-2xl font-display text-green-400 cursor-help">
-                      +{output.herbs}
-                    </div>
-                    <div className="text-xs text-sect-jade/60 mt-1">灵草/月</div>
-                  </Tooltip>
-                </Card>
+                <div className="text-center px-1 py-1 rounded border border-sect-gold/10 bg-sect-ink-light/30">
+                  <div className="text-sm font-display text-green-400">+{output.herbs}</div>
+                  <div className="text-[10px] text-sect-jade/60 mt-0.5">灵草/月</div>
+                </div>
               )}
               {output.reputation > 0 && (
-                <Card className="text-center">
-                  <Tooltip content={renderBreakdownTooltip(output.breakdown)} position="top">
-                    <div className="text-2xl font-display text-yellow-400 cursor-help">
-                      +{output.reputation}
-                    </div>
-                    <div className="text-xs text-sect-jade/60 mt-1">声望/月</div>
-                  </Tooltip>
-                </Card>
-              )}
-              <Card className="text-center">
-                <div className="text-2xl font-display text-red-400">
-                  -{maintenance}
+                <div className="text-center px-1 py-1 rounded border border-sect-gold/10 bg-sect-ink-light/30">
+                  <div className="text-sm font-display text-yellow-400">+{output.reputation}</div>
+                  <div className="text-[10px] text-sect-jade/60 mt-0.5">声望/月</div>
                 </div>
-                <div className="text-xs text-sect-jade/60 mt-1">维护费/月</div>
-              </Card>
-              <Card className="text-center">
-                <div className="text-2xl font-display text-sect-jade">
+              )}
+              <div className="text-center px-1 py-1 rounded border border-sect-gold/10 bg-sect-ink-light/30">
+                <div className="text-sm font-display text-red-400">-{maintenance}</div>
+                <div className="text-[10px] text-sect-jade/60 mt-0.5">维护/月</div>
+              </div>
+              <div className="text-center px-1 py-1 rounded border border-sect-gold/10 bg-sect-ink-light/30">
+                <div className="text-sm font-display text-sect-jade">
                   {assignedDisciples.length}/{selectedBuilding.discipleCapacity}
                 </div>
-                <div className="text-xs text-sect-jade/60 mt-1">弟子人数</div>
-              </Card>
+                <div className="text-[10px] text-sect-jade/60 mt-0.5">弟子</div>
+              </div>
               {selectedBuilding.minDiscipleStatus && (
-                <Card className="text-center">
-                  <div className="text-2xl font-display text-sect-gold">
+                <div className="text-center px-1 py-1 rounded border border-sect-gold/10 bg-sect-ink-light/30">
+                  <div className="text-xs font-display text-sect-gold leading-tight">
                     {DiscipleStatusDisplayNames[selectedBuilding.minDiscipleStatus]}
                   </div>
-                  <div className="text-xs text-sect-jade/60 mt-1">最低准入</div>
-                </Card>
+                  <div className="text-[10px] text-sect-jade/60 mt-0.5">准入</div>
+                </div>
               )}
-              {selectedBuilding.monthlyContributionCost && selectedBuilding.monthlyContributionCost > 0 && (
-                <Card className="text-center">
-                  <div className="text-2xl font-display text-sect-herb-light">
-                    -{selectedBuilding.monthlyContributionCost}
-                  </div>
-                  <div className="text-xs text-sect-jade/60 mt-1">月贡献/弟子</div>
-                </Card>
-              )}
+              <div className="text-center px-1 py-1 rounded border border-sect-gold/10 bg-sect-ink-light/30">
+                <div className="text-sm font-display text-sect-herb-light">
+                  +{BUILDING_CONTRIBUTION_BONUS[selectedBuilding.type] ?? 0}
+                </div>
+                <div className="text-[10px] text-sect-jade/60 mt-0.5">贡献/弟子</div>
+              </div>
               {selectedBuilding.discipleEffect && selectedBuilding.discipleEffect.type !== 'none' && (
-                <Card className="text-center bg-gradient-to-br from-sect-gold/20 to-sect-gold/5 border-sect-gold/40">
-                  <Tooltip content={selectedBuilding.discipleEffect.description} position="top">
-                    <div className="flex flex-col items-center cursor-help">
-                      <div className="text-sm text-sect-gold/60 mb-1">{getEffectTypeName(selectedBuilding.discipleEffect.type)}</div>
-                      <div className="text-2xl font-display text-sect-gold font-bold">
-                        {selectedBuilding.discipleEffect.value}
-                      </div>
-                      <div className="text-xs text-sect-jade/60 mt-1">宗门加成</div>
-                    </div>
-                  </Tooltip>
-                </Card>
+                <div className="text-center px-1 py-1 rounded border border-sect-gold/40 bg-gradient-to-br from-sect-gold/20 to-sect-gold/5">
+                  <div className="text-[10px] text-sect-gold/70">
+                    {getEffectTypeName(selectedBuilding.discipleEffect.type)}
+                  </div>
+                  <div className="text-sm font-display text-sect-gold font-bold leading-tight">
+                    {selectedBuilding.discipleEffect.value}
+                  </div>
+                </div>
               )}
             </div>
 
-            {/* 山门特殊信息 */}
+            {/* 特殊建筑作用说明 —— 更紧凑 */}
             {selectedBuilding.type === 'mountain_gate' && (
-              <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4 space-y-2">
-                <h4 className="font-display text-blue-300 flex items-center gap-2">
-                  <Shield size={16} />
-                  山门作用
-                </h4>
-                <div className="text-sm space-y-1 text-sect-jade/80">
-                  <div className="flex items-center gap-2">
-                    <span className="text-green-400">✓</span>
-                    <span>驻守弟子每月获得 5 贡献点</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-green-400">✓</span>
-                    <span>人数满员时，宗门战力 +10%</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-blue-400">↑</span>
-                    <span>每升一级增加 10 名可容纳弟子</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-blue-400">↑</span>
-                    <span>每升一级，宗门战力上限 +10%</span>
-                  </div>
+              <div className="bg-blue-500/10 border border-blue-500/30 rounded p-2 space-y-1 text-[11px]">
+                <div className="font-display text-blue-300 flex items-center gap-1 mb-0.5">
+                  <Shield size={12} />山门作用
                 </div>
-                <div className="text-xs text-blue-400/60 mt-2">
-                  当前容量：{selectedBuilding.discipleCapacity} 人（Lv.{selectedBuilding.level}）
+                <div className="space-y-0.5 text-sect-jade/80 leading-snug">
+                  <div>✓ 驻守弟子每月 +5 贡献点</div>
+                  <div>✓ 满员时，宗门战力 +10%</div>
+                  <div>↑ 每级 +10 容量 / +10% 战力上限</div>
+                </div>
+                <div className="text-[10px] text-blue-400/60">
+                  当前容量：{selectedBuilding.discipleCapacity}（Lv.{selectedBuilding.level}）
                 </div>
               </div>
             )}
 
-            {/* 讲经堂特殊信息 */}
             {selectedBuilding.type === 'lecture_hall' && (
-              <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-4 space-y-2">
-                <h4 className="font-display text-purple-300 flex items-center gap-2">
-                  <BookOpen size={16} />
-                  讲经堂作用
-                </h4>
-                <div className="text-sm space-y-1 text-sect-jade/80">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sect-herb-light">−</span>
-                    <span>听讲弟子每月消耗 {selectedBuilding.monthlyContributionCost || 5} 贡献点</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-green-400">✓</span>
-                    <span>听讲弟子获得修炼加成（基础 +10%）</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-purple-400">★</span>
-                    <span>讲师修炼效率越高，加成越高</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sect-gold">★</span>
-                    <span>讲师每人可获得 5 贡献点/月</span>
-                  </div>
+              <div className="bg-purple-500/10 border border-purple-500/30 rounded p-2 space-y-1 text-[11px]">
+                <div className="font-display text-purple-300 flex items-center gap-1 mb-0.5">
+                  <BookOpen size={12} />讲经堂作用
+                </div>
+                <div className="space-y-0.5 text-sect-jade/80 leading-snug">
+                  <div>+ 听讲弟子每月 +{BUILDING_CONTRIBUTION_BONUS['lecture_hall'] ?? 8} 贡献</div>
+                  <div>✓ 听讲弟子修炼 +10%，讲师越强加成越高</div>
+                  <div>★ 讲师每月 +{BUILDING_CONTRIBUTION_BONUS['lecture_hall'] ?? 8} 贡献</div>
                 </div>
                 {selectedBuilding.managerId && (
-                  <div className="text-xs text-purple-400/60 mt-2">
+                  <div className="text-[10px] text-purple-400/60">
                     当前讲师：{disciples.find(d => d.id === selectedBuilding.managerId)?.name || '未知'}
                   </div>
                 )}
               </div>
             )}
 
-            {/* 杂役堂特殊信息 */}
             {selectedBuilding.type === 'servant_hall' && (
-              <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4 space-y-2">
-                <h4 className="font-display text-green-300 flex items-center gap-2">
-                  <Wrench size={16} />
-                  杂役堂作用
-                </h4>
-                <div className="text-sm space-y-1 text-sect-jade/80">
-                  <div className="flex items-center gap-2">
-                    <span className="text-green-400">✓</span>
-                    <span>杂役弟子在此劳作赚取贡献点</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sect-gold">★</span>
-                    <span>每名弟子每月获得 10 贡献点</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-blue-400">↑</span>
-                    <span>每升一级增加 10 名可容纳弟子</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sect-herb-light">♨</span>
-                    <span>产出灵石和灵草，灵韵越高产出越多</span>
-                  </div>
+              <div className="bg-green-500/10 border border-green-500/30 rounded p-2 space-y-1 text-[11px]">
+                <div className="font-display text-green-300 flex items-center gap-1 mb-0.5">
+                  <Wrench size={12} />杂役堂作用
                 </div>
-                <div className="text-xs text-green-400/60 mt-2">
-                  当前等级：Lv.{selectedBuilding.level} | 当前容量：{selectedBuilding.discipleCapacity} 人
+                <div className="space-y-0.5 text-sect-jade/80 leading-snug">
+                  <div>✓ 杂役弟子劳作赚取贡献点</div>
+                  <div>★ 每名弟子每月 +10 贡献</div>
+                  <div>↑ 每级 +10 容量；灵韵越高产出越多</div>
+                </div>
+                <div className="text-[10px] text-green-400/60">
+                  Lv.{selectedBuilding.level} · 容量 {selectedBuilding.discipleCapacity}
                 </div>
               </div>
             )}
 
-            {/* 居所升级信息 */}
-            {(selectedBuilding.type === 'servant_residence' ||
-              selectedBuilding.type === 'outer_residence' ||
-              selectedBuilding.type === 'inner_residence' ||
-              selectedBuilding.type === 'core_residence') && (
-              <div className="bg-sect-gold/10 border border-sect-gold/30 rounded-lg p-4 space-y-2">
-                <h4 className="font-display text-sect-gold flex items-center gap-2">
-                  <Building2 size={16} />
-                  居所升级
-                </h4>
-                <div className="text-sm space-y-1 text-sect-jade/80">
-                  <div className="flex items-center gap-2">
-                    <span className="text-green-400">✓</span>
-                    <span>升级每级增加 10 名可居住弟子</span>
-                  </div>
+            {RESIDENCE_TYPES.includes(selectedBuilding.type) && (
+              <div className="bg-sect-gold/10 border border-sect-gold/30 rounded p-2 text-[11px]">
+                <div className="font-display text-sect-gold flex items-center gap-1 mb-0.5">
+                  <Building2 size={12} />居所升级
                 </div>
-                <div className="text-xs text-sect-jade/60 mt-2">
-                  当前等级：Lv.{selectedBuilding.level} | 当前容量：{selectedBuilding.discipleCapacity} 人
+                <div className="space-y-0.5 text-sect-jade/80 leading-snug">
+                  <div>✓ 每级 +10 可居住弟子</div>
+                </div>
+                <div className="text-[10px] text-sect-jade/60 mt-1">
+                  Lv.{selectedBuilding.level} · 容量 {selectedBuilding.discipleCapacity}
                 </div>
               </div>
             )}
 
             {selectedBuilding.discipleCapacity > 0 && (
               <>
-                {/* 升级按钮区域 */}
+                {/* 升级区域 */}
                 {(() => {
                   const detailUpgradeCost = getUpgradeCost(selectedBuilding);
                   const detailCanUpgrade = canUpgrade(selectedBuilding);
-                  const isRes = isResidenceBuilding(selectedBuilding.type);
-                  const atMaxLevel = !isRes && selectedBuilding.level >= selectedBuilding.maxLevel;
-
-                  return detailUpgradeCost && !atMaxLevel ? (
-                    <div className="bg-sect-gold/10 border border-sect-gold/30 rounded-lg p-4 mb-4">
-                      <div className="flex items-center justify-between mb-3">
-                        <div>
-                          <div className="font-display text-sect-gold flex items-center gap-2">
-                            <ArrowUp size={16} />
-                            升级建筑
+                  const atMaxLevel = !isResidenceBuilding(selectedBuilding.type) &&
+                    selectedBuilding.level >= selectedBuilding.maxLevel;
+                  return detailUpgradeCost && selectedBuilding.level < selectedBuilding.maxLevel ? (
+                    <div className="bg-sect-gold/10 border border-sect-gold/30 rounded p-2">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <div className="min-w-0">
+                          <div className="font-display text-sect-gold flex items-center gap-1 text-xs">
+                            <ArrowUp size={12} />升级建筑
                           </div>
-                          <div className="text-xs text-sect-jade/60 mt-1">
+                          <div className="text-[10px] text-sect-jade/60 mt-0.5">
                             Lv.{selectedBuilding.level} → Lv.{selectedBuilding.level + 1}
-                            {isRes && '  (容量 +10)'}
                           </div>
                         </div>
-                        <div className="flex items-center gap-3">
-                          <span className="flex items-center gap-1 text-sm text-sect-jade">
-                            <Gem size={14} /> {detailUpgradeCost.spiritStones}
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="flex items-center gap-1 text-[11px] text-sect-jade">
+                            <Gem size={12} /> {detailUpgradeCost.spiritStones}
                           </span>
-                          {detailUpgradeCost.reputation && detailUpgradeCost.reputation > 0 && (
-                            <span className="flex items-center gap-1 text-sm text-yellow-400">
-                              <Star size={14} /> {detailUpgradeCost.reputation}
+                          {detailUpgradeCost.contribution && detailUpgradeCost.contribution > 0 && (
+                            <span className="flex items-center gap-1 text-[11px] text-amber-400">
+                              <Star size={12} /> {detailUpgradeCost.contribution}
                             </span>
                           )}
                         </div>
@@ -774,93 +661,190 @@ export const BuildingsPanel: React.FC = () => {
                       <Button
                         variant="gold"
                         size="sm"
-                        className="w-full"
+                        className="w-full text-xs py-1"
                         onClick={() => handleUpgrade(selectedBuilding.id)}
                         disabled={!detailCanUpgrade}
                       >
-                        {detailCanUpgrade ? '升级' : '资源不足'}
+                        {detailCanUpgrade ? '升级' : '灵石不足'}
                       </Button>
                     </div>
                   ) : null;
                 })()}
 
-                <div className="divider-gold" />
-                
+                {/* 降级区域 */}
+                {(() => {
+                  if (selectedBuilding.level <= 1) return null;
+                  const isRes = isResidenceBuilding(selectedBuilding.type);
+                  let refundStones = 0;
+                  if (isRes) {
+                    const c = getResidenceUpgradeCost({ ...selectedBuilding, level: selectedBuilding.level - 1 });
+                    if (c) refundStones = c.spiritStones;
+                  } else {
+                    const c = selectedBuilding.upgradeCosts[selectedBuilding.level - 2];
+                    if (c) refundStones = c.spiritStones;
+                  }
+                  if (refundStones <= 0) return null;
+                  return (
+                    <div className="bg-red-500/5 border border-red-500/30 rounded p-2">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <div className="min-w-0">
+                          <div className="font-display text-red-300 flex items-center gap-1 text-xs">
+                            <ArrowDown size={12} />降级建筑
+                          </div>
+                          <div className="text-[10px] text-sect-jade/60 mt-0.5">
+                            Lv.{selectedBuilding.level} → Lv.{selectedBuilding.level - 1}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 text-[11px] text-emerald-400 shrink-0">
+                          <Gem size={12} /> 返还 {refundStones}
+                        </div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="w-full border-red-500/40 text-red-300 hover:bg-red-500/10 text-xs py-1"
+                        onClick={() => {
+                          if (confirm(`确认将「${selectedBuilding.name}」降级至 Lv.${selectedBuilding.level - 1}？返还 ${refundStones} 灵石。`)) {
+                            const r = downgradeBuilding(selectedBuilding.id);
+                            if (!r.success && r.reason) alert(r.reason);
+                          }
+                        }}
+                      >
+                        降级并返还资源
+                      </Button>
+                    </div>
+                  );
+                })()}
+
+                <div className="divider-gold !my-0" />
+
+                {/* 堂主管理 */}
+                {(() => {
+                  const canHaveManager = selectedBuilding.discipleCapacity > 0 &&
+                    !RESIDENCE_TYPES_FOR_VACANT.includes(selectedBuilding.type);
+                  if (!canHaveManager) return null;
+                  const currentManager = selectedBuilding.managerId
+                    ? disciples.find(d => d.id === selectedBuilding.managerId)
+                    : null;
+                  // 堂主任命规则：金丹期（golden）及以上方可担任
+                  const goldenIndex = RealmOrder.indexOf('golden');
+                  const candidates = disciples.filter(d => RealmOrder.indexOf(d.realm) >= goldenIndex);
+                  return (
+                    <div className="bg-purple-500/10 border border-purple-500/30 rounded p-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <Crown size={12} className="text-sect-spirit" />
+                          <span className="font-display text-sect-spirit text-xs">堂主</span>
+                          {currentManager ? (
+                            <span className="text-[11px] text-sect-jade">{currentManager.name}</span>
+                          ) : (
+                            <span className="text-[10px] text-yellow-400">空缺中</span>
+                          )}
+                        </div>
+                        <Button variant="ghost" size="sm" className="text-[10px] py-0.5 px-2"
+                          onClick={() => setShowManagerPicker(!showManagerPicker)}>
+                          {currentManager ? '撤换' : '任命堂主'}
+                        </Button>
+                      </div>
+                      {showManagerPicker && (
+                        <div className="mt-2 space-y-0.5 max-h-56 overflow-y-auto pr-1">
+                          {currentManager && (
+                            <button
+                              onClick={() => { setBuildingManager(selectedBuilding.id, null); setShowManagerPicker(false); }}
+                              className="w-full flex items-center justify-between px-2 py-1 rounded bg-red-500/10 hover:bg-red-500/20 transition-colors"
+                            >
+                              <span className="text-[11px] text-red-300">免去 {currentManager.name} 堂主之职</span>
+                              <X size={12} className="text-red-400" />
+                            </button>
+                          )}
+                          {candidates.length === 0 ? (
+                            <div className="text-center py-2 text-[10px] text-sect-jade/40">
+                              暂无合格弟子（需金丹期及以上）
+                            </div>
+                          ) : candidates.map(d => (
+                            <button
+                              key={d.id}
+                              onClick={() => { setBuildingManager(selectedBuilding.id, d.id); setShowManagerPicker(false); }}
+                              className="w-full flex items-center justify-between px-2 py-1 rounded bg-sect-ink-light/30 hover:bg-sect-gold/10 transition-colors"
+                            >
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[11px] text-sect-jade">{d.name}</span>
+                                <Badge variant="default" size="sm">{DiscipleStatusNames[d.status]}</Badge>
+                                <span className={`text-[10px] ${getRealmColor(d.realm)}`}>{RealmNames[d.realm]}</span>
+                              </div>
+                              <span className="text-[10px] text-sect-jade/50">贡献 {d.contributionPoints}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* 在堂弟子 —— 再紧凑，头像小一点，行高差小 */}
                 <div>
-                  <h3 className="font-display text-lg text-sect-gold mb-4 flex items-center gap-2">
-                    <Users size={20} />
+                  <h3 className="font-display text-xs text-sect-gold mb-1.5 flex items-center gap-1">
+                    <Users size={14} />
                     在堂弟子 ({assignedDisciples.length})
                   </h3>
-                  
+
                   {assignedDisciples.length === 0 ? (
-                    <div className="text-center py-8 text-sect-jade/40">
+                    <div className="text-center py-4 text-[11px] text-sect-jade/40">
                       暂无弟子在此处修行
                     </div>
                   ) : (
-                    <div className="space-y-3 max-h-80 overflow-y-auto pr-2">
+                    <div className="space-y-1 max-h-60 overflow-y-auto pr-1">
                       {assignedDisciples.map(disciple => (
-                        <Card key={disciple.id} className="hover:border-sect-gold/40 transition-colors">
-                          <div className="flex items-center gap-3">
-                            <div 
-                              className="w-10 h-10 rounded-full flex items-center justify-center border-2 border-sect-gold/30"
-                              style={{
-                                backgroundColor: `hsl(${(disciple.avatarSeed * 137.5) % 360}, 30%, 25%)`,
-                                color: `hsl(${(disciple.avatarSeed * 137.5) % 360}, 60%, 70%)`,
-                              }}
-                            >
-                              {disciple.name.charAt(0)}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <span className="font-display text-sect-jade">
-                                  {disciple.name}
-                                </span>
-                                <Badge variant="default" size="sm">
-                                  {DiscipleStatusNames[disciple.status]}
+                        <div key={disciple.id}
+                          className="flex items-center gap-2 px-2 py-1 rounded border border-sect-gold/15 bg-sect-ink-light/30 hover:border-sect-gold/40 transition-colors">
+                          <SimpleAvatar seed={disciple.avatarSeed} size={30} status={disciple.status} realm={disciple.realm} name={disciple.name} />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-display text-[11px] text-sect-jade leading-none">
+                                {disciple.name}
+                              </span>
+                              <Badge variant="default" size="sm">{DiscipleStatusNames[disciple.status]}</Badge>
+                              <span className={`text-[10px] ${getRealmColor(disciple.realm)}`}>
+                                {RealmNames[disciple.realm]}
+                              </span>
+                              {selectedBuilding.managerId === disciple.id && (
+                                <Badge variant="gold" size="sm">
+                                  <Crown size={10} className="mr-0.5" />堂主
                                 </Badge>
-                                <span className={`text-xs ${getRealmColor(disciple.realm)}`}>
-                                  {RealmNames[disciple.realm]}
-                                </span>
-                                {selectedBuilding.managerId === disciple.id && (
-                                  <Badge variant="gold" size="sm">
-                                    <Crown size={12} className="mr-1" />
-                                    堂主
-                                  </Badge>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-4 mt-1 text-xs text-sect-jade/60">
-                                <span className="flex items-center gap-1">
-                                  <Sparkles size={12} className="text-sect-gold/60" />
-                                  灵韵{getTalentLevel(disciple.hiddenTalents.spiritRhythm)}
-                                </span>
-                                <span className="flex items-center gap-1">
-                                  <TrendingUp size={12} className="text-sect-herb-light/60" />
-                                  贡献 {disciple.contributionPoints}
-                                </span>
-                                <span className="flex items-center gap-1">
-                                  <Heart size={12} className="text-red-400/60" />
-                                  {Math.floor(disciple.age)}岁
-                                </span>
-                              </div>
+                              )}
                             </div>
-                            <div className="text-right">
-                              <div className="text-xs text-sect-jade/60">修为</div>
-                              <div className="text-sm text-sect-jade">
-                                {Math.floor(disciple.realmProgress)}%
-                              </div>
+                            <div className="flex items-center gap-3 mt-0.5 text-[10px] text-sect-jade/60">
+                              <span className="flex items-center gap-0.5">
+                                <Sparkles size={10} className="text-sect-gold/60" />
+                                灵韵{getTalentLevel(disciple.hiddenTalents.spiritRhythm)}
+                              </span>
+                              <span className="flex items-center gap-0.5">
+                                <TrendingUp size={10} className="text-sect-herb-light/60" />
+                                贡献 {disciple.contributionPoints}
+                              </span>
+                              <span className="flex items-center gap-0.5">
+                                <Heart size={10} className="text-red-400/60" />
+                                {Math.floor(disciple.age)}岁
+                              </span>
                             </div>
                           </div>
-                        </Card>
+                          <div className="text-right shrink-0">
+                            <div className="text-[9px] text-sect-jade/60">修为</div>
+                            <div className="text-[11px] text-sect-jade leading-none">
+                              {Math.floor(disciple.realmProgress)}%
+                            </div>
+                          </div>
+                        </div>
                       ))}
                     </div>
                   )}
                 </div>
               </>
             )}
-            
+
             {selectedBuilding.type === 'secret_library' && (
               <>
-                <div className="divider-gold" />
+                <div className="divider-gold !my-0" />
                 <LibraryPanel buildingId={selectedBuilding.id} />
               </>
             )}
@@ -906,11 +890,7 @@ export const BuildingsPanel: React.FC = () => {
                       onClick={() => canBuildThis && handleBuild(type)}
                     >
                       <div className="flex items-start gap-3">
-                        <div className="p-2 rounded-lg bg-sect-gold/20">
-                          <span className="text-sect-gold">
-                            {getBuildingIcon(type)}
-                          </span>
-                        </div>
+                        <BuildingThumb type={type} size={48} />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="font-display text-sect-jade">
