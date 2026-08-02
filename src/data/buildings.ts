@@ -58,7 +58,7 @@ export const BUILDING_CONFIGS: Record<BuildingType, BuildingConfig> = {
     type: 'servant_hall',
     name: '杂役堂',
     maxLevel: 4,
-    baseOutput: { spiritStones: 60, herbs: 12 },
+    baseOutput: { spiritStones: 40, herbs: 6, iron: 2, paper: 2 },
     baseMaintenanceCost: 10,
     buildCost: { spiritStones: 0 },
     upgradeCosts: [
@@ -71,10 +71,10 @@ export const BUILDING_CONFIGS: Record<BuildingType, BuildingConfig> = {
     category: 'production',
     primaryOutput: 'spiritStones',
     minDiscipleStatus: 'servant',
-    description: '百工杂役之所；杂役弟子在此赚取贡献点，产出灵石与灵材',
+    description: '宗门杂役之所；弟子在此采集灵草、开采灵铁、制作符纸，为各堂提供原料。',
     discipleEffect: {
       type: 'contribution',
-      description: '杂役弟子工作可获得贡献点，并提升堂口产出',
+      description: '灵草+6/灵铁+2/符纸+2 每月',
       value: '灵石+灵材产出',
     },
   },
@@ -106,7 +106,7 @@ export const BUILDING_CONFIGS: Record<BuildingType, BuildingConfig> = {
     type: 'pill_hall',
     name: '丹堂',
     maxLevel: 3,
-    baseOutput: { spiritStones: 25, pills: 1 },
+    baseOutput: { spiritStones: 10 },
     baseMaintenanceCost: 25,
     buildCost: { spiritStones: 500 },
     upgradeCosts: [
@@ -131,7 +131,7 @@ export const BUILDING_CONFIGS: Record<BuildingType, BuildingConfig> = {
     type: 'sutra_hall',
     name: '炼器堂',
     maxLevel: 3,
-    baseOutput: { spiritStones: 35, artifacts: 1 },
+    baseOutput: { spiritStones: 10 },
     baseMaintenanceCost: 30,
     buildCost: { spiritStones: 800 },
     upgradeCosts: [
@@ -156,7 +156,7 @@ export const BUILDING_CONFIGS: Record<BuildingType, BuildingConfig> = {
     type: 'artifact_hall',
     name: '符堂',
     maxLevel: 3,
-    baseOutput: { spiritStones: 30, talismans: 1 },
+    baseOutput: { spiritStones: 10 },
     baseMaintenanceCost: 20,
     buildCost: { spiritStones: 600 },
     upgradeCosts: [
