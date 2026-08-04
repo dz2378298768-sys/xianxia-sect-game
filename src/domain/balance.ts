@@ -186,9 +186,10 @@ export function computeMaintenance(type: string, level: number): number {
   return last + step * (level - table.length);
 }
 
-// 各境界基础修炼速度（修为/月）。凡人改为 30（旧实现为 0，导致凡人永远无法累积修为突破）。
-const REALM_BASE_CULTIVATION_SPEED: number[] = [30, 100, 150, 250, 400, 600];
+// 各境界基础修炼速度（修为/月）—— 按普通天赋（根骨50/三灵根60品质/凡人体质）设计：
+//   凡人 6 月/阶段，炼气 6 月/阶段，筑基 12 月/阶段，金丹 18 月/阶段，元婴 24 月/阶段
 // 索引对应 RealmOrder: 0=mortal, 1=qi, 2=foundation, 3=golden, 4=nascent, 5=spirit
+const REALM_BASE_CULTIVATION_SPEED: number[] = [5, 45, 110, 170, 260, 380];
 
 /** 满意度惩罚下限：速度永远不会因低满意度变成负值或归零 */
 export const SATISFACTION_FLOOR = 0.2;
@@ -196,10 +197,10 @@ export const SATISFACTION_FLOOR = 0.2;
 /**
  * 重新计算弟子当前境界的修炼速度。
  *
- * 修复 Bug A：旧实现突破成功后只更新 realm，不重算 cultivationSpeed，
- * 导致炼气弟子（速度 100）突破到筑基后仍按 100 累积，而非应有的 150 基础。
- *
- * 修复 Bug L：凡人基础速度由 0 改为 30，使其能累积修为突破到炼气（旧为死循环）。
+ * 强化天赋差异（2026-08-04 调整）：
+ *  - 根骨系数由线性 0.4~1.0 改为 0.25~1.3 的非线性曲线（根骨20仅25%，根骨80达130%）
+ *  - 灵根加成 countBonus 翻倍、品质加成放大，进一步拉开灵根差距
+ *  - 体质加成按稀有度阶梯放大（common±x1, uncommon×1.2, rare×1.5, epic×2, legendary×3）
  *
  * 公式：基础速度 × 根骨系数 × (1 + 灵根加成%) × (1 + 体质修炼加成%)
  */
@@ -207,14 +208,22 @@ export function recomputeCultivationSpeed(disciple: Disciple): number {
   const realmIndex = RealmOrder.indexOf(disciple.realm);
   const baseSpeed = REALM_BASE_CULTIVATION_SPEED[Math.min(Math.max(realmIndex, 0), REALM_BASE_CULTIVATION_SPEED.length - 1)];
 
-  // 根骨影响修炼效率：根骨 80 时 100% 效率，根骨 40 时 60% 效率
+  // 根骨：非线性强化差异（20→0.25，40→0.55，60→0.85，80→1.15，100→1.45）
   const rootBone = disciple.hiddenTalents.rootBone;
-  const rootBoneMultiplier = 0.4 + (rootBone / 100) * 0.6;
+  const rootBoneMultiplier = 0.25 + Math.pow(rootBone / 100, 1.6) * 1.2;
 
+  // 灵根加成（计算函数本身已在 calculations.ts 中强化：countBonus ×2, qualityBonus ×2）
   const spiritRootBonus = calculateSpiritRootBonus(disciple.hiddenTalents.spiritRoots);
 
   const constitution = CONSTITUTIONS.find(c => c.id === disciple.constitutionId);
-  const constitutionBonus = constitution?.effects.cultivationBonus || 0;
+  let constitutionBonus = constitution?.effects.cultivationBonus || 0;
+  // 稀有度阶梯放大体质加成
+  if (constitution) {
+    const rarityMult: Record<string, number> = {
+      common: 1, uncommon: 1.2, rare: 1.5, epic: 2, legendary: 3,
+    };
+    constitutionBonus = Math.round(constitutionBonus * (rarityMult[constitution.rarity] || 1));
+  }
 
   const speed = baseSpeed * rootBoneMultiplier * (1 + spiritRootBonus / 100) * (1 + constitutionBonus / 100);
   return Math.floor(speed);
@@ -259,17 +268,17 @@ const STATUS_CONTRIBUTION_EXPENSE: Partial<Record<DiscipleStatus, number>> = {
   servant: 0, outer: 10, inner: 25, core: 50, elder: 80,
 };
 
-/** 各生产建筑的贡献加成基础值（弟子进入即赚，杜绝"进入反扣"） */
+/** 各生产建筑的贡献加成基础值（正=获得，负=消耗） */
 export const BUILDING_CONTRIBUTION_BONUS: Record<string, number> = {
   mountain_gate: 5,        // 山门驻守
   servant_hall: 5,         // 杂役堂基础
-  lecture_hall: 8,         // 讲经堂
+  lecture_hall: -5,        // 讲经堂：听讲消耗贡献
   pill_hall: 8,            // 丹堂
   sutra_hall: 8,           // 炼器堂
   artifact_hall: 8,        // 符堂
   array_hall: 7,           // 阵堂
-  spirit_beast_garden: 7,  // 灵兽园
-  secret_library: 6,       // 藏经阁
+  spirit_beast_garden: 7,  // 灵兽原
+  secret_library: 0,       // 藏经阁：无额外贡献（推演功法在 nextMonth 中单独处理）
 };
 
 /** 按建筑类型，弟子主属性对贡献的额外加成（鼓励按天赋选堂口） */
@@ -311,5 +320,7 @@ export function computeMonthlyContribution(
     buildingBonus += buildingTalentContribution(building.type, disciple.hiddenTalents);
   }
 
-  return Math.max(0, base + buildingBonus);
+  // 贡献可以为负（如讲经堂听讲消耗），但不低于0
+  const total = base + buildingBonus;
+  return Math.max(0, total);
 }

@@ -78,7 +78,7 @@ export const SectLevelUnlockBuildings: Record<SectLevel, string[]> = {
   founding: ['mountain_gate', 'lecture_hall', 'servant_hall', 'outer_residence', 'secret_library'],
   known: ['inner_residence', 'pill_hall'],
   famous: ['core_residence', 'sutra_hall', 'artifact_hall', 'array_hall'],
-  dominant: ['cave_mansion', 'spirit_beast_garden', 'guardian_array'],
+  dominant: ['cave_mansion', 'spirit_beast_garden'],
   eternal: ['skyscraper_tower'],
 };
 
@@ -191,3 +191,66 @@ export const SectRelationNames: Record<SectRelation, string> = {
   wary: '戒备',
   hostile: '敌对',
 };
+
+// ===== 试炼系统 =====
+
+// 试炼类型：驻扎凡人城镇 / 击杀妖物 / 探索秘境
+export type TrialType = 'town' | 'monster' | 'realm';
+
+export const TrialTypeNames: Record<TrialType, string> = {
+  town: '驻扎城镇',
+  monster: '击杀妖物',
+  realm: '探索秘境',
+};
+
+export const TrialTypeIcons: Record<TrialType, string> = {
+  town: 'temple',
+  monster: 'sword',
+  realm: 'crystal',
+};
+
+// 试炼难度
+export type TrialDifficulty = 'easy' | 'normal' | 'hard' | 'extreme';
+
+export const TrialDifficultyNames: Record<TrialDifficulty, string> = {
+  easy: '简单',
+  normal: '普通',
+  hard: '困难',
+  extreme: '极限',
+};
+
+// 试炼状态
+export type TrialStatus = 'available' | 'in_progress' | 'completed' | 'failed';
+
+// 试炼奖励
+export interface TrialReward {
+  spiritStones?: number;       // 灵石
+  reputation?: number;         // 声望
+  herbs?: number;              // 灵草
+  iron?: number;               // 灵铁
+  paper?: number;              // 符纸
+  specialMaterials?: { name: string; amount: number }[]; // 特殊材料（秘境掉落）
+  contributionPoints?: number; // 弟子贡献点
+  satisfaction?: number;       // 弟子满意度
+  description: string;         // 奖励描述
+}
+
+// 试炼任务
+export interface Trial {
+  id: string;
+  type: TrialType;
+  name: string;
+  description: string;
+  difficulty: TrialDifficulty;
+  requiredPower: number;       // 建议战力（弟子单人战力）
+  durationMonths: number;      // 所需月数
+  rewards: TrialReward;        // 成功奖励
+  riskRate: number;            // 失败概率 0-1
+  injuryRate: number;          // 受伤概率 0-1（失败时）
+  status: TrialStatus;
+  assignedDiscipleId: string | null;
+  startYear: number;
+  startMonth: number;
+  progress: number;            // 0-100
+  generatedYear: number;       // 生成年份（用于年度刷新）
+}

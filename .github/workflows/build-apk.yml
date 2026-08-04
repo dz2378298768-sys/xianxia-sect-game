@@ -23,11 +23,11 @@ jobs:
       - name: 安装前端依赖
         run: npm ci
 
-      - name: 安装 JDK 17（Capacitor 8 / AGP 8 要求）
+      - name: 安装 JDK 21（Capacitor 8 / AGP 8 要求；cap sync 会将 capacitor.build.gradle 编译目标生成为 VERSION_21，JDK 17 javac 无法编译到 release 21）
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: 21
 
       - name: 配置 Gradle（缓存发行版与依赖，避免重复下载）
         uses: gradle/actions/setup-gradle@v4
@@ -41,7 +41,9 @@ jobs:
         run: npm run build
 
       - name: 同步 Web 资源到 Android 项目
-        run: npx cap copy android
+        # 使用 sync 而非 copy：copy 仅拷贝 web 资源，不会生成 capacitor-cordova-android-plugins
+        # 原生插件模块，会导致 Gradle 报 cordova.variables.gradle does not exist。
+        run: npx cap sync android
 
       - name: 打包 Debug APK
         working-directory: android

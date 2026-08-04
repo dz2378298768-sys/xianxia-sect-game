@@ -10,24 +10,31 @@ export const BUILDING_CONFIGS: Record<BuildingType, BuildingConfig> = {
   mountain_gate: {
     type: 'mountain_gate',
     name: '山门',
-    maxLevel: 3,
+    maxLevel: 10,
     baseOutput: { spiritStones: 3, reputation: 1 },
     baseMaintenanceCost: 15,
     buildCost: { spiritStones: 0 },
     upgradeCosts: [
       { spiritStones: 0 },
-      { spiritStones: 300, contribution: 200 },
-      { spiritStones: 800, contribution: 500 },
+      { spiritStones: 300 },
+      { spiritStones: 800 },
+      { spiritStones: 1500 },
+      { spiritStones: 2500 },
+      { spiritStones: 4000 },
+      { spiritStones: 6000 },
+      { spiritStones: 8500 },
+      { spiritStones: 12000 },
+      { spiritStones: 20000 },
     ],
     discipleCapacity: 10,
     category: 'service',
     primaryOutput: 'spiritStones',
     minDiscipleStatus: 'servant',
-    description: '宗门门面，弟子驻守可获得贡献点；满员时加成10%宗门战力，每升一级增加10名可容纳弟子并提升10%战力上限',
+    description: '宗门门面，每级满员时+5%防御战力；升至10级化为护山大阵，宗门固若金汤。驻守弟子每月获得贡献点。',
     discipleEffect: {
       type: 'defense',
-      description: '满员时宗门获得10%战力加成；驻守弟子每月获得5贡献点',
-      value: '+100战力/+10%/+10容量',
+      description: '每级满员+5%战力，10级满员+50%（护山大阵）；驻守弟子每月获得5贡献点',
+      value: '+5%/级(满员)/+10容量/级',
     },
   },
   lecture_hall: {
@@ -39,8 +46,8 @@ export const BUILDING_CONFIGS: Record<BuildingType, BuildingConfig> = {
     buildCost: { spiritStones: 0 },
     upgradeCosts: [
       { spiritStones: 0 },
-      { spiritStones: 250, contribution: 150 },
-      { spiritStones: 700, contribution: 400 },
+      { spiritStones: 250 },
+      { spiritStones: 700 },
     ],
     discipleCapacity: 10,
     category: 'service',
@@ -50,22 +57,23 @@ export const BUILDING_CONFIGS: Record<BuildingType, BuildingConfig> = {
     description: '弟子花费5贡献点进入听讲获得修炼加成；修炼效率加成：Lv1+20%, Lv2+35%, Lv3+55%',
     discipleEffect: {
       type: 'cultivation',
-      description: '听讲弟子获得修炼速度加成（Lv1+20%, Lv2+35%, Lv3+55%）',
+      description: '听讲弟子获得修炼速度加成（Lv1+20%, Lv2+35%, Lv3+55%），每月消耗5贡献',
       value: '修炼+20%~55%/-5贡献/月',
     },
   },
   servant_hall: {
     type: 'servant_hall',
     name: '杂役堂',
-    maxLevel: 4,
+    maxLevel: 5,
     baseOutput: { spiritStones: 40, herbs: 6, iron: 2, paper: 2 },
     baseMaintenanceCost: 10,
     buildCost: { spiritStones: 0 },
     upgradeCosts: [
       { spiritStones: 0 },
-      { spiritStones: 400, contribution: 100 },
-      { spiritStones: 1000, contribution: 300 },
-      { spiritStones: 2500, contribution: 800 },
+      { spiritStones: 400 },
+      { spiritStones: 1000 },
+      { spiritStones: 2500 },
+      { spiritStones: 5000 },
     ],
     discipleCapacity: 10,
     category: 'production',
@@ -87,19 +95,19 @@ export const BUILDING_CONFIGS: Record<BuildingType, BuildingConfig> = {
     buildCost: { spiritStones: 0 },
     upgradeCosts: [
       { spiritStones: 0 },
-      { spiritStones: 500, contribution: 300 },
-      { spiritStones: 1500, contribution: 800 },
-      { spiritStones: 4000, contribution: 2000 },
+      { spiritStones: 500 },
+      { spiritStones: 1500 },
+      { spiritStones: 4000 },
     ],
     discipleCapacity: 10,
     category: 'service',
     primaryOutput: 'spiritStones',
     minDiscipleStatus: 'outer',
-    description: '共分四层，收录功法与战技；每层对应一个境界，初始各1本通用功法+1本通用战技',
+    description: '共分四层，收录功法与战技；每层对应一个境界。金丹期以上弟子可在此推演功法，每月获得贡献。',
     discipleEffect: {
       type: 'cultivation',
-      description: '弟子可学习功法(1本)和战技(1本)',
-      value: '功法+战技',
+      description: '弟子可学习功法(1本)和战技(1本)；金丹以上可推演功法获贡献',
+      value: '功法+战技/推演',
     },
   },
   pill_hall: {
@@ -111,8 +119,8 @@ export const BUILDING_CONFIGS: Record<BuildingType, BuildingConfig> = {
     buildCost: { spiritStones: 500 },
     upgradeCosts: [
       { spiritStones: 0 },
-      { spiritStones: 400, contribution: 200 },
-      { spiritStones: 1200, contribution: 600 },
+      { spiritStones: 400 },
+      { spiritStones: 1200 },
     ],
     discipleCapacity: 10,
     category: 'production',
@@ -136,8 +144,8 @@ export const BUILDING_CONFIGS: Record<BuildingType, BuildingConfig> = {
     buildCost: { spiritStones: 800 },
     upgradeCosts: [
       { spiritStones: 0 },
-      { spiritStones: 400, contribution: 200 },
-      { spiritStones: 1200, contribution: 600 },
+      { spiritStones: 400 },
+      { spiritStones: 1200 },
     ],
     discipleCapacity: 10,
     category: 'production',
@@ -161,8 +169,8 @@ export const BUILDING_CONFIGS: Record<BuildingType, BuildingConfig> = {
     buildCost: { spiritStones: 600 },
     upgradeCosts: [
       { spiritStones: 0 },
-      { spiritStones: 300, contribution: 150 },
-      { spiritStones: 900, contribution: 400 },
+      { spiritStones: 300 },
+      { spiritStones: 900 },
     ],
     discipleCapacity: 10,
     category: 'production',
@@ -186,8 +194,8 @@ export const BUILDING_CONFIGS: Record<BuildingType, BuildingConfig> = {
     buildCost: { spiritStones: 800 },
     upgradeCosts: [
       { spiritStones: 0 },
-      { spiritStones: 350, contribution: 200 },
-      { spiritStones: 1000, contribution: 500 },
+      { spiritStones: 350 },
+      { spiritStones: 1000 },
     ],
     discipleCapacity: 10,
     category: 'service',
@@ -211,40 +219,20 @@ export const BUILDING_CONFIGS: Record<BuildingType, BuildingConfig> = {
     buildCost: { spiritStones: 1000 },
     upgradeCosts: [
       { spiritStones: 0 },
-      { spiritStones: 500, contribution: 300 },
-      { spiritStones: 1500, contribution: 800 },
+      { spiritStones: 500 },
+      { spiritStones: 1500 },
     ],
     discipleCapacity: 10,
     category: 'production',
     primaryOutput: 'beasts',
     minDiscipleStatus: 'outer',
     monthlyContributionCost: 8,
-    unlockRequirement: { reputation: 200 },
-    description: '豢养灵兽之所；弟子在此驯养灵兽，每月可产灵兽幼崽。',
+    unlockRequirement: { buildings: [{ type: 'mountain_gate', level: 2 }] },
+    description: '豢养灵兽之所；弟子在此驯养灵兽获取贡献，灵兽每月消耗灵草。玩家可购买或捕捉灵兽入原培养。',
     discipleEffect: {
       type: 'morale',
-      description: '灵兽产量+10%/人',
-      value: '每月产出灵兽',
-    },
-  },
-  guardian_array: {
-    type: 'guardian_array',
-    name: '护山大阵',
-    maxLevel: 1,
-    baseOutput: { spiritStones: 0 },
-    baseMaintenanceCost: 1000,
-    buildCost: { spiritStones: 3000 },
-    upgradeCosts: [],
-    discipleCapacity: 0,
-    category: 'special',
-    primaryOutput: 'spiritStones',
-    minDiscipleStatus: 'outer',
-    unlockRequirement: { buildings: [{ type: 'mountain_gate', level: 3 }] },
-    description: '守护宗门的大阵；开启时+50%防御，每月消耗1000灵石',
-    discipleEffect: {
-      type: 'defense',
-      description: '开启时+50%防御',
-      value: '防御+50%',
+      description: '弟子驯养灵兽获得贡献；灵兽每月消耗灵草',
+      value: '贡献/灵兽培养',
     },
   },
   skyscraper_tower: {
@@ -286,8 +274,8 @@ export const BUILDING_CONFIGS: Record<BuildingType, BuildingConfig> = {
     buildCost: { spiritStones: 0 },
     upgradeCosts: [
       { spiritStones: 0 },
-      { spiritStones: 200, contribution: 100 },
-      { spiritStones: 600, contribution: 300 },
+      { spiritStones: 200 },
+      { spiritStones: 600 },
     ],
     discipleCapacity: 10,
     category: 'service',
@@ -309,8 +297,8 @@ export const BUILDING_CONFIGS: Record<BuildingType, BuildingConfig> = {
     buildCost: { spiritStones: 300 },
     upgradeCosts: [
       { spiritStones: 0 },
-      { spiritStones: 300, contribution: 150 },
-      { spiritStones: 800, contribution: 400 },
+      { spiritStones: 300 },
+      { spiritStones: 800 },
     ],
     discipleCapacity: 10,
     category: 'service',
@@ -332,8 +320,8 @@ export const BUILDING_CONFIGS: Record<BuildingType, BuildingConfig> = {
     buildCost: { spiritStones: 500 },
     upgradeCosts: [
       { spiritStones: 0 },
-      { spiritStones: 400, contribution: 200 },
-      { spiritStones: 1000, contribution: 500 },
+      { spiritStones: 400 },
+      { spiritStones: 1000 },
     ],
     discipleCapacity: 10,
     category: 'service',
@@ -352,7 +340,7 @@ export const BUILDING_CONFIGS: Record<BuildingType, BuildingConfig> = {
     maxLevel: 1,
     baseOutput: { spiritStones: 0 },
     baseMaintenanceCost: 20,
-    buildCost: { spiritStones: 500, contribution: 400 },
+    buildCost: { spiritStones: 500 },
     upgradeCosts: [],
     discipleCapacity: 1,
     category: 'service',
@@ -431,12 +419,17 @@ export const BOOK_TIER_BONUSES: Record<BookTier, { cultivation: number; combat: 
   nascent: { cultivation: 50, combat: 60 },
 };
 
-// 根骨决定功法/战技效果发挥比例
+// 根骨决定功法/战技/居所/讲经堂/秘籍等一切「修炼增幅」的发挥比例（2026-08-04 非线性，强化天赋差异）
+//   根骨 20 → 0.15（差天赋仅发挥 15% buff 效果——学了功法也基本没用）
+//   根骨 40 → 0.40
+//   根骨 50 → 0.57 （普通弟子：buff 只能拿到 ~57%）
+//   根骨 60 → 0.73
+//   根骨 80 → 1.00 （刚好 100%）
+//   根骨 100→ 1.25 （溢出，强天赋能「超额发挥」功法效果）
 export function getRootBoneEffectiveness(rootBone: number): number {
-  if (rootBone >= 80) return 1.0;
-  if (rootBone >= 60) return 0.8;
-  if (rootBone >= 40) return 0.6;
-  return 0.4;
+  // 曲线：0.15 + ((rb-20)/80)^1.3 × 1.1
+  const t = Math.max(0, (rootBone - 20) / 80);
+  return Math.round((0.15 + Math.pow(t, 1.3) * 1.1) * 100) / 100;
 }
 
 // 初始通用功法/战技定义（每层1本通用功法 + 1本通用战技）

@@ -181,6 +181,8 @@ export interface Disciple {
   satisfaction: number;  // 满意度 0-100
   maxSatisfactionLossWork: number;  // 无工作最大满意度损失上限（最大20）
   maxSatisfactionLossResidence: number;  // 居所不匹配最大满意度损失上限（最大40）
+  // 试炼派遣：当前正在执行的试炼ID（null=未派遣）
+  onTrialId?: string | null;
   // 战斗属性
   attack: number;  // 攻击
   defense: number;  // 防御

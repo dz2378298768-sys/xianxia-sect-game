@@ -1,5 +1,6 @@
 package com.xianxia.sectgame;
 
+import android.annotation.SuppressLint;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
@@ -7,6 +8,8 @@ import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
 
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -18,9 +21,10 @@ import com.getcapacitor.BridgeActivity;
  * 沉浸式全屏：游戏启动后隐藏 Android 系统状态栏与虚拟导航栏，
  * 使用 IMMERSIVE_STICKY（从屏幕边缘滑动会临时浮现，几秒后自动再次隐藏）。
  *
- * 参考经验：优先用 WindowInsetsControllerCompat + setDecorFitsSystemWindows(false)，
- * 而非过时的 SYSTEM_UI_FLAG_* 位掩码，同时覆盖 onWindowFocusChanged/onResume
- * 确保切屏/锁屏回来后依然保持沉浸式。
+ * 另外针对真机（特别是旧版 Android System WebView）：
+ *  - 显式开启 WebView 的 file 访问、content 访问允许；
+ *  - 允许混合内容（真机上 file:// 加载 resources 偶尔被归类为 mixed）；
+ *  - 允许本地文件访问 file:///android_asset/。
  */
 public class MainActivity extends BridgeActivity {
 
@@ -41,7 +45,10 @@ public class MainActivity extends BridgeActivity {
             window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
         }
 
-        // 4. 启用沉浸式
+        // 4. WebView 显式开启本地资源访问（真机上 file:// 加载 catalog-*.jpg 的关键）
+        ensureWebViewFileAccess();
+
+        // 5. 启用沉浸式
         applyImmersiveSticky();
     }
 
@@ -50,6 +57,8 @@ public class MainActivity extends BridgeActivity {
         super.onResume();
         // 从后台回来/锁屏回来 重新应用沉浸式
         applyImmersiveSticky();
+        // 某些机型在后台 kill 后重新 attach webview，再次确保设置到位
+        ensureWebViewFileAccess();
     }
 
     @Override
@@ -58,6 +67,37 @@ public class MainActivity extends BridgeActivity {
         if (hasFocus) {
             // 焦点回来时再次应用，避免退出多任务再回来显示了导航栏
             applyImmersiveSticky();
+        }
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private void ensureWebViewFileAccess() {
+        try {
+            if (bridge == null) return;
+            WebView webView = bridge.getWebView();
+            if (webView == null) return;
+            WebSettings s = webView.getSettings();
+            // 允许 file:// 方案访问（Capacitor 加载 index.html 用的是 file:///android_asset/public/）
+            s.setAllowFileAccess(true);
+            // 允许通过 content:// URI 访问（部分机型 asset 走 content provider）
+            s.setAllowContentAccess(true);
+            // 允许 file:// 上下文加载其它本地资源
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+                s.setAllowFileAccessFromFileURLs(true);
+                s.setAllowUniversalAccessFromFileURLs(true);
+            }
+            // 混合内容：file:// 加载 http(s) 降级场景放行（我们都是本地，但放一道保险）
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                s.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
+            }
+            // 缓存模式：本地资源不从网络拉取；正常默认，但显式指定避免某些机型"无网络就不加载"
+            s.setCacheMode(WebSettings.LOAD_DEFAULT);
+            // 图片自动加载
+            s.setLoadsImagesAutomatically(true);
+            s.setBlockNetworkImage(false);
+            s.setBlockNetworkLoads(false);
+        } catch (Throwable ignored) {
+            // 任一设置抛异常不影响游戏启动
         }
     }
 

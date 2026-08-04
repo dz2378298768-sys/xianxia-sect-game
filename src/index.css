@@ -1856,6 +1856,38 @@ button[class*="btn-"], [class*="Button"] {
   transform: translateY(-1px);
 }
 
+/* ===== 试炼卡片 ===== */
+.trial-card {
+  position: relative;
+  background: linear-gradient(180deg, rgba(30,40,60,0.6), rgba(20,28,42,0.8));
+  border: 1px solid rgba(212, 168, 87, 0.25);
+  border-radius: 6px;
+  padding: 10px;
+  transition: all 0.2s ease;
+  overflow: hidden;
+}
+
+.trial-card:hover {
+  border-color: rgba(212, 168, 87, 0.55);
+  box-shadow: 0 0 14px rgba(212, 168, 87, 0.15);
+}
+
+.trial-card--easy { border-left: 3px solid rgba(74, 122, 107, 0.6); }
+.trial-card--normal { border-left: 3px solid rgba(212, 168, 87, 0.6); }
+.trial-card--hard { border-left: 3px solid rgba(234, 88, 12, 0.6); }
+.trial-card--extreme { border-left: 3px solid rgba(194, 58, 46, 0.6); }
+
+.trial-card--completed { opacity: 0.65; }
+.trial-card--failed { opacity: 0.5; }
+
+.trial-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  gap: 6px;
+}
+
 .world-sect-banner {
   position: relative;
   width: 100%;
@@ -2829,6 +2861,659 @@ button[class*="btn-"], [class*="Button"] {
 }
 
 /* ========================================
+   库房面板：左侧类型导航 + 6 列物品网格
+   ======================================== */
+.warehouse-panel-layout {
+  display: grid;
+  grid-template-columns: 88px 1fr;
+  gap: 6px;
+  height: 100%;
+  min-height: 0;
+}
+
+.warehouse-nav {
+  background: rgba(18, 24, 36, 0.65);
+  border-right: 1px solid rgba(212, 168, 87, 0.22);
+  padding: 4px 3px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.warehouse-nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 8px 2px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  color: var(--ink-300);
+  position: relative;
+}
+
+.warehouse-nav-item:hover {
+  border-color: rgba(212, 168, 87, 0.3);
+  background: rgba(212, 168, 87, 0.06);
+  color: var(--gold-200);
+}
+
+.warehouse-nav-item-active {
+  background: linear-gradient(135deg, rgba(212, 168, 87, 0.18), rgba(212, 168, 87, 0.04));
+  border-color: rgba(212, 168, 87, 0.55);
+  color: var(--gold-100);
+  box-shadow: inset 0 0 8px rgba(212, 168, 87, 0.12);
+}
+
+.warehouse-nav-icon-wrap {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(13, 17, 23, 0.55);
+  border: 1px solid rgba(212, 168, 87, 0.2);
+}
+
+.warehouse-nav-item-active .warehouse-nav-icon-wrap {
+  border-color: rgba(212, 168, 87, 0.6);
+  background: rgba(212, 168, 87, 0.1);
+}
+
+.warehouse-nav-label {
+  font-family: var(--font-display), serif;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+}
+
+.warehouse-nav-count {
+  font-size: 9px;
+  color: var(--ink-400);
+  font-weight: 600;
+}
+
+.warehouse-nav-item-active .warehouse-nav-count {
+  color: var(--gold-300);
+}
+
+/* 物品网格：每行 6 个 */
+.warehouse-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 5px;
+  align-content: start;
+}
+
+.warehouse-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 6px 3px 5px;
+  border-radius: 7px;
+  border: 1px solid rgba(212, 168, 87, 0.18);
+  background: rgba(13, 17, 23, 0.5);
+  position: relative;
+  transition: all 0.18s ease;
+  cursor: pointer;
+  /* button 元素样式重置：font-family / color / box-sizing / 去除默认 appearance */
+  font-family: var(--font-display), serif;
+  color: inherit;
+  box-sizing: border-box;
+  -webkit-appearance: none;
+  appearance: none;
+  /* 阻止 WebView 在 tap 时放大文字 */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  /* 去除 tap 高亮 */
+  -webkit-tap-highlight-color: transparent;
+}
+
+.warehouse-item:hover {
+  border-color: rgba(212, 168, 87, 0.5);
+  background: rgba(212, 168, 87, 0.06);
+  transform: translateY(-1px);
+}
+
+.warehouse-item-empty {
+  opacity: 0.35;
+  filter: grayscale(0.7);
+}
+
+.warehouse-item-icon-wrap {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at center, rgba(212, 168, 87, 0.1), rgba(13, 17, 23, 0.6));
+  border: 1px solid rgba(212, 168, 87, 0.15);
+  position: relative;
+  overflow: hidden;
+}
+
+.warehouse-item-icon-wrap::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.06), transparent 60%);
+  pointer-events: none;
+}
+
+.warehouse-item-name {
+  font-family: var(--font-display), serif;
+  font-size: 10px;
+  color: var(--gold-200);
+  text-align: center;
+  line-height: 1.2;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+}
+
+.warehouse-item-qty {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(212, 168, 87, 0.9), rgba(180, 140, 60, 0.9));
+  color: #1a1410;
+  font-size: 9px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display), serif;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.warehouse-item-qty-zero {
+  background: rgba(60, 60, 60, 0.7);
+  color: var(--ink-400);
+  box-shadow: none;
+}
+
+.warehouse-item-tier {
+  position: absolute;
+  bottom: 18px;
+  left: 3px;
+  font-size: 8px;
+  padding: 1px 3px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.55);
+  color: var(--gold-300);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+.warehouse-banner {
+  position: relative;
+  height: 56px;
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 6px;
+  border: 1px solid rgba(212, 168, 87, 0.25);
+  /* 渐变兜底：图片加载失败时不空白，保持"图鉴"氛围 */
+  background:
+    linear-gradient(120deg, rgba(212, 168, 87, 0.08), rgba(13, 17, 23, 0.9) 40%, rgba(60, 90, 120, 0.18) 100%),
+    radial-gradient(ellipse at 20% 120%, rgba(212, 168, 87, 0.18), transparent 55%),
+    #0d1117;
+}
+
+/* AI 图鉴大图条：<img> + 渐变兜底双保险 */
+.warehouse-banner-catalog {
+  height: 120px;
+  border-color: rgba(212, 168, 87, 0.4);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), inset 0 0 24px rgba(212, 168, 87, 0.08);
+}
+
+/* 图鉴 banner 下的 <img>：作为前景层，被 overlay 覆盖 */
+.warehouse-banner-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* 默认透明度，让 overlay 可读；hover 更清晰 */
+  opacity: 0.92;
+  transition: opacity 0.4s ease, filter 0.4s ease;
+  filter: saturate(0.95);
+  z-index: 0;
+  /* 阻止 Android WebView 偶发的自动缩放/抗锯齿问题 */
+  image-rendering: optimizeQuality;
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+.warehouse-banner-catalog:hover .warehouse-banner-img {
+  opacity: 1;
+  filter: saturate(1.05) brightness(1.05);
+}
+
+.warehouse-banner-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    rgba(5, 8, 17, 0.82) 0%,
+    rgba(5, 8, 17, 0.55) 45%,
+    rgba(5, 8, 17, 0.28) 100%
+  );
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 8px 12px 7px;
+  z-index: 1;
+}
+
+.warehouse-banner-title {
+  font-family: var(--font-display), serif;
+  font-size: 16px;
+  color: var(--gold-100);
+  letter-spacing: 0.2em;
+  text-shadow: 0 0 8px rgba(212, 168, 87, 0.4);
+}
+
+.warehouse-banner-sub {
+  font-size: 10px;
+  color: var(--ink-300);
+  letter-spacing: 0.1em;
+}
+
+/* 紧凑/移动端适配 */
+@media (orientation: landscape) and (max-height: 520px) {
+  .warehouse-panel-layout { grid-template-columns: 72px 1fr; gap: 4px; }
+  .warehouse-nav-item { padding: 5px 2px; }
+  .warehouse-nav-icon-wrap { width: 26px; height: 26px; }
+  .warehouse-nav-label { font-size: 10px; }
+  .warehouse-grid { gap: 3px; }
+  .warehouse-item { padding: 4px 2px 3px; }
+  .warehouse-item-name { font-size: 9px; }
+  .warehouse-banner { height: 42px; }
+  .warehouse-banner-catalog { height: 80px; }
+  .warehouse-banner-title { font-size: 13px; }
+}
+
+@media (max-width: 380px) {
+  .warehouse-grid { grid-template-columns: repeat(4, 1fr); }
+}
+
+/* ========================================
+   库房：物品详情弹窗（手机端 tap / PC 端 click）
+   ======================================== */
+.warehouse-detail-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: wh-detail-fade 0.18s ease;
+}
+
+@keyframes wh-detail-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.warehouse-detail-card {
+  position: relative;
+  width: 100%;
+  max-width: 340px;
+  border: 1px solid rgba(212, 168, 87, 0.45);
+  border-radius: 10px;
+  padding: 16px 14px 14px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6), inset 0 0 24px rgba(212, 168, 87, 0.06);
+  animation: wh-detail-pop 0.22s ease;
+}
+
+.warehouse-detail-card--large {
+  max-width: 400px;
+  max-height: 88vh;
+  overflow-y: auto;
+}
+
+@keyframes wh-detail-pop {
+  from { transform: scale(0.92); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+.warehouse-detail-close {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid rgba(212, 168, 87, 0.3);
+  background: rgba(13, 17, 23, 0.6);
+  color: var(--gold-200);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.warehouse-detail-close:hover {
+  background: rgba(212, 168, 87, 0.2);
+  border-color: rgba(212, 168, 87, 0.6);
+}
+
+.warehouse-detail-icon-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+  padding-right: 24px;
+}
+
+.warehouse-detail-name {
+  font-family: var(--font-display), serif;
+  font-size: 16px;
+  color: var(--gold-100);
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+}
+
+.warehouse-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--gold-300);
+}
+
+.warehouse-detail-meta span {
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(212, 168, 87, 0.12);
+  border: 1px solid rgba(212, 168, 87, 0.2);
+}
+
+.warehouse-detail-desc {
+  font-size: 12px;
+  color: var(--ink-200);
+  line-height: 1.6;
+  padding: 8px 0;
+  border-top: 1px solid rgba(212, 168, 87, 0.15);
+  border-bottom: 1px solid rgba(212, 168, 87, 0.15);
+  margin-bottom: 10px;
+}
+
+.warehouse-detail-effect {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.warehouse-detail-effect-label {
+  font-size: 10px;
+  color: var(--ink-400);
+  letter-spacing: 0.1em;
+}
+
+.warehouse-detail-effect-text {
+  font-size: 13px;
+  color: var(--gold-200);
+  font-family: var(--font-display), serif;
+  line-height: 1.5;
+}
+
+/* 炼制配方展示 */
+.warehouse-detail-recipe {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: rgba(13, 17, 23, 0.5);
+  border: 1px solid rgba(200, 170, 100, 0.2);
+  border-radius: 6px;
+}
+
+.warehouse-detail-recipe-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--gold-300, #d4b870);
+  font-family: var(--font-display), serif;
+  margin-bottom: 6px;
+  letter-spacing: 0.05em;
+}
+
+.warehouse-detail-recipe-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.warehouse-recipe-mat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.warehouse-recipe-mat.is-enough {
+  background: rgba(80, 200, 120, 0.08);
+}
+
+.warehouse-recipe-mat.is-lack {
+  background: rgba(220, 80, 80, 0.1);
+}
+
+.warehouse-recipe-mat-name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ink-100, #e0e0e8);
+}
+
+.warehouse-recipe-mat-rarity {
+  font-size: 9px;
+  padding: 0 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.warehouse-recipe-mat-tag {
+  font-size: 9px;
+  padding: 0 3px;
+  border-radius: 2px;
+  background: rgba(200, 170, 100, 0.15);
+  color: var(--gold-300, #d4b870);
+}
+
+.warehouse-recipe-mat-amount {
+  color: var(--ink-300, #a0a0b0);
+  white-space: nowrap;
+}
+
+.warehouse-recipe-mat-stock {
+  color: var(--ink-400, #707080);
+  font-size: 10px;
+  margin-left: 2px;
+}
+
+.warehouse-recipe-mat.is-lack .warehouse-recipe-mat-stock {
+  color: #f87171;
+}
+
+.warehouse-detail-recipe-hint {
+  margin-top: 6px;
+  font-size: 10px;
+  color: var(--ink-400, #707080);
+  line-height: 1.4;
+}
+
+/* ========================================
+   生产目标选择器：多槽位自定义下拉
+   （替代原生 select，避免 Android WebView 放大选项字体）
+   ======================================== */
+.production-target-selector {
+  position: relative;
+}
+
+.production-slot-row {
+  position: relative;
+}
+
+.production-slot-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(212, 168, 87, 0.15);
+  border: 1px solid rgba(212, 168, 87, 0.3);
+  color: var(--gold-300);
+  font-size: 9px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.production-slot-btn {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  padding: 5px 8px;
+  border-radius: 5px;
+  border: 1px solid rgba(96, 165, 250, 0.25);
+  background: rgba(13, 17, 23, 0.5);
+  color: var(--ink-300);
+  font-size: 12px;
+  font-family: var(--font-display), serif;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  /* 关键：固定字体大小，阻止 WebView 在 tap 时放大 */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+.production-slot-btn:hover:not(:disabled) {
+  border-color: rgba(96, 165, 250, 0.5);
+  background: rgba(96, 165, 250, 0.08);
+}
+
+.production-slot-btn-filled {
+  color: var(--gold-100);
+  border-color: rgba(212, 168, 87, 0.45);
+  background: rgba(212, 168, 87, 0.08);
+}
+
+.production-slot-btn-locked {
+  opacity: 0.45;
+  cursor: not-allowed;
+  font-size: 10px;
+}
+
+.production-slot-clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  background: rgba(248, 113, 113, 0.08);
+  color: #f87171;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.18s ease;
+}
+
+.production-slot-clear:hover {
+  background: rgba(248, 113, 113, 0.2);
+}
+
+.production-slot-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 40;
+  max-height: 180px;
+  overflow-y: auto;
+  background: rgba(13, 17, 23, 0.98);
+  border: 1px solid rgba(212, 168, 87, 0.4);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  padding: 3px;
+  animation: ps-dropdown-fade 0.15s ease;
+}
+
+@keyframes ps-dropdown-fade {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.production-slot-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--ink-200);
+  font-size: 12px;
+  font-family: var(--font-display), serif;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease;
+  /* 固定字体大小，阻止 WebView 放大 */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+.production-slot-option:hover:not(:disabled) {
+  background: rgba(212, 168, 87, 0.12);
+  color: var(--gold-100);
+}
+
+.production-slot-option-active {
+  background: rgba(212, 168, 87, 0.18);
+  color: var(--gold-100);
+}
+
+.production-slot-option-used {
+  opacity: 0.4;
+  cursor: not-allowed;
+  color: var(--ink-400);
+}
+
+.production-slot-option-used:hover {
+  background: transparent;
+}
+
+/* 紧凑模式：生产目标下拉适配横屏小高度 */
+@media (orientation: landscape) and (max-height: 520px) {
+  .production-slot-dropdown { max-height: 140px; }
+  .production-slot-option { padding: 4px 6px; font-size: 11px; }
+  .production-slot-btn { padding: 4px 6px; font-size: 11px; }
+}
+
+/* ========================================
    弟子面板：左侧等级导航 + 长方形弟子卡
    ======================================== */
 .disciple-panel-layout {
@@ -3051,5 +3736,281 @@ button[class*="btn-"], [class*="Button"] {
   }
 }
 
+/* ========================================
+   库房：兑换 / 赠送 操作 UI
+   ======================================== */
+.wh-action-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(212, 168, 87, 0.18);
+}
+
+.wh-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(212, 168, 87, 0.3);
+  background: rgba(13, 17, 23, 0.55);
+  color: var(--gold-200);
+  font-size: 12px;
+  font-family: var(--font-display), serif;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  -webkit-text-size-adjust: 100%;
+}
+
+.wh-action-btn:hover { background: rgba(212, 168, 87, 0.12); }
+.wh-action-btn.is-active {
+  background: rgba(212, 168, 87, 0.22);
+  border-color: rgba(212, 168, 87, 0.65);
+  box-shadow: 0 0 10px rgba(212, 168, 87, 0.18);
+}
+.wh-action-btn--exchange.is-active { color: #f0c36d; border-color: rgba(240, 195, 109, 0.7); }
+.wh-action-btn--gift.is-active { color: #9ed4ff; border-color: rgba(100, 180, 255, 0.65); }
+
+.wh-action-panel {
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 6px;
+  background: rgba(13, 17, 23, 0.65);
+  border: 1px solid rgba(212, 168, 87, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wh-input-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wh-input-label {
+  font-size: 10px;
+  color: var(--ink-300);
+  letter-spacing: 0.08em;
+}
+
+.wh-number-input {
+  padding: 6px 8px;
+  border-radius: 5px;
+  border: 1px solid rgba(212, 168, 87, 0.3);
+  background: rgba(5, 8, 17, 0.7);
+  color: var(--gold-100);
+  font-size: 13px;
+  font-family: var(--font-display), serif;
+  outline: none;
+  transition: border-color 0.18s ease;
+  /* 防止 WebView 在 focus 时放大 */
+  font-size: 16px;
+}
+
+.wh-number-input:focus {
+  border-color: rgba(212, 168, 87, 0.7);
+  box-shadow: 0 0 0 2px rgba(212, 168, 87, 0.15);
+}
+
+@media (min-width: 768px) {
+  .wh-number-input { font-size: 13px; }
+}
+
+.wh-disciple-picker {
+  margin-top: 2px;
+}
+
+.wh-disciple-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 170px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.wh-empty-tip {
+  font-size: 11px;
+  color: var(--ink-400);
+  padding: 8px 4px;
+  text-align: center;
+}
+
+.wh-disciple-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(13, 17, 23, 0.6);
+  color: var(--ink-200);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.14s ease;
+}
+
+.wh-disciple-chip:hover {
+  border-color: rgba(212, 168, 87, 0.35);
+  background: rgba(212, 168, 87, 0.06);
+}
+
+.wh-disciple-chip.is-selected {
+  border-color: rgba(212, 168, 87, 0.75);
+  background: rgba(212, 168, 87, 0.16);
+  color: var(--gold-100);
+}
+
+.wh-disciple-chip-name {
+  font-family: var(--font-display), serif;
+  color: inherit;
+}
+
+.wh-disciple-chip-info {
+  font-size: 10px;
+  color: var(--ink-400);
+  opacity: 0.9;
+}
+
+.wh-disciple-chip.is-selected .wh-disciple-chip-info { color: var(--gold-300); opacity: 1; }
+
+.wh-action-confirm {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(212, 168, 87, 0.55);
+  background: linear-gradient(180deg, rgba(212, 168, 87, 0.25), rgba(212, 168, 87, 0.08));
+  color: var(--gold-100);
+  font-size: 12px;
+  font-family: var(--font-display), serif;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.wh-action-confirm:hover:not(:disabled) {
+  filter: brightness(1.12);
+  box-shadow: 0 0 14px rgba(212, 168, 87, 0.25);
+}
+
+.wh-action-confirm:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.wh-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 44px;
+  transform: translateX(-50%);
+  z-index: 100;
+  padding: 8px 14px;
+  border-radius: 20px;
+  background: rgba(5, 8, 17, 0.92);
+  border: 1px solid rgba(212, 168, 87, 0.45);
+  color: var(--gold-100);
+  font-size: 12px;
+  font-family: var(--font-display), serif;
+  letter-spacing: 0.06em;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  animation: wh-toast 0.2s ease;
+  max-width: 90%;
+  text-align: center;
+}
+
+@keyframes wh-toast {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* ========================================
+   建筑详情：贡献设置（玩家手动调整获取/扣除）
+   ======================================== */
+.contribution-settings {
+  position: relative;
+  margin-top: 8px;
+  padding: 10px;
+  border-radius: 6px;
+  background: rgba(96, 165, 250, 0.06);
+  border: 1px solid rgba(96, 165, 250, 0.2);
+}
+
+.contribution-settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.contribution-settings-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-display), serif;
+  font-size: 12px;
+  color: #93c5fd;
+  letter-spacing: 0.08em;
+}
+
+.contribution-settings-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.contribution-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.contribution-field-label {
+  font-size: 10px;
+  color: var(--ink-300);
+  letter-spacing: 0.05em;
+}
+
+.contribution-field-input {
+  width: 100%;
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(96, 165, 250, 0.25);
+  background: rgba(13, 17, 23, 0.6);
+  color: var(--gold-100);
+  font-family: var(--font-display), serif;
+  font-size: 16px; /* 防止 WebView focus 放大 */
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+@media (min-width: 768px) {
+  .contribution-field-input { font-size: 12px; }
+}
+
+.contribution-field-input:focus {
+  border-color: rgba(212, 168, 87, 0.7);
+}
+
+.contribution-reset-btn {
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--ink-300);
+  font-size: 10px;
+  cursor: pointer;
+  font-family: var(--font-display), serif;
+}
+
+.contribution-reset-btn:hover {
+  color: var(--gold-200);
+  border-color: rgba(212, 168, 87, 0.3);
+}
 
 

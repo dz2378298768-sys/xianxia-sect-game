@@ -7,7 +7,7 @@ import { SectIcon } from '@/components/icons/SectIcons';
 import { getSlots, SAVE_SLOT_COUNT, type SaveSlotMeta } from '@/utils/saveSlots';
 
 export const TopBar: React.FC = () => {
-  const { year, month, sectName, sectLevel, reputation, spiritStones, disciples, returnToMenu, newGame, saveToSlot } = useGameStore();
+  const { year, month, sectName, sectLevel, reputation, spiritStones, disciples, herbInventory, ironInventory, paperInventory, returnToMenu, newGame, saveToSlot } = useGameStore();
   const { sectInfoOpen, toggleSectInfo } = useUIStore();
   const device = useDevice();
   const isCompact = device.isCompact;
@@ -64,36 +64,63 @@ export const TopBar: React.FC = () => {
 
         {/* 资源 */}
         <div className="flex items-center gap-1.5 flex-wrap justify-end">
-          <div className="resource-chip">
+          <div className="resource-chip" title="灵石">
             <span className="icon resource-icon-gem">
               <SectIcon name="cultivate" size={14} strokeWidth={2} />
             </span>
+            {!isCompact && <span className="text-[var(--gold-300)] text-[11px]">灵石</span>}
             <span>{Math.floor(spiritStones).toLocaleString()}</span>
           </div>
-          <div className="resource-chip">
+          <div className="resource-chip" title="弟子">
             <span className="icon resource-icon-people">
               <SectIcon name="disciple" size={14} strokeWidth={2} />
             </span>
+            {!isCompact && <span className="text-[var(--gold-300)] text-[11px]">弟子</span>}
             <span>{disciples.length}</span>
           </div>
 
-          {/* 商店入口 */}
+          {/* 生产原材料：灵草/灵铁/符纸 */}
+          <div className="resource-chip" title="灵草（炼丹原料）">
+            <span className="icon" style={{ color: 'var(--herb-300, #7dd87d)' }}>
+              <SectIcon name="herb" size={14} strokeWidth={2} />
+            </span>
+            {!isCompact && <span className="text-[var(--gold-300)] text-[11px]">灵草</span>}
+            <span>{Math.floor(herbInventory || 0)}</span>
+          </div>
+          <div className="resource-chip" title="灵铁（炼器原料）">
+            <span className="icon" style={{ color: 'var(--ink-200, #c8c8d0)' }}>
+              <SectIcon name="sword" size={14} strokeWidth={2} />
+            </span>
+            {!isCompact && <span className="text-[var(--gold-300)] text-[11px]">灵铁</span>}
+            <span>{Math.floor(ironInventory || 0)}</span>
+          </div>
+          <div className="resource-chip" title="符纸（制符原料）">
+            <span className="icon" style={{ color: 'var(--gold-200, #e8d9a0)' }}>
+              <SectIcon name="scrollText" size={14} strokeWidth={2} />
+            </span>
+            {!isCompact && <span className="text-[var(--gold-300)] text-[11px]">符纸</span>}
+            <span>{Math.floor(paperInventory || 0)}</span>
+          </div>
+
+          {/* 交易入口 */}
           <button
             className="resource-chip cursor-pointer hover:border-[var(--gold-300)]/50"
             onClick={() => useUIStore.getState().setShopOpen(true)}
-            title="坊市商店"
+            title="坊市交易"
           >
-            <SectIcon name="cultivate" size={14} strokeWidth={2} />
+            <SectIcon name="warehouse" size={14} strokeWidth={2} />
+            {!isCompact && <span className="text-[var(--gold-300)] text-[11px]">交易</span>}
           </button>
 
-          {/* 退出菜单按钮 */}
+          {/* 设置菜单按钮 */}
           <div className="relative">
             <button
               className="resource-chip cursor-pointer hover:border-[var(--gold-300)]/50"
               onClick={() => setMenuOpen(!menuOpen)}
-              title="菜单"
+              title="设置"
             >
               <SectIcon name="gear" size={14} strokeWidth={2} />
+              {!isCompact && <span className="text-[var(--gold-300)] text-[11px]">设置</span>}
             </button>
             {menuOpen && (
               <>

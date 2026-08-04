@@ -12,23 +12,25 @@ import { SectIcon } from '@/components/icons/SectIcons';
 export const EconomyPanel: React.FC = () => {
   const {
     spiritStones, buildings, disciples,
-    herbInventory, spiritStoneHistory,
+    herbInventory, ironInventory, paperInventory, spiritStoneHistory,
   } = useGameStore();
-  
+
   const activeBuildings = buildings.filter(b => b.status === 'active');
-  
+
   let totalSpiritStoneIncome = 0;
   let totalMaintenance = 0;
   let totalHerbIncome = 0;
-  
+  let totalIronIncome = 0;
+  let totalPaperIncome = 0;
+
   const incomeDetails: { name: string; spiritStones: number }[] = [];
   const expenseDetails: { name: string; amount: number }[] = [];
-  
+
   activeBuildings.forEach(building => {
     const assignedDisciples = disciples.filter(d => building.assignedDisciples.includes(d.id));
     const output = calculateBuildingOutput(building, assignedDisciples);
     const maintenance = calculateBuildingMaintenance(building);
-    
+
     if (output.spiritStones > 0) {
       incomeDetails.push({
         name: building.name,
@@ -36,11 +38,17 @@ export const EconomyPanel: React.FC = () => {
       });
       totalSpiritStoneIncome += output.spiritStones;
     }
-    
+
     if (output.herbs > 0) {
       totalHerbIncome += output.herbs;
     }
-    
+    if (output.iron > 0) {
+      totalIronIncome += output.iron;
+    }
+    if (output.paper > 0) {
+      totalPaperIncome += output.paper;
+    }
+
     totalMaintenance += maintenance;
     expenseDetails.push({ name: `${building.name}维护`, amount: maintenance });
   });
@@ -258,7 +266,7 @@ export const EconomyPanel: React.FC = () => {
       </div>
       
       <Card title="资源库存">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           <div className="text-center p-3 rounded-lg bg-sect-ink-light/30">
             <div className="text-sect-herb mb-1 flex justify-center">
               <SectIcon name="herb" size={28} strokeWidth={1.8} />
@@ -266,6 +274,22 @@ export const EconomyPanel: React.FC = () => {
             <div className="text-sect-jade/60 text-xs">灵草</div>
             <div className="font-display text-sect-herb-light">{herbInventory} 株</div>
             <div className="text-xs text-green-400 mt-1">+{totalHerbIncome}/月</div>
+          </div>
+          <div className="text-center p-3 rounded-lg bg-sect-ink-light/30">
+            <div className="mb-1 flex justify-center" style={{ color: 'var(--ink-200, #c8c8d0)' }}>
+              <SectIcon name="sword" size={28} strokeWidth={1.8} />
+            </div>
+            <div className="text-sect-jade/60 text-xs">灵铁</div>
+            <div className="font-display" style={{ color: 'var(--ink-100, #e0e0e8)' }}>{ironInventory} 块</div>
+            <div className="text-xs text-green-400 mt-1">+{totalIronIncome}/月</div>
+          </div>
+          <div className="text-center p-3 rounded-lg bg-sect-ink-light/30">
+            <div className="text-sect-gold mb-1 flex justify-center">
+              <SectIcon name="scrollText" size={28} strokeWidth={1.8} />
+            </div>
+            <div className="text-sect-jade/60 text-xs">符纸</div>
+            <div className="font-display text-sect-gold">{paperInventory} 张</div>
+            <div className="text-xs text-green-400 mt-1">+{totalPaperIncome}/月</div>
           </div>
           <div className="text-center p-3 rounded-lg bg-sect-ink-light/30">
             <div className="text-sect-gold mb-1 flex justify-center">

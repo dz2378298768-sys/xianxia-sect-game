@@ -1,10 +1,13 @@
-export type TalismanType = 
+export type TalismanType =
   | 'fire_talisman'
   | 'ice_talisman'
   | 'thunder_talisman'
   | 'heal_talisman'
   | 'teleport_talisman'
-  | 'stealth_talisman';
+  | 'stealth_talisman'
+  | 'ward_talisman'
+  | 'sword_talisman'
+  | 'divine_talisman';
 
 export const TalismanTypeNames: Record<TalismanType, string> = {
   fire_talisman: '烈火符',
@@ -13,6 +16,9 @@ export const TalismanTypeNames: Record<TalismanType, string> = {
   heal_talisman: '回春符',
   teleport_talisman: '传送符',
   stealth_talisman: '隐身符',
+  ward_talisman: '镇宅符',
+  sword_talisman: '剑气符',
+  divine_talisman: '神行符',
 };
 
 export interface Talisman {

@@ -1,10 +1,12 @@
-// 灵兽种类：5 类，覆盖速、防、攻、辅、均衡
+// 灵兽种类：7 类，覆盖速、防、攻、辅、均衡
 export type BeastType =
   | 'spirit_fox'     // 灵狐：速度/暴击
   | 'mystic_turtle'  // 玄龟：防御
   | 'fire_crow'      // 火鸦：攻击
   | 'jade_rabbit'    // 玉兔：恢复/寿命
-  | 'golden_roc';    // 金鹏：均衡
+  | 'golden_roc'     // 金鹏：均衡
+  | 'ice_serpent'    // 寒霜蛇：冰系
+  | 'earth_bear';    // 巨力熊：力士
 
 export const BeastTypeNames: Record<BeastType, string> = {
   spirit_fox: '灵狐',
@@ -12,6 +14,8 @@ export const BeastTypeNames: Record<BeastType, string> = {
   fire_crow: '火鸦',
   jade_rabbit: '玉兔',
   golden_roc: '金鹏',
+  ice_serpent: '寒霜蛇',
+  earth_bear: '巨力熊',
 };
 
 export interface Beast {

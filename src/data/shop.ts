@@ -3,6 +3,7 @@ import { PILL_CONFIGS } from '@/data/pills';
 import { ARTIFACT_CONFIGS } from '@/data/artifacts';
 import { TALISMAN_CONFIGS } from '@/data/talismans';
 import { BEAST_CONFIGS } from '@/data/beasts';
+import { SPECIAL_MATERIALS } from '@/data/specialMaterials';
 
 // 丹方：每类丹药的配方，售价 = 该丹药 sellPrice × 3（配方比成品贵）
 function buildPillRecipes(): ShopItem[] {
@@ -16,7 +17,7 @@ function buildPillRecipes(): ShopItem[] {
   }));
 }
 
-// 丹药成品：售价 = sellPrice
+// 丹药成品：售价 = sellPrice，出售价 = floor(sellPrice * 0.5)
 function buildPills(): ShopItem[] {
   return Object.values(PILL_CONFIGS).map(p => ({
     id: `pill:${p.type}`,
@@ -24,6 +25,7 @@ function buildPills(): ShopItem[] {
     name: p.name,
     description: p.effect,
     price: p.sellPrice,
+    sellPrice: Math.floor(p.sellPrice * 0.5),
     pillType: p.type,
   }));
 }
@@ -46,6 +48,7 @@ function buildArtifacts(): ShopItem[] {
     name: a.name,
     description: a.effect,
     price: a.sellPrice,
+    sellPrice: Math.floor(a.sellPrice * 0.5),
     artifactType: a.type,
   }));
 }
@@ -68,6 +71,7 @@ function buildTalismans(): ShopItem[] {
     name: t.name,
     description: t.effect,
     price: t.sellPrice,
+    sellPrice: Math.floor(t.sellPrice * 0.5),
     talismanType: t.type,
   }));
 }
@@ -83,7 +87,21 @@ function buildBeasts(): ShopItem[] {
   }));
 }
 
+// 特殊原材料：炼制丹药/法器/符箓所需的稀有材料
+function buildMaterials(): ShopItem[] {
+  return SPECIAL_MATERIALS.map(m => ({
+    id: `material:${m.name}`,
+    category: 'material' as ShopCategory,
+    name: m.name,
+    description: m.description,
+    price: m.price,
+    sellPrice: Math.floor(m.price * 0.5),
+    materialName: m.name,
+  }));
+}
+
 export const SHOP_ITEMS: ShopItem[] = [
+  ...buildMaterials(),
   ...buildPillRecipes(),
   ...buildPills(),
   ...buildArtifactRecipes(),
@@ -94,6 +112,7 @@ export const SHOP_ITEMS: ShopItem[] = [
 ];
 
 export const SHOP_CATEGORIES: { key: ShopCategory; label: string }[] = [
+  { key: 'material', label: '材料' },
   { key: 'pill_recipe', label: '丹方' },
   { key: 'pill', label: '丹药' },
   { key: 'artifact_recipe', label: '图谱' },

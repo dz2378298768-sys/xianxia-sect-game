@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useGameStore } from '@/store/gameStore';
 import { createInitialDisciple } from '@/utils/gameLogic';
-import type { Building } from '@/types/building';
+import type { Building, ProductionTarget } from '@/types/building';
 
-function makePillHall(target?: Building['productionTarget']): Building {
+function makePillHall(targets?: ProductionTarget[]): Building {
   return {
     id: 'pill-1',
     type: 'pill_hall',
@@ -21,7 +21,7 @@ function makePillHall(target?: Building['productionTarget']): Building {
     description: '',
     category: 'production',
     primaryOutput: 'pills',
-    productionTarget: target,
+    productionTargets: targets,
   } as Building;
 }
 
@@ -48,7 +48,7 @@ describe('工作建筑生产逻辑 — 消耗材料按配方产出成品', () =>
       unlockedPillRecipes: ['foundation_pill'],
       unlockedArtifactRecipes: [],
       unlockedTalismanRecipes: [],
-      buildings: [makePillHall({ pillType: 'foundation_pill' })],
+      buildings: [makePillHall([{ pillType: 'foundation_pill' }])],
       disciples: [makeDisciple('d1', '甲', 80), makeDisciple('d2', '乙', 70)],
     });
   });
@@ -85,16 +85,41 @@ describe('工作建筑生产逻辑 — 消耗材料按配方产出成品', () =>
   });
 
   it('未设置生产目标时不产出成品', () => {
-    useGameStore.setState({ buildings: [makePillHall(undefined)] });
+    useGameStore.setState({ buildings: [makePillHall([])] });
     useGameStore.getState().nextMonth();
     const after = useGameStore.getState();
     expect(after.pillInventory).toHaveLength(0);
   });
 
-  it('setProductionTarget 更新建筑生产目标', () => {
-    useGameStore.setState({ buildings: [makePillHall(undefined)] });
-    useGameStore.getState().setProductionTarget('pill-1', { pillType: 'recovery_pill' });
+  it('多槽位同时生产不同丹药', () => {
+    // 解锁两种丹药，2级丹堂2槽位同时生产
+    useGameStore.setState({
+      unlockedPillRecipes: ['foundation_pill', 'recovery_pill'],
+      buildings: [makePillHall([
+        { pillType: 'foundation_pill' },
+        { pillType: 'recovery_pill' },
+      ])],
+    });
+    useGameStore.getState().nextMonth();
     const after = useGameStore.getState();
-    expect(after.buildings[0].productionTarget?.pillType).toBe('recovery_pill');
+    const f = after.pillInventory.find(p => p.type === 'foundation_pill');
+    const r = after.pillInventory.find(p => p.type === 'recovery_pill');
+    // 两种丹药都应产出（材料充足时）
+    expect(f?.quantity || 0).toBeGreaterThanOrEqual(1);
+    expect(r?.quantity || 0).toBeGreaterThanOrEqual(1);
+  });
+
+  it('setProductionTarget 按槽位更新建筑生产目标', () => {
+    useGameStore.setState({ buildings: [makePillHall([])] });
+    useGameStore.getState().setProductionTarget('pill-1', 0, { pillType: 'recovery_pill' });
+    const after = useGameStore.getState();
+    expect(after.buildings[0].productionTargets?.[0]?.pillType).toBe('recovery_pill');
+  });
+
+  it('clearProductionTarget 清空指定槽位', () => {
+    useGameStore.setState({ buildings: [makePillHall([{ pillType: 'foundation_pill' }])] });
+    useGameStore.getState().clearProductionTarget('pill-1', 0);
+    const after = useGameStore.getState();
+    expect(after.buildings[0].productionTargets?.[0]?.pillType).toBeUndefined();
   });
 });

@@ -8,7 +8,6 @@ export type BuildingType =
   | 'secret_library'
   | 'array_hall'
   | 'spirit_beast_garden'
-  | 'guardian_array'
   | 'skyscraper_tower'
   | 'outer_residence'
   | 'inner_residence'
@@ -35,8 +34,7 @@ export const BuildingTypeNames: Record<BuildingType, string> = {
   artifact_hall: '符堂',
   secret_library: '藏经阁',
   array_hall: '阵堂',
-  spirit_beast_garden: '灵兽园',
-  guardian_array: '护山大阵',
+  spirit_beast_garden: '灵兽原',
   skyscraper_tower: '通天塔',
   outer_residence: '外门居所',
   inner_residence: '内门居所',
@@ -124,9 +122,25 @@ export interface Building {
   discipleEffect?: BuildingDiscipleEffect;
   // 生产目标：玩家可调整工作建筑生产哪种成品
   // 丹堂→PillType，炼器堂→ArtifactType，符堂→TalismanType
-  productionTarget?: {
-    pillType?: import('@/types/pill').PillType;
-    artifactType?: import('@/types/artifact').ArtifactType;
-    talismanType?: import('@/types/talisman').TalismanType;
+  // 多槽位：1级1槽、2级2槽、3级3槽（最多3槽，建筑等级决定可同时生产的种类数）
+  productionTargets?: ProductionTarget[];
+  // 贡献度配置（玩家手动可调，undefined 时使用默认值计算）
+  contributionSettings?: {
+    // 每月每名弟子通过工作获得的贡献（正值，默认按建筑配置）
+    monthlyGainPerDisciple?: number;
+    // 每月每名弟子在该建筑消耗/扣除的贡献（如居所占用费、讲经堂听课费等）
+    monthlyCostPerDisciple?: number;
   };
+}
+
+export interface ProductionTarget {
+  pillType?: import('@/types/pill').PillType;
+  artifactType?: import('@/types/artifact').ArtifactType;
+  talismanType?: import('@/types/talisman').TalismanType;
+}
+
+// 建筑等级 → 可用生产槽数量（最多3）
+export const MAX_PRODUCTION_SLOTS = 3;
+export function getAvailableSlots(level: number): number {
+  return Math.min(MAX_PRODUCTION_SLOTS, Math.max(0, level));
 }

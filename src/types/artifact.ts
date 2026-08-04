@@ -1,9 +1,12 @@
-export type ArtifactType = 
+export type ArtifactType =
   | 'flying_sword'
   | 'defensive_shield'
   | 'attack_talisman'
   | 'spirit_bottle'
-  | 'space_ring';
+  | 'space_ring'
+  | 'thunder_pearl'
+  | 'bagua_mirror'
+  | 'demon_pagoda';
 
 export const ArtifactTypeNames: Record<ArtifactType, string> = {
   flying_sword: '飞剑',
@@ -11,6 +14,9 @@ export const ArtifactTypeNames: Record<ArtifactType, string> = {
   attack_talisman: '攻击符',
   spirit_bottle: '聚灵瓶',
   space_ring: '储物戒',
+  thunder_pearl: '雷珠',
+  bagua_mirror: '八卦镜',
+  demon_pagoda: '镇妖塔',
 };
 
 export interface Artifact {

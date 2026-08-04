@@ -6,7 +6,6 @@ import { BUILDING_IMAGE_MAP } from '@/data/buildingImages';
 const BUILDING_POSITIONS: Record<string, { x: number; y: number; scale?: number; layer?: 1 | 2 | 3 }> = {
   // 顶层（最高峰）
   skyscraper_tower: { x: 50, y: 22, scale: 1.1, layer: 1 },
-  guardian_array: { x: 50, y: 30, scale: 1.0, layer: 1 },
   // 中上层（核心建筑）
   cave_mansion: { x: 80, y: 34, scale: 0.85, layer: 2 },
   secret_library: { x: 74, y: 42, scale: 0.95, layer: 2 },

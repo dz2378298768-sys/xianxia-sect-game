@@ -3,8 +3,9 @@ import type { ArtifactType } from '@/types/artifact';
 import type { TalismanType } from '@/types/talisman';
 import type { BeastType } from '@/types/beast';
 
-// 商店商品七大类
+// 商店商品八大类
 export type ShopCategory =
+  | 'material'         // 原材料：特殊炼制材料（寿元花/灵晶/灵玉等）
   | 'pill_recipe'      // 丹方：解锁丹堂生产该丹药
   | 'pill'             // 丹药成品
   | 'artifact_recipe'  // 图谱：解锁炼器堂生产该法器
@@ -18,7 +19,8 @@ export interface ShopItem {
   category: ShopCategory;
   name: string;
   description: string;
-  price: number;             // 灵石售价
+  price: number;             // 灵石售价（购买价）
+  sellPrice?: number;        // 出售回收价（仅成品类，= floor(price * 0.5))
   // 成品类：购买后增加对应库存
   pillType?: PillType;
   artifactType?: ArtifactType;
@@ -28,4 +30,6 @@ export interface ShopItem {
   recipePillType?: PillType;
   recipeArtifactType?: ArtifactType;
   recipeTalismanType?: TalismanType;
+  // 原材料类：购买后增加对应特殊材料库存
+  materialName?: string;
 }

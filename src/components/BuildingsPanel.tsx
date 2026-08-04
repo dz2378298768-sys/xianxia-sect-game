@@ -16,8 +16,7 @@ import { Tooltip } from '@/components/ui/Tooltip';
 import { LibraryPanel } from '@/components/LibraryPanel';
 import { calculateBuildingMaintenance, calculateBuildingOutput, getResidenceUpgradeCost } from '@/utils/gameLogic';
 import { RealmOrder, DiscipleStatusNames, getRealmDisplay } from '@/types/disciple';
-import type { BuildingType } from '@/types/building';
-import { RESIDENCE_TYPES, RESIDENCE_TYPES_WITH_CAVE, isResidenceType } from '@/types/building';
+import { BuildingType, RESIDENCE_TYPES, RESIDENCE_TYPES_WITH_CAVE, isResidenceType, MAX_PRODUCTION_SLOTS, getAvailableSlots } from '@/types/building';
 import { BUILDING_CONFIGS } from '@/data/buildings';
 import { PillTypeNames } from '@/types/pill';
 import { ArtifactTypeNames } from '@/types/artifact';
@@ -27,6 +26,7 @@ import { SectIcon } from '@/components/icons/SectIcons';
 import { SimpleAvatar } from '@/components/ui/Avatar';
 import { getBuildingImage } from '@/data/buildingImages';
 import { BUILDING_CONTRIBUTION_BONUS } from '@/domain/balance';
+import { BeastTypeNames } from '@/types/beast';
 
 /** 建筑圆形缩略图：优先用生成的水墨建筑图，无图则回退图标 */
 const BuildingThumb: React.FC<{ type: string; size?: number; locked?: boolean; className?: string }> = ({
@@ -86,17 +86,283 @@ function getBuildingIcon(type: string) {
     case 'secret_library': return <BookOpen size={24} />;
     case 'array_hall': return <Zap size={24} />;
     case 'spirit_beast_garden': return <TreePine size={24} />;
-    case 'guardian_array': return <Shield size={24} />;
     case 'skyscraper_tower': return <Crown size={24} />;
     default: return <Building2 size={24} />;
   }
 }
 
+/**
+ * 贡献度设置编辑器：
+ * 玩家可为每个建筑手动调整"每名弟子每月额外获得贡献"和"每名弟子每月消耗贡献"
+ */
+interface ContributionSettingsEditorProps {
+  building: any;
+  onChange: (settings: { monthlyGainPerDisciple?: number; monthlyCostPerDisciple?: number }) => void;
+  onReset: () => void;
+}
+const ContributionSettingsEditor: React.FC<ContributionSettingsEditorProps> = ({ building, onChange, onReset }) => {
+  const settings = building.contributionSettings || {};
+  const [gainVal, setGainVal] = useState<string>(
+    typeof settings.monthlyGainPerDisciple === 'number' ? String(settings.monthlyGainPerDisciple) : ''
+  );
+  const [costVal, setCostVal] = useState<string>(
+    typeof settings.monthlyCostPerDisciple === 'number' ? String(settings.monthlyCostPerDisciple) : ''
+  );
+
+  const commit = (patch: { monthlyGainPerDisciple?: number; monthlyCostPerDisciple?: number }) => {
+    const next: { monthlyGainPerDisciple?: number; monthlyCostPerDisciple?: number } = {
+      monthlyGainPerDisciple:
+        'monthlyGainPerDisciple' in patch ? patch.monthlyGainPerDisciple : settings.monthlyGainPerDisciple,
+      monthlyCostPerDisciple:
+        'monthlyCostPerDisciple' in patch ? patch.monthlyCostPerDisciple : settings.monthlyCostPerDisciple,
+    };
+    onChange(next);
+  };
+
+  return (
+    <div className="contribution-settings">
+      <div className="contribution-settings-header">
+        <span className="contribution-settings-title">
+          <SectIcon name="gem" size={11} />贡献参数
+        </span>
+        <button
+          type="button"
+          className="contribution-reset-btn"
+          onClick={() => {
+            setGainVal(''); setCostVal(''); onReset();
+          }}
+        >
+          重置为默认
+        </button>
+      </div>
+      <div className="contribution-settings-grid">
+        <label className="contribution-field">
+          <span className="contribution-field-label">每人月获得 +</span>
+          <input
+            type="number"
+            className="contribution-field-input"
+            min={0}
+            placeholder="默认按公式"
+            value={gainVal}
+            onChange={e => {
+              const v = e.target.value;
+              setGainVal(v);
+              if (v.trim() === '') commit({ monthlyGainPerDisciple: undefined });
+              else {
+                const n = parseInt(v, 10);
+                if (!Number.isNaN(n)) commit({ monthlyGainPerDisciple: Math.max(0, n) });
+              }
+            }}
+          />
+        </label>
+        <label className="contribution-field">
+          <span className="contribution-field-label">每人月消耗 -</span>
+          <input
+            type="number"
+            className="contribution-field-input"
+            min={0}
+            placeholder="默认 0"
+            value={costVal}
+            onChange={e => {
+              const v = e.target.value;
+              setCostVal(v);
+              if (v.trim() === '') commit({ monthlyCostPerDisciple: undefined });
+              else {
+                const n = parseInt(v, 10);
+                if (!Number.isNaN(n)) commit({ monthlyCostPerDisciple: Math.max(0, n) });
+              }
+            }}
+          />
+        </label>
+      </div>
+      <div className="text-[10px] text-sect-jade/50 mt-2 leading-snug">
+        提示：获得贡献会在默认工作贡献之外 <em className="text-sect-gold">再加</em>；
+        消耗贡献会在最后 <em className="text-red-400/80">再减</em>。不填表示按原公式/默认0。
+      </div>
+    </div>
+  );
+};
+
+/**
+ * 生产目标选择器（多槽位自定义下拉）
+ * - 槽位数 = min(MAX_PRODUCTION_SLOTS, building.level)（1级1槽、2级2槽、3级3槽）
+ * - 用自定义下拉替代原生 <select>，避免 Android WebView 放大选项字体
+ * - 已设置槽位可清除；未解锁槽位显示锁标
+ */
+interface ProductionTargetSelectorProps {
+  building: any;
+  unlockedPillRecipes: string[];
+  unlockedArtifactRecipes: string[];
+  unlockedTalismanRecipes: string[];
+  onSet: (slotIndex: number, target: any) => void;
+  onClear: (slotIndex: number) => void;
+}
+const ProductionTargetSelector: React.FC<ProductionTargetSelectorProps> = ({
+  building, unlockedPillRecipes, unlockedArtifactRecipes, unlockedTalismanRecipes, onSet, onClear,
+}) => {
+  const [openSlot, setOpenSlot] = useState<number | null>(null);
+  const availableSlots = getAvailableSlots(building.level);
+  const slots = building.productionTargets || [];
+
+  // 该建筑对应的配方类型
+  const isPill = building.type === 'pill_hall';
+  const isArtifact = building.type === 'sutra_hall';
+  const isTalisman = building.type === 'artifact_hall';
+
+  const recipes: string[] = isPill ? unlockedPillRecipes
+    : isArtifact ? unlockedArtifactRecipes
+    : isTalisman ? unlockedTalismanRecipes
+    : [];
+
+  const getName = (t: string) =>
+    isPill ? (PillTypeNames as any)[t]
+    : isArtifact ? (ArtifactTypeNames as any)[t]
+    : isTalisman ? (TalismanTypeNames as any)[t]
+    : t;
+
+  const makeTarget = (t: string) =>
+    isPill ? { pillType: t as any }
+    : isArtifact ? { artifactType: t as any }
+    : isTalisman ? { talismanType: t as any }
+    : {};
+
+  const getSlotLabel = (idx: number): string => {
+    const s = slots[idx];
+    if (!s) return '未设置';
+    if (s.pillType) return PillTypeNames[s.pillType as keyof typeof PillTypeNames];
+    if (s.artifactType) return ArtifactTypeNames[s.artifactType as keyof typeof ArtifactTypeNames];
+    if (s.talismanType) return TalismanTypeNames[s.talismanType as keyof typeof TalismanTypeNames];
+    return '未设置';
+  };
+
+  const isSlotFilled = (idx: number): boolean => {
+    const s = slots[idx];
+    return !!(s && (s.pillType || s.artifactType || s.talismanType));
+  };
+
+  const noRecipes = recipes.length === 0;
+
+  return (
+    <div className="bg-blue-500/10 border border-blue-500/30 rounded p-2 production-target-selector">
+      <div className="flex items-center justify-between mb-1.5">
+        <div className="flex items-center gap-1.5">
+          <FlaskConical size={12} className="text-blue-300" />
+          <span className="font-display text-blue-300 text-xs">生产目标</span>
+        </div>
+        <span className="text-[10px] text-sect-jade/60">
+          {availableSlots}/{MAX_PRODUCTION_SLOTS} 槽位（Lv.{building.level}）
+        </span>
+      </div>
+
+      {/* 槽位列表 */}
+      <div className="space-y-1">
+        {Array.from({ length: MAX_PRODUCTION_SLOTS }).map((_, idx) => {
+          const unlocked = idx < availableSlots;
+          const filled = isSlotFilled(idx);
+          const isOpen = openSlot === idx;
+          return (
+            <div key={idx} className="production-slot-row">
+              <div className="flex items-center gap-1.5">
+                <span className="production-slot-index">{idx + 1}</span>
+                <button
+                  type="button"
+                  className={`production-slot-btn ${filled ? 'production-slot-btn-filled' : ''} ${!unlocked ? 'production-slot-btn-locked' : ''}`}
+                  disabled={!unlocked}
+                  onClick={() => {
+                    if (!unlocked) return;
+                    setOpenSlot(isOpen ? null : idx);
+                  }}
+                >
+                  {!unlocked ? (
+                    <><Lock size={11} className="mr-1" />需 Lv.{idx + 1}</>
+                  ) : (
+                    <span className="truncate">{getSlotLabel(idx)}</span>
+                  )}
+                </button>
+                {unlocked && filled && (
+                  <button
+                    type="button"
+                    className="production-slot-clear"
+                    onClick={() => {
+                      onClear(idx);
+                      if (isOpen) setOpenSlot(null);
+                    }}
+                    title="清除"
+                  >
+                    <X size={11} />
+                  </button>
+                )}
+              </div>
+
+              {/* 自定义下拉选项 */}
+              {unlocked && isOpen && (
+                <div className="production-slot-dropdown">
+                  {noRecipes ? (
+                    <div className="text-[10px] text-yellow-400 px-2 py-1.5">
+                      尚未解锁任何配方，请前往商店购买丹方/图谱/符谱
+                    </div>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        className={`production-slot-option ${!filled ? 'production-slot-option-active' : ''}`}
+                        onClick={() => {
+                          onClear(idx);
+                          setOpenSlot(null);
+                        }}
+                      >
+                        — 未设置 —
+                      </button>
+                      {recipes.map(t => {
+                        const name = getName(t);
+                        // 同一槽位不允许重复选择已在其他槽位选中的目标
+                        const usedElsewhere = slots.some((s: any, i: number) =>
+                          i !== idx && (s.pillType === t || s.artifactType === t || s.talismanType === t)
+                        );
+                        const current = filled && (
+                          (isPill && slots[idx]?.pillType === t) ||
+                          (isArtifact && slots[idx]?.artifactType === t) ||
+                          (isTalisman && slots[idx]?.talismanType === t)
+                        );
+                        return (
+                          <button
+                            key={t}
+                            type="button"
+                            className={`production-slot-option ${current ? 'production-slot-option-active' : ''} ${usedElsewhere ? 'production-slot-option-used' : ''}`}
+                            disabled={usedElsewhere && !current}
+                            onClick={() => {
+                              onSet(idx, makeTarget(t));
+                              setOpenSlot(null);
+                            }}
+                          >
+                            <span className="truncate">{name}</span>
+                            {usedElsewhere && !current && <Lock size={10} className="ml-1 shrink-0" />}
+                          </button>
+                        );
+                      })}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {noRecipes && (
+        <div className="text-[10px] text-yellow-400 mt-1">尚未解锁任何配方，请前往商店购买丹方/图谱/符谱</div>
+      )}
+    </div>
+  );
+};
+
 export const BuildingsPanel: React.FC = () => {
   const {
     buildings, disciples, spiritStones, reputation, sectLevel,
     upgradeBuilding, downgradeBuilding, toggleBuilding, buildBuilding, setBuildingManager,
-    setProductionTarget, unlockedPillRecipes, unlockedArtifactRecipes, unlockedTalismanRecipes,
+    setProductionTarget, clearProductionTarget, setBuildingContributionSettings,
+    unlockedPillRecipes, unlockedArtifactRecipes, unlockedTalismanRecipes,
+    buyBeast, captureBeast, beastInventory,
   } = useGameStore();
   const { selectedBuildingId, setSelectedBuildingId } = useUIStore();
   const [showBuildModal, setShowBuildModal] = useState(false);
@@ -104,6 +370,7 @@ export const BuildingsPanel: React.FC = () => {
   const [showVacant, setShowVacant] = useState(false);
   const [showManagerPicker, setShowManagerPicker] = useState(false);
   const [expandedBuildingId, setExpandedBuildingId] = useState<string | null>(null);
+  const [showBeastCapturePicker, setShowBeastCapturePicker] = useState(false);
 
   // 显示错误提示
   const showError = (message: string) => {
@@ -112,26 +379,36 @@ export const BuildingsPanel: React.FC = () => {
   };
   
   const handleUpgrade = (buildingId: string) => {
-    upgradeBuilding(buildingId);
+    const ok = upgradeBuilding(buildingId);
+    if (!ok) {
+      const b = buildings.find(x => x.id === buildingId);
+      const reason = b ? getUpgradeBlockReason(b) : null;
+      showError(reason || '无法升级');
+    }
   };
-  
-  const canUpgrade = (building: any) => {
-    if (building.level >= building.maxLevel) return false;
+
+  // 与 store.upgradeBuilding 的资源校验完全对齐：
+  // 灵石 + 声望 两类资源同时校验，避免按钮可点但点击静默失败。
+  const getUpgradeBlockReason = (building: any): string | null => {
+    if (building.level >= building.maxLevel) return '已满级';
 
     const isResidence = RESIDENCE_TYPES.includes(building.type);
-
     let cost;
     if (isResidence) {
       cost = getResidenceUpgradeCost(building);
-      if (!cost) return false;
+      if (!cost) return '无法升级';
     } else {
       cost = building.upgradeCosts[building.level - 1];
-      if (!cost) return false;
+      if (!cost) return '无法升级';
     }
 
-    if (spiritStones < cost.spiritStones) return false;
-    return true;
+    if (spiritStones < cost.spiritStones) return '灵石不足';
+    const needReputation = cost.reputation ?? 0;
+    if (reputation < needReputation) return '声望不足';
+    return null;
   };
+
+  const canUpgrade = (building: any) => getUpgradeBlockReason(building) === null;
 
   const getUpgradeCost = (building: any) => {
     if (building.level >= building.maxLevel) return null;
@@ -236,10 +513,11 @@ export const BuildingsPanel: React.FC = () => {
   const assignedDisciples = selectedBuilding 
     ? disciples.filter(d => selectedBuilding.assignedDisciples.includes(d.id))
     : [];
-  const output = selectedBuilding 
+  const output = selectedBuilding
     ? calculateBuildingOutput(selectedBuilding, assignedDisciples)
-    : { 
-        spiritStones: 0, herbs: 0, reputation: 0, pills: 0, artifacts: 0, talismans: 0,
+    : {
+        spiritStones: 0, herbs: 0, iron: 0, paper: 0, reputation: 0,
+        pills: 0, artifacts: 0, talismans: 0, beasts: 0,
         breakdown: {
           levelBonus: 0,
           managerBonus: 0,
@@ -435,7 +713,7 @@ export const BuildingsPanel: React.FC = () => {
                       if (canUpgrade(building)) handleUpgrade(building.id);
                     }}
                     disabled={!canUpgrade(building) || !upgradeCost}
-                    title={upgradeCost ? `升级需 ${upgradeCost.spiritStones} 灵石` : '已满级'}
+                    title={upgradeCost ? `升级需 ${upgradeCost.spiritStones} 灵石${upgradeCost.contribution ? `/${upgradeCost.contribution}贡献` : ''}${upgradeCost.reputation ? `/${upgradeCost.reputation}声望` : ''}` : (getUpgradeBlockReason(building) || '已满级')}
                   >
                     <ArrowUp size={12} />
                     升级
@@ -525,6 +803,36 @@ export const BuildingsPanel: React.FC = () => {
                   <div className="text-[10px] text-sect-jade/60 mt-0.5">灵草/月</div>
                 </div>
               )}
+              {output.iron > 0 && (
+                <div className="text-center px-1 py-1 rounded border border-sect-gold/10 bg-sect-ink-light/30">
+                  <div className="text-sm font-display text-sect-jade">+{output.iron}</div>
+                  <div className="text-[10px] text-sect-jade/60 mt-0.5">灵铁/月</div>
+                </div>
+              )}
+              {output.paper > 0 && (
+                <div className="text-center px-1 py-1 rounded border border-sect-gold/10 bg-sect-ink-light/30">
+                  <div className="text-sm font-display text-sect-gold">+{output.paper}</div>
+                  <div className="text-[10px] text-sect-jade/60 mt-0.5">符纸/月</div>
+                </div>
+              )}
+              {output.pills > 0 && (
+                <div className="text-center px-1 py-1 rounded border border-sect-gold/10 bg-sect-ink-light/30">
+                  <div className="text-sm font-display text-sect-herb-light">+{output.pills}</div>
+                  <div className="text-[10px] text-sect-jade/60 mt-0.5">丹药/月</div>
+                </div>
+              )}
+              {output.artifacts > 0 && (
+                <div className="text-center px-1 py-1 rounded border border-sect-gold/10 bg-sect-ink-light/30">
+                  <div className="text-sm font-display text-sect-jade">+{output.artifacts}</div>
+                  <div className="text-[10px] text-sect-jade/60 mt-0.5">法器/月</div>
+                </div>
+              )}
+              {output.talismans > 0 && (
+                <div className="text-center px-1 py-1 rounded border border-sect-gold/10 bg-sect-ink-light/30">
+                  <div className="text-sm font-display text-sect-gold">+{output.talismans}</div>
+                  <div className="text-[10px] text-sect-jade/60 mt-0.5">符箓/月</div>
+                </div>
+              )}
               {output.reputation > 0 && (
                 <div className="text-center px-1 py-1 rounded border border-sect-gold/10 bg-sect-ink-light/30">
                   <div className="text-sm font-display text-yellow-400">+{output.reputation}</div>
@@ -575,11 +883,15 @@ export const BuildingsPanel: React.FC = () => {
                 </div>
                 <div className="space-y-0.5 text-sect-jade/80 leading-snug">
                   <div>✓ 驻守弟子每月 +5 贡献点</div>
-                  <div>✓ 满员时，宗门战力 +10%</div>
-                  <div>↑ 每级 +10 容量 / +10% 战力上限</div>
+                  <div>✓ 每级满员 +5% 防御战力</div>
+                  <div>★ 升至 10 级满员化为护山大阵，+50% 战力</div>
+                  <div>↑ 每级 +10 容量，最高 10 级</div>
                 </div>
                 <div className="text-[10px] text-blue-400/60">
-                  当前容量：{selectedBuilding.discipleCapacity}（Lv.{selectedBuilding.level}）
+                  当前：Lv.{selectedBuilding.level} · 容量 {selectedBuilding.discipleCapacity} ·
+                  {selectedBuilding.assignedDisciples.length >= selectedBuilding.discipleCapacity
+                    ? <span className="text-emerald-400">已满员 +{(selectedBuilding.level * 5)}% 战力</span>
+                    : <span className="text-yellow-400">未满员（满员后生效）</span>}
                 </div>
               </div>
             )}
@@ -590,9 +902,9 @@ export const BuildingsPanel: React.FC = () => {
                   <BookOpen size={12} />讲经堂作用
                 </div>
                 <div className="space-y-0.5 text-sect-jade/80 leading-snug">
-                  <div>+ 听讲弟子每月 +{BUILDING_CONTRIBUTION_BONUS['lecture_hall'] ?? 8} 贡献</div>
+                  <div>- 听讲弟子每月消耗 {Math.abs(BUILDING_CONTRIBUTION_BONUS['lecture_hall'] ?? -5)} 贡献</div>
                   <div>✓ 听讲弟子修炼 +10%，讲师越强加成越高</div>
-                  <div>★ 讲师每月 +{BUILDING_CONTRIBUTION_BONUS['lecture_hall'] ?? 8} 贡献</div>
+                  <div>★ 讲师同享修炼加成</div>
                 </div>
                 {selectedBuilding.managerId && (
                   <div className="text-[10px] text-purple-400/60">
@@ -613,7 +925,113 @@ export const BuildingsPanel: React.FC = () => {
                   <div>↑ 每级 +10 容量；灵韵越高产出越多</div>
                 </div>
                 <div className="text-[10px] text-green-400/60">
-                  Lv.{selectedBuilding.level} · 容量 {selectedBuilding.discipleCapacity}
+                  Lv.{selectedBuilding.level} · 容量 {selectedBuilding.discipleCapacity} · 最高 5 级
+                </div>
+              </div>
+            )}
+
+            {selectedBuilding.type === 'spirit_beast_garden' && (
+              <div className="bg-emerald-500/10 border border-emerald-500/30 rounded p-2 space-y-2 text-[11px]">
+                <div className="font-display text-emerald-300 flex items-center gap-1">
+                  <TreePine size={12} />灵兽原
+                </div>
+                <div className="space-y-0.5 text-sect-jade/80 leading-snug">
+                  <div>✓ 弟子于灵兽原培养，每月 +{BUILDING_CONTRIBUTION_BONUS['spirit_beast_garden'] ?? 7} 贡献</div>
+                  <div>✓ 每只灵兽每月消耗 2 灵草维持</div>
+                  <div>★ 解锁条件：山门达到 2 级</div>
+                </div>
+
+                {/* 购买 / 捕捉 */}
+                <div className="grid grid-cols-2 gap-1.5">
+                  <Button
+                    variant="gold"
+                    size="sm"
+                    className="text-[11px] py-1"
+                    disabled={spiritStones < 500}
+                    onClick={() => {
+                      const r = buyBeast();
+                      if (!r.ok && r.reason) showError(r.reason);
+                    }}
+                  >
+                    <span className="flex items-center justify-center gap-1">
+                      <Gem size={11} />购买灵兽 (500)
+                    </span>
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-[11px] py-1 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10"
+                    onClick={() => setShowBeastCapturePicker(v => !v)}
+                  >
+                    派遣弟子捕捉
+                  </Button>
+                </div>
+                {spiritStones < 500 && (
+                  <div className="text-[10px] text-red-400/80">灵石不足，无法购买</div>
+                )}
+
+                {/* 捕捉弟子选择 */}
+                {showBeastCapturePicker && (
+                  <div className="bg-sect-ink-light/40 border border-emerald-500/20 rounded p-1.5 max-h-40 overflow-y-auto">
+                    <div className="text-[10px] text-sect-jade/60 mb-1">选择空闲弟子（战力越高成功率越高）</div>
+                    {disciples.filter(d => !d.onTrialId && !d.isBreakingThrough).length === 0 ? (
+                      <div className="text-[10px] text-yellow-400 px-1 py-1">暂无可用弟子</div>
+                    ) : (
+                      <div className="space-y-0.5">
+                        {disciples.filter(d => !d.onTrialId && !d.isBreakingThrough).map(d => (
+                          <button
+                            key={d.id}
+                            type="button"
+                            className="w-full flex items-center justify-between px-2 py-1 rounded bg-sect-ink-light/30 hover:bg-emerald-500/15 transition-colors"
+                            onClick={() => {
+                              const r = captureBeast(d.id);
+                              if (!r.ok && r.reason) showError(r.reason);
+                              setShowBeastCapturePicker(false);
+                            }}
+                          >
+                            <span className="text-[11px] text-sect-jade">{d.name}</span>
+                            <span className={`text-[10px] ${getRealmColor(d.realm)}`}>
+                              {getRealmDisplay(d)}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 灵兽库存 */}
+                <div className="bg-sect-ink-light/30 border border-emerald-500/15 rounded p-1.5">
+                  <div className="text-[10px] text-emerald-300/80 mb-1">灵兽存栏</div>
+                  {beastInventory.length === 0 ? (
+                    <div className="text-[10px] text-sect-jade/40">尚无灵兽</div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-1">
+                      {beastInventory.map(b => (
+                        <div key={b.type} className="flex items-center justify-between px-1.5 py-0.5 rounded bg-emerald-500/5">
+                          <span className="text-[11px] text-sect-jade">{BeastTypeNames[b.type]}</span>
+                          <span className="text-[10px] text-emerald-300">×{b.quantity}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {selectedBuilding.type === 'secret_library' && (
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded p-2 space-y-1 text-[11px]">
+                <div className="font-display text-amber-300 flex items-center gap-1 mb-0.5">
+                  <BookOpen size={12} />藏经阁
+                </div>
+                <div className="space-y-0.5 text-sect-jade/80 leading-snug">
+                  <div>✓ 弟子于此学习功法，无额外基础贡献</div>
+                  <div>★ 金丹期以上弟子可推演功法，每月获取贡献</div>
+                  <div>↑ 推演贡献随道缘、藏经阁等级提升</div>
+                </div>
+                <div className="text-[10px] text-amber-400/60">
+                  Lv.{selectedBuilding.level} · 可推演弟子：
+                  {assignedDisciples.filter(d => RealmOrder.indexOf(d.realm) >= RealmOrder.indexOf('golden')).length} 人
                 </div>
               </div>
             )}
@@ -638,6 +1056,7 @@ export const BuildingsPanel: React.FC = () => {
                 {(() => {
                   const detailUpgradeCost = getUpgradeCost(selectedBuilding);
                   const detailCanUpgrade = canUpgrade(selectedBuilding);
+                  const detailBlockReason = getUpgradeBlockReason(selectedBuilding);
                   const atMaxLevel = !isResidenceBuilding(selectedBuilding.type) &&
                     selectedBuilding.level >= selectedBuilding.maxLevel;
                   return detailUpgradeCost && selectedBuilding.level < selectedBuilding.maxLevel ? (
@@ -655,11 +1074,6 @@ export const BuildingsPanel: React.FC = () => {
                           <span className="flex items-center gap-1 text-[11px] text-sect-jade">
                             <Gem size={12} /> {detailUpgradeCost.spiritStones}
                           </span>
-                          {detailUpgradeCost.contribution && detailUpgradeCost.contribution > 0 && (
-                            <span className="flex items-center gap-1 text-[11px] text-amber-400">
-                              <Star size={12} /> {detailUpgradeCost.contribution}
-                            </span>
-                          )}
                           {detailUpgradeCost.reputation && detailUpgradeCost.reputation > 0 && (
                             <span className="flex items-center gap-1 text-[11px] text-blue-300">
                               <Star size={12} /> {detailUpgradeCost.reputation}
@@ -674,7 +1088,7 @@ export const BuildingsPanel: React.FC = () => {
                         onClick={() => handleUpgrade(selectedBuilding.id)}
                         disabled={!detailCanUpgrade}
                       >
-                        {detailCanUpgrade ? '升级' : '灵石不足'}
+                        {detailCanUpgrade ? '升级' : (detailBlockReason || '无法升级')}
                       </Button>
                     </div>
                   ) : null;
@@ -706,12 +1120,6 @@ export const BuildingsPanel: React.FC = () => {
                         </div>
                         <div className="flex items-center gap-2 text-[11px] text-emerald-400 shrink-0 flex-wrap justify-end">
                           <span className="flex items-center gap-1"><Gem size={12} /> {refundStones}</span>
-                          {(() => {
-                            const c = isRes
-                              ? getResidenceUpgradeCost({ ...selectedBuilding, level: selectedBuilding.level - 1 })?.contribution ?? 0
-                              : selectedBuilding.upgradeCosts[selectedBuilding.level - 2]?.contribution ?? 0;
-                            return c > 0 ? <span className="flex items-center gap-1 text-amber-400"><Star size={12} /> {c}</span> : null;
-                          })()}
                           {(() => {
                             const r = isRes
                               ? getResidenceUpgradeCost({ ...selectedBuilding, level: selectedBuilding.level - 1 })?.reputation ?? 0
@@ -802,55 +1210,25 @@ export const BuildingsPanel: React.FC = () => {
                   );
                 })()}
 
-                {/* 生产目标选择器：丹堂/炼器堂/符堂 */}
+                {/* 生产目标选择器：丹堂/炼器堂/符堂（多槽位，按等级解锁） */}
                 {(selectedBuilding.type === 'pill_hall' || selectedBuilding.type === 'sutra_hall' || selectedBuilding.type === 'artifact_hall') && (
-                  <div className="bg-blue-500/10 border border-blue-500/30 rounded p-2">
-                    <div className="flex items-center gap-1.5 mb-1.5">
-                      <FlaskConical size={12} className="text-blue-300" />
-                      <span className="font-display text-blue-300 text-xs">生产目标</span>
-                    </div>
-                    {selectedBuilding.type === 'pill_hall' && (
-                      <select
-                        className="w-full bg-[rgba(13,17,23,0.6)] border border-[var(--gold-400)]/30 rounded px-2 py-1 text-xs text-sect-jade"
-                        value={selectedBuilding.productionTarget?.pillType || ''}
-                        onChange={e => setProductionTarget(selectedBuilding.id, { pillType: e.target.value as any })}
-                      >
-                        <option value="">未设置</option>
-                        {unlockedPillRecipes.map(t => (
-                          <option key={t} value={t}>{PillTypeNames[t]}</option>
-                        ))}
-                      </select>
-                    )}
-                    {selectedBuilding.type === 'sutra_hall' && (
-                      <select
-                        className="w-full bg-[rgba(13,17,23,0.6)] border border-[var(--gold-400)]/30 rounded px-2 py-1 text-xs text-sect-jade"
-                        value={selectedBuilding.productionTarget?.artifactType || ''}
-                        onChange={e => setProductionTarget(selectedBuilding.id, { artifactType: e.target.value as any })}
-                      >
-                        <option value="">未设置</option>
-                        {unlockedArtifactRecipes.map(t => (
-                          <option key={t} value={t}>{ArtifactTypeNames[t]}</option>
-                        ))}
-                      </select>
-                    )}
-                    {selectedBuilding.type === 'artifact_hall' && (
-                      <select
-                        className="w-full bg-[rgba(13,17,23,0.6)] border border-[var(--gold-400)]/30 rounded px-2 py-1 text-xs text-sect-jade"
-                        value={selectedBuilding.productionTarget?.talismanType || ''}
-                        onChange={e => setProductionTarget(selectedBuilding.id, { talismanType: e.target.value as any })}
-                      >
-                        <option value="">未设置</option>
-                        {unlockedTalismanRecipes.map(t => (
-                          <option key={t} value={t}>{TalismanTypeNames[t]}</option>
-                        ))}
-                      </select>
-                    )}
-                    {((selectedBuilding.type === 'pill_hall' && unlockedPillRecipes.length === 0) ||
-                      (selectedBuilding.type === 'sutra_hall' && unlockedArtifactRecipes.length === 0) ||
-                      (selectedBuilding.type === 'artifact_hall' && unlockedTalismanRecipes.length === 0)) && (
-                      <div className="text-[10px] text-yellow-400 mt-1">尚未解锁任何配方，请前往商店购买丹方/图谱/符谱</div>
-                    )}
-                  </div>
+                  <ProductionTargetSelector
+                    building={selectedBuilding}
+                    unlockedPillRecipes={unlockedPillRecipes}
+                    unlockedArtifactRecipes={unlockedArtifactRecipes}
+                    unlockedTalismanRecipes={unlockedTalismanRecipes}
+                    onSet={(slotIndex, target) => setProductionTarget(selectedBuilding.id, slotIndex, target)}
+                    onClear={(slotIndex) => clearProductionTarget(selectedBuilding.id, slotIndex)}
+                  />
+                )}
+
+                {/* 贡献度设置：居所类建筑不显示（居所不涉及贡献产出/消耗） */}
+                {!isResidenceType(selectedBuilding.type) && (
+                  <ContributionSettingsEditor
+                    building={selectedBuilding}
+                    onChange={settings => setBuildingContributionSettings(selectedBuilding.id, settings)}
+                    onReset={() => setBuildingContributionSettings(selectedBuilding.id, { monthlyGainPerDisciple: undefined, monthlyCostPerDisciple: undefined })}
+                  />
                 )}
 
                 {/* 在堂弟子 —— 再紧凑，头像小一点，行高差小 */}

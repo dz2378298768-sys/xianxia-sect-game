@@ -61,25 +61,25 @@ export function generateSpiritRoots(): SpiritRoot[] {
   return roots;
 }
 
-// 计算灵根修炼速度加成
+// 计算灵根修炼速度加成（2026-08-04 强化天赋差异：countBonus ×2，qualityBonus ×1.5）
 export function calculateSpiritRootBonus(spiritRoots: SpiritRoot[]): number {
   if (spiritRoots.length === 0) return 0;
   
-  // 灵根越少越快
+  // 灵根越少越快：放大差异，五灵根甚至略拖后腿，单灵根大幅领先
   const countBonus: Record<number, number> = {
-    1: 80,   // 单灵根 +80%
-    2: 50,   // 双灵根 +50%
-    3: 25,   // 三灵根 +25%
-    4: 10,   // 四灵根 +10%
-    5: 0,    // 五灵根 +0%
+    1: 160,  // 单灵根 +160%（原 80）
+    2: 100,  // 双灵根 +100%（原 50）
+    3: 50,   // 三灵根  +50%（原 25）
+    4: 15,   // 四灵根  +15%（原 10）
+    5: -5,   // 五灵根  -5%（原  0，略拖后腿）
   };
   
   const count = Math.min(spiritRoots.length, 5);
   const baseBonus = countBonus[count] || 0;
   
-  // 平均品质加成
+  // 平均品质加成：每点品质 +0.75%（原 0.5%）
   const avgQuality = spiritRoots.reduce((sum, r) => sum + r.quality, 0) / spiritRoots.length;
-  const qualityBonus = (avgQuality - 50) * 0.5; // 每点品质+0.5%
+  const qualityBonus = (avgQuality - 50) * 0.75;
   
   return baseBonus + qualityBonus;
 }

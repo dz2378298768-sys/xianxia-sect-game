@@ -1,6 +1,7 @@
-import type { OtherSect, SectAlignment, SectLevel, SectRelation } from '@/types/game';
+import type { OtherSect, SectAlignment, SectLevel, SectRelation, Trial, TrialType, TrialDifficulty, TrialReward } from '@/types/game';
 import { SectLevelOrder } from '@/types/game';
-import { randomInt, pickRandom, generateId, weightedRandom } from './random';
+import { randomInt, pickRandom, generateId, weightedRandom, randomFloat } from './random';
+import { SPECIAL_MATERIALS } from '@/data/specialMaterials';
 
 // 宗门名字片段
 const SECT_PREFIX = [
@@ -129,6 +130,22 @@ export function generateOtherSect(playerLevel: SectLevel, playerAlignment: SectA
   const alignment = pickAlignment(level);
   const [cpMin, cpMax] = LEVEL_COMBAT_RANGE[level];
   const [dMin, dMax] = LEVEL_DISCIPLE_RANGE[level];
+  const discipleCount = randomInt(dMin, dMax);
+
+  // 战力按"弟子数 × 平均弟子战力"估算，使其符合 calculateSectCombatPower 的逻辑
+  // 不同等级宗门的弟子境界分布不同，平均单人战力也不同
+  const avgDisciplePower: Record<SectLevel, number> = {
+    founding: randomInt(8, 15),       // 凡人~练气为主
+    known: randomInt(25, 50),         // 练气~筑基
+    famous: randomInt(80, 150),       // 筑基~金丹
+    dominant: randomInt(250, 500),    // 金丹~元婴
+    eternal: randomInt(800, 1600),    // 元婴~化神
+  };
+  // 基础战力 = 弟子数 × 平均战力，再叠加建筑加成约 5%~25%
+  const buildingBonus = 1 + randomInt(5, 25) / 100;
+  const estimatedPower = Math.floor(discipleCount * avgDisciplePower[level] * buildingBonus);
+  // 确保落在该等级战力区间内（clamp 到区间，避免极端值）
+  const combatPower = Math.max(cpMin, Math.min(cpMax, estimatedPower));
 
   return {
     id: generateId(),
@@ -136,8 +153,8 @@ export function generateOtherSect(playerLevel: SectLevel, playerAlignment: SectA
     level,
     alignment,
     relation: pickRelation(alignment, playerAlignment),
-    combatPower: randomInt(cpMin, cpMax),
-    discipleCount: randomInt(dMin, dMax),
+    combatPower,
+    discipleCount,
     distance: randomInt(50, 5000),
     specialty: pickRandom(SECT_SPECIALTIES),
     description: pickRandom(SECT_DESCRIPTIONS),
@@ -183,4 +200,223 @@ export function refreshSectRelations(sects: OtherSect[]): OtherSect[] {
     }
     return sect;
   });
+}
+
+// ===== 试炼生成系统 =====
+
+// 试炼名称池
+const TRIAL_NAMES: Record<TrialType, string[]> = {
+  town: [
+    '清河镇驻扎', '云来城巡查', '落风镇护卫', '苍梧城收税',
+    '碧水镇除患', '天枢城协防', '归元镇布防', '望仙城坐镇',
+  ],
+  monster: [
+    '猎杀赤焰虎', '剿灭蛛妖巢', '讨伐蛟龙', '清剿狼妖群',
+    '斩杀石魔', '围剿鬼修', '诛灭血蝠', '降服雷鹰',
+  ],
+  realm: [
+    '探索古修洞府', '秘境寻宝', '上古遗迹探险', '仙人洞府探秘',
+    '幽冥秘境', '天火秘境', '星辰秘境', '混沌秘境',
+  ],
+};
+
+const TRIAL_DESCS: Record<TrialType, string[]> = {
+  town: [
+    '凡人城镇妖患频发，需弟子驻扎守护，定期巡查收税。',
+    '附近城镇商路不畅，派遣弟子驻扎可维护秩序并获取税赋。',
+    '城镇居民受妖物侵扰，驻扎弟子可保一方平安。',
+    '繁华城镇需高人坐镇，派遣弟子可获丰厚报酬。',
+  ],
+  monster: [
+    '妖物盘踞山林为害一方，需弟子前往猎杀。',
+    '凶兽出没伤及凡人，宗门有责将其剿灭。',
+    '妖王麾下妖兵聚集成患，需及时清剿。',
+    '远古妖兽苏醒，威胁周边生灵，须尽快诛杀。',
+  ],
+  realm: [
+    '秘境即将开启，内有上古机缘，探索可获珍稀资源。',
+    '古修士洞府现世，可能有功法秘籍和灵药残留。',
+    '天地异象引出未知秘境，机遇与危险并存。',
+    '上古宗门遗迹浮现，蕴藏大量宝物与传承。',
+  ],
+};
+
+// 难度配置：建议战力倍率、持续时间、失败/受伤概率、奖励倍率
+const DIFFICULTY_CONFIG: Record<TrialDifficulty, {
+  powerMul: [number, number];   // 相对宗门平均弟子战力的倍率区间
+  duration: [number, number];   // 月数
+  risk: [number, number];       // 失败概率
+  injury: [number, number];     // 受伤概率
+  rewardMul: number;            // 奖励倍率
+}> = {
+  easy:   { powerMul: [0.3, 0.6],  duration: [1, 2], risk: [0.05, 0.15], injury: [0.1, 0.25],  rewardMul: 1.0 },
+  normal: { powerMul: [0.6, 1.0],  duration: [2, 3], risk: [0.15, 0.30], injury: [0.25, 0.45], rewardMul: 2.0 },
+  hard:   { powerMul: [1.0, 1.6],  duration: [3, 4], risk: [0.30, 0.50], injury: [0.45, 0.65], rewardMul: 3.5 },
+  extreme:{ powerMul: [1.6, 2.5],  duration: [4, 6], risk: [0.50, 0.70], injury: [0.65, 0.85], rewardMul: 6.0 },
+};
+
+// 难度权重（偏向简单和普通）
+const DIFFICULTY_WEIGHTS: { value: TrialDifficulty; weight: number }[] = [
+  { value: 'easy',    weight: 35 },
+  { value: 'normal',  weight: 35 },
+  { value: 'hard',    weight: 20 },
+  { value: 'extreme', weight: 10 },
+];
+
+// 根据宗门战力生成年度试炼任务
+// sectCombatPower: 本宗总战力（calculateSectCombatPower.totalPower）
+// discipleCount: 本宗弟子数（用于估算平均弟子战力）
+// year: 当前年份
+export function generateTrials(sectCombatPower: number, discipleCount: number, year: number): Trial[] {
+  // 估算平均弟子战力 = 总战力 / 弟子数（至少 10）
+  const avgDisciplePower = discipleCount > 0
+    ? Math.max(10, Math.floor(sectCombatPower / discipleCount))
+    : 10;
+
+  const count = randomInt(6, 9); // 每年 6~9 个试炼
+  const trials: Trial[] = [];
+  const usedNames = new Set<string>();
+
+  for (let i = 0; i < count; i++) {
+    const type = weightedRandom([
+      { value: 'town' as TrialType,    weight: 35 },
+      { value: 'monster' as TrialType, weight: 35 },
+      { value: 'realm' as TrialType,   weight: 30 },
+    ]);
+    const difficulty = weightedRandom(DIFFICULTY_WEIGHTS);
+    const diffCfg = DIFFICULTY_CONFIG[difficulty];
+
+    // 建议战力 = 平均弟子战力 × 难度倍率
+    const requiredPower = Math.floor(avgDisciplePower * randomFloat(diffCfg.powerMul[0], diffCfg.powerMul[1]));
+    const durationMonths = randomInt(diffCfg.duration[0], diffCfg.duration[1]);
+    const riskRate = randomFloat(diffCfg.risk[0], diffCfg.risk[1]);
+    const injuryRate = randomFloat(diffCfg.injury[0], diffCfg.injury[1]);
+
+    // 名称（去重）
+    const namePool = TRIAL_NAMES[type];
+    let name = pickRandom(namePool);
+    let attempts = 0;
+    while (usedNames.has(name) && attempts < 5) {
+      name = pickRandom(namePool);
+      attempts++;
+    }
+    usedNames.add(name);
+
+    const desc = pickRandom(TRIAL_DESCS[type]);
+
+    // 奖励：根据难度倍率 × 基础值
+    const mul = diffCfg.rewardMul;
+    const reward = generateTrialReward(type, difficulty, mul);
+
+    trials.push({
+      id: generateId(),
+      type,
+      name,
+      description: desc,
+      difficulty,
+      requiredPower,
+      durationMonths,
+      rewards: reward,
+      riskRate,
+      injuryRate,
+      status: 'available',
+      assignedDiscipleId: null,
+      startYear: 0,
+      startMonth: 0,
+      progress: 0,
+      generatedYear: year,
+    });
+  }
+
+  return trials;
+}
+
+// 生成试炼奖励
+function generateTrialReward(type: TrialType, difficulty: TrialDifficulty, mul: number): TrialReward {
+  const descParts: string[] = [];
+
+  // 基础灵石奖励
+  const baseStones = Math.floor(randomInt(30, 80) * mul);
+  descParts.push(`${baseStones}灵石`);
+
+  const reward: TrialReward = {
+    spiritStones: baseStones,
+    description: '',
+  };
+
+  // 声望（怪物和秘境给更多）
+  if (type === 'monster' || type === 'realm') {
+    const rep = Math.floor(randomInt(3, 8) * mul);
+    reward.reputation = rep;
+    descParts.push(`${rep}声望`);
+  }
+
+  // 类型特色奖励
+  if (type === 'town') {
+    // 城镇：给原料 + 贡献
+    const herbs = Math.floor(randomInt(5, 15) * mul);
+    reward.herbs = herbs;
+    descParts.push(`${herbs}灵草`);
+    if (Math.random() < 0.5) {
+      const iron = Math.floor(randomInt(3, 8) * mul);
+      reward.iron = iron;
+      descParts.push(`${iron}灵铁`);
+    }
+    const contrib = Math.floor(randomInt(20, 50) * mul);
+    reward.contributionPoints = contrib;
+    descParts.push(`${contrib}贡献`);
+  } else if (type === 'monster') {
+    // 妖物：给灵铁/符纸 + 贡献 + 满意度
+    const iron = Math.floor(randomInt(5, 12) * mul);
+    reward.iron = iron;
+    descParts.push(`${iron}灵铁`);
+    if (Math.random() < 0.4) {
+      const paper = Math.floor(randomInt(3, 8) * mul);
+      reward.paper = paper;
+      descParts.push(`${paper}符纸`);
+    }
+    const contrib = Math.floor(randomInt(30, 60) * mul);
+    reward.contributionPoints = contrib;
+    descParts.push(`${contrib}贡献`);
+    const sat = Math.floor(randomInt(5, 15) * Math.min(mul, 3));
+    reward.satisfaction = sat;
+    descParts.push(`${sat}满意度`);
+  } else {
+    // 秘境：大量灵石 + 贡献 + 满意度，偶尔给原料
+    const extraStones = Math.floor(randomInt(50, 150) * mul);
+    reward.spiritStones = baseStones + extraStones;
+    descParts[0] = `${reward.spiritStones}灵石`;
+    const herbs = Math.floor(randomInt(8, 20) * mul);
+    reward.herbs = herbs;
+    descParts.push(`${herbs}灵草`);
+    const iron = Math.floor(randomInt(5, 15) * mul);
+    reward.iron = iron;
+    descParts.push(`${iron}灵铁`);
+    const paper = Math.floor(randomInt(5, 12) * mul);
+    reward.paper = paper;
+    descParts.push(`${paper}符纸`);
+    const contrib = Math.floor(randomInt(50, 100) * mul);
+    reward.contributionPoints = contrib;
+    descParts.push(`${contrib}贡献`);
+    const sat = Math.floor(randomInt(10, 25) * Math.min(mul, 3));
+    reward.satisfaction = sat;
+    descParts.push(`${sat}满意度`);
+    // 秘境额外掉落特殊材料（60% 概率掉 1~2 种）
+    if (Math.random() < 0.6) {
+      const dropCount = randomInt(1, 2);
+      const drops: { name: string; amount: number }[] = [];
+      const pool = [...SPECIAL_MATERIALS];
+      for (let i = 0; i < dropCount && pool.length > 0; i++) {
+        const idx = randomInt(0, pool.length - 1);
+        const mat = pool.splice(idx, 1)[0];
+        const amount = randomInt(1, 3);
+        drops.push({ name: mat.name, amount });
+        descParts.push(`${amount}${mat.name}`);
+      }
+      if (drops.length > 0) reward.specialMaterials = drops;
+    }
+  }
+
+  reward.description = descParts.join('、');
+  return reward;
 }

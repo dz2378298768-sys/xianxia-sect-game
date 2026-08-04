@@ -5,7 +5,6 @@ describe('弟子AI — 贡献足够时自动学习功法', () => {
   beforeEach(() => {
     useGameStore.setState({
       spiritStones: 100000,
-      sectContribution: 10000,
       disciples: [{
         id: 'd1', name: '甲', age: 20, maxAge: 100,
         status: 'outer', realm: 'qi', realmProgress: 0,

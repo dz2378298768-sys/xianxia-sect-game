@@ -13,7 +13,6 @@ export const BUILDING_IMAGE_MAP: Record<string, string> = {
   array_hall: '/buildings/array-hall.jpg',
   spirit_beast_garden: '/buildings/spirit-beast-garden.jpg',
   cave_mansion: '/buildings/cave-mansion.jpg',
-  guardian_array: '/buildings/guardian-array.jpg',
   skyscraper_tower: '/buildings/skyscraper-tower.jpg',
 };
 

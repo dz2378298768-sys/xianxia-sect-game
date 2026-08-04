@@ -47,6 +47,24 @@ export const BEAST_CONFIGS: Record<BeastType, Beast> = {
     sellPrice: 6000,
     spiritStoneCost: 6000,
   },
+  ice_serpent: {
+    type: 'ice_serpent',
+    name: '寒霜蛇',
+    description: '盘踞雪原的灵蛇，吐息凝冰，可冻滞敌身。',
+    tier: 2,
+    combatPowerBonus: 45,
+    sellPrice: 1100,
+    spiritStoneCost: 1100,
+  },
+  earth_bear: {
+    type: 'earth_bear',
+    name: '巨力熊',
+    description: '山林之王，皮糙肉厚，力大无穷，可破阵冲阵。',
+    tier: 3,
+    combatPowerBonus: 90,
+    sellPrice: 2000,
+    spiritStoneCost: 2000,
+  },
 };
 
 export const BEAST_LIST: Beast[] = Object.values(BEAST_CONFIGS);

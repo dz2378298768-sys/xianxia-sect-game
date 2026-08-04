@@ -300,7 +300,7 @@ export function monthlyReassign(
   return { disciples: currentDisciples, buildings: currentBuildings };
 }
 
-export function getResidenceUpgradeCost(building: Building): { spiritStones: number; contribution: number; reputation: number } | null {
+export function getResidenceUpgradeCost(building: Building): { spiritStones: number; reputation: number } | null {
   const config = BUILDING_CONFIGS[building.type];
   if (!config) return null;
 
@@ -310,7 +310,6 @@ export function getResidenceUpgradeCost(building: Building): { spiritStones: num
     if (cost) {
       return {
         spiritStones: cost.spiritStones,
-        contribution: cost.contribution || 0,
         reputation: 0,
       };
     }
@@ -319,8 +318,7 @@ export function getResidenceUpgradeCost(building: Building): { spiritStones: num
   // 超过预定义等级后使用公式递增
   const level = building.level;
   const spiritStones = Math.round(200 * Math.pow(level, 1.6));
-  const contribution = Math.round(100 * Math.pow(level, 1.5));
-  return { spiritStones, contribution, reputation: 0 };
+  return { spiritStones, reputation: 0 };
 }
 
 // 居所容量公式：每级10人（Lv1=10, Lv2=20, Lv3=30...）无上限
@@ -330,9 +328,9 @@ export function getResidenceCapacityByLevel(_type: string, level: number): numbe
 
 // 建筑维护费按等级递增表
 export const MAINTENANCE_COST_TABLE: Record<string, number[]> = {
-  mountain_gate: [15, 30, 60],
+  mountain_gate: [15, 30, 60, 100, 150, 220, 300, 400, 550, 750],
   lecture_hall: [10, 25, 50],
-  servant_hall: [10, 10, 10, 10],
+  servant_hall: [10, 10, 10, 10, 10],
   outer_residence: [10, 20, 40],
   inner_residence: [15, 30, 60],
   core_residence: [20, 40, 80],
@@ -343,7 +341,6 @@ export const MAINTENANCE_COST_TABLE: Record<string, number[]> = {
   array_hall: [20, 45, 90],
   spirit_beast_garden: [40, 85, 170],
   cave_mansion: [20],
-  guardian_array: [1000],
   skyscraper_tower: [0, 0, 0, 0, 0, 0, 0, 0, 0],
 };
 
@@ -397,8 +394,10 @@ export function createInitialDisciple(status: DiscipleStatus = 'servant', realm:
     status,
     realm,
     realmStage: 'early',
+    // 2026-08-04：凡人初始进度从"直接满"改为 0，使其需 6 个月修炼后才能突破
+    // 其他境界仍按原设计保留 0~50% 随机初始进度（模拟已有修炼经历的弟子）
     realmProgress: realm === 'mortal'
-      ? getStageBreakthroughRequired('mortal', 'early')
+      ? 0
       : randomInt(0, Math.floor(getStageBreakthroughRequired(realm, 'early') * 0.5)),
     cultivationSpeed: 0, // 由 recomputeCultivationSpeed 按当前境界/根骨/灵根/体质重算
     hiddenTalents,
@@ -598,15 +597,17 @@ export function calculateBuildingOutput(building: Building, disciples: Disciple[
   );
 }
 
-// 各境界突破所需累计修为
-// 拉大境界差距：抑制"3 年到金丹"。新表下根骨50凡人弟子约需 5.5 年到金丹。
+// 各境界突破所需累计修为（2026-08-04 重新校准）
+// 按普通天赋设计节奏（仅基础修炼，无任何 buff/居所/功法/讲经堂/秘籍时）：
+//   凡人 6 月、炼气 6 月/阶段、筑基 12 月/阶段、金丹 18 月/阶段、元婴 24 月/阶段
+// 50% 弟子在寿命耗尽前到不了化神：通过放大天赋差异（根骨/灵根非线性）+ buff 加法抑制叠加实现
 export const REALM_BREAKTHROUGH_REQUIRED: Record<string, number> = {
-  mortal: 100,      // 凡人→炼气
-  qi: 1200,         // 炼气→筑基（旧 500）
-  foundation: 5000,  // 筑基→金丹（旧 2000）
-  golden: 18000,     // 金丹→元婴（旧 8000）
-  nascent: 60000,    // 元婴→化神（旧 25000）
-  spirit: 999999,    // 化神（已满级）
+  mortal: 54,       // 凡人→炼气（单阶段=54，base 5 × 0.9根骨效率 × 2凡人加速 × 6 月）
+  qi: 730,          // 炼气→筑基（3 阶段 × 243/阶段）base 45 × 0.9 × 6 月 = 243
+  foundation: 3600, // 筑基→金丹（3 阶段 × 1200/阶段）base 110 × 0.9 × 12 月 ≈ 1188 取 1200
+  golden: 11400,    // 金丹→元婴（3 阶段 × 3800/阶段）base 170 × 0.9 × 18 月 ≈ 2754 + 讲经堂/功法约 40% 放大后取 3800
+  nascent: 37800,   // 元婴→化神（3 阶段 × 12600/阶段）base 260 × 0.9 × 24 月 ≈ 5616 + 多层buff取 12600
+  spirit: 999999,   // 化神（已满级）
 };
 
 export function getRealmBreakthroughRequired(realm: Realm): number {
@@ -706,29 +707,41 @@ export function processMonthlyCultivation(disciple: Disciple): Disciple {
     return disciple;
   }
 
-  let speed = disciple.cultivationSpeed;
+  // 2026-08-04 重写：所有百分比加成先累加，再一次性乘到 base。
+  // 旧实现逐项乘法（1+a)(1+b)(1+c)... 在多 buff 下指数放大，导致极端弟子修炼过快。
+  // 新实现：合并加成 = Σ(buff值 + 功法值 + Σ秘籍值)，最终 speed = base × (1 + 合并加成/100)。
+  // 同时通过 getRootBoneEffectiveness 非线性放大根骨差异（天赋好才能发挥功法/居所/讲经堂 100% 效果）。
+  const rootBoneEff = getRootBoneEffectiveness(disciple.hiddenTalents.rootBone);
+
+  let totalBonusPercent = 0;
+
+  // (1) 居所/洞府/讲经堂等月度 buff：根骨决定发挥比例
   for (const buff of disciple.buffs) {
     if (buff.type === 'cultivation') {
-      speed *= (1 + buff.value / 100);
+      totalBonusPercent += buff.value * rootBoneEff;
     }
   }
 
-  // 功法修炼速度加成（按熟练度计算，根骨决定发挥比例）
+  // (2) 功法修炼速度加成：根骨决定发挥比例
   if (disciple.learnedTechnique) {
-    const rootBoneEff = getRootBoneEffectiveness(disciple.hiddenTalents.rootBone);
     const techniqueBonus = disciple.learnedTechnique.isLearned
-      ? disciple.learnedTechnique.cultivationBonus * rootBoneEff
-      : disciple.learnedTechnique.cultivationBonus * (disciple.learnedTechnique.progress / 100) * rootBoneEff;
-    speed *= (1 + techniqueBonus / 100);
+      ? disciple.learnedTechnique.cultivationBonus
+      : disciple.learnedTechnique.cultivationBonus * (disciple.learnedTechnique.progress / 100);
+    totalBonusPercent += techniqueBonus * rootBoneEff;
   }
 
-  // 旧秘籍系统加成
+  // (3) 旧秘籍系统加成：同样受根骨发挥比例约束
   for (const secret of disciple.learnedSecrets) {
-    speed *= (1 + secret.cultivationBonus / 100);
+    totalBonusPercent += secret.cultivationBonus * rootBoneEff;
   }
+
+  // clamp：避免负加成（极端 buff 时）导致进度倒退；最高加成上限 250%（= 3.5 倍速度，约当 2 本高阶功法 + 讲经堂满配 + 洞府）
+  const clampedBonus = Math.max(-50, Math.min(250, totalBonusPercent));
+
+  const speed = disciple.cultivationSpeed * (1 + clampedBonus / 100);
 
   const required = getStageBreakthroughRequired(disciple.realm, disciple.realmStage);
-  const newProgress = Math.min(required, disciple.realmProgress + speed);
+  const newProgress = Math.min(required, disciple.realmProgress + Math.floor(speed));
 
   return {
     ...disciple,
@@ -999,30 +1012,23 @@ export function calculateSectCombatPower(disciples: Disciple[], buildings: Build
   
   const bonuses: { name: string; multiplier: number; description: string }[] = [];
   
-  // 山门满员加成
+  // 山门加成：每级满员 +5% 战力，10级满员 +50%（相当于护山大阵）
   const mountainGate = buildings.find(b => b.type === 'mountain_gate' && b.status === 'active');
-  const isMountainGateFull = mountainGate && 
+  const isMountainGateFull = mountainGate &&
     mountainGate.assignedDisciples.length >= mountainGate.discipleCapacity;
-  
-  if (isMountainGateFull) {
+
+  if (isMountainGateFull && mountainGate) {
+    const gateBonus = mountainGate.level * 0.05;
+    const isGrandArray = mountainGate.level >= 10;
     bonuses.push({
-      name: '山门满员',
-      multiplier: 0.1,
-      description: '山门弟子满员，宗门战力+10%',
+      name: isGrandArray ? '护山大阵' : '山门满员',
+      multiplier: gateBonus,
+      description: isGrandArray
+        ? `山门10级满员化为护山大阵，战力+${(gateBonus * 100).toFixed(0)}%`
+        : `山门Lv.${mountainGate.level}满员，战力+${(gateBonus * 100).toFixed(0)}%`,
     });
   }
-  
-  // 护山大阵加成
-  const guardianArray = buildings.find(b => b.type === 'guardian_array' && b.status === 'active');
-  if (guardianArray) {
-    const levelBonus = (guardianArray.level - 1) * 0.05;
-    bonuses.push({
-      name: '护山大阵',
-      multiplier: levelBonus,
-      description: `护山大阵Lv.${guardianArray.level}，战力+${(levelBonus * 100).toFixed(0)}%`,
-    });
-  }
-  
+
   // 通天塔加成
   const skyscraperTower = buildings.find(b => b.type === 'skyscraper_tower' && b.status === 'active');
   if (skyscraperTower) {

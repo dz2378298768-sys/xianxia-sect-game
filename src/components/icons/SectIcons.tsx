@@ -348,6 +348,290 @@ export const IconSword: React.FC<IconProps> = ({ size = 24, className = '', stro
   </svg>
 );
 
+// ============== 丹药专属图标（9 种）==============
+// 筑基丹 —— 圆丹+底座光晕
+export const IconPillFoundation: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <circle cx="12" cy="11" r="5" />
+    <path d="M9 11 Q12 8 15 11" />
+    <path d="M7 20 Q12 16 17 20" />
+    <path d="M12 16 L12 18" />
+  </svg>
+);
+// 金丹破障丹 —— 金丹+裂纹突破
+export const IconPillGolden: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <circle cx="12" cy="12" r="6" />
+    <path d="M12 6 L12 9 M6 12 L9 12 M18 12 L15 12 M12 18 L12 15" />
+    <path d="M8 8 L10 10 M16 8 L14 10 M8 16 L10 14 M16 16 L14 14" />
+  </svg>
+);
+// 元婴化灵丹 —— 婴形+灵气
+export const IconPillNascent: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <circle cx="12" cy="8" r="2.5" />
+    <path d="M8 18 Q8 12 12 12 Q16 12 16 18" />
+    <path d="M5 6 Q4 4 6 3 M19 6 Q20 4 18 3" />
+  </svg>
+);
+// 化神渡劫丹 —— 丹+雷劫
+export const IconPillSpirit: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <circle cx="12" cy="14" r="4" />
+    <path d="M10 4 L8 8 L11 8 L9 12" />
+    <path d="M16 5 L18 7" />
+  </svg>
+);
+// 回灵丹 —— 丹+流动气纹
+export const IconPillRecovery: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <ellipse cx="12" cy="12" rx="6" ry="4" />
+    <path d="M6 12 Q9 10 12 12 Q15 14 18 12" />
+  </svg>
+);
+// 增寿丹 —— 丹+寿桃纹
+export const IconPillLongevity: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <circle cx="12" cy="13" r="5" />
+    <path d="M12 8 Q10 5 12 4 Q14 5 12 8" />
+    <path d="M9 13 L11 13 M13 13 L15 13" />
+  </svg>
+);
+// 清心丹 —— 丹+莲心
+export const IconPillDetox: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <circle cx="12" cy="13" r="4" />
+    <path d="M12 9 L12 5 M9 6 Q12 4 15 6" />
+    <path d="M6 18 L8 18 M16 18 L18 18" />
+  </svg>
+);
+// 聚气丹 —— 丹+气漩
+export const IconPillQiGathering: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <circle cx="12" cy="12" r="3" />
+    <path d="M12 4 Q6 6 6 12 Q6 18 12 20 Q18 18 18 12 Q18 6 12 4" />
+    <path d="M9 9 Q12 7 15 9" />
+  </svg>
+);
+// 锻骨丹 —— 丹+骨骼
+export const IconPillBodyForging: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <circle cx="12" cy="12" r="5" />
+    <path d="M9 9 L10 11 L9 13 L10 15 M15 9 L14 11 L15 13 L14 15" />
+    <path d="M10 11 L14 11 M10 13 L14 13" />
+  </svg>
+);
+
+// ============== 法器专属图标（8 种）==============
+// 飞剑 —— 剑身+流光
+export const IconArtifactFlyingSword: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <path d="M4 20 L16 8 L20 4 L18 8 L6 20 Z" />
+    <path d="M6 20 Q4 22 3 21" />
+    <path d="M14 10 Q18 6 21 3" />
+  </svg>
+);
+// 防御盾 —— 龟甲盾
+export const IconArtifactShield: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <path d="M12 3 L20 6 L20 12 Q20 18 12 21 Q4 18 4 12 L4 6 Z" />
+    <path d="M8 9 L12 7 L16 9 L16 13 Q16 16 12 17 Q8 16 8 13 Z" />
+    <path d="M12 7 L12 17" />
+  </svg>
+);
+// 攻击符（赤焰刀）—— 刀身+火焰
+export const IconArtifactAttackTalisman: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <path d="M5 19 L17 7 L19 9 L7 21 Z" />
+    <path d="M5 19 L3 21" />
+    <path d="M15 3 Q13 5 15 7 Q17 5 15 3" />
+    <path d="M19 5 Q17 7 19 9 Q21 7 19 5" />
+  </svg>
+);
+// 聚灵瓶 —— 瓶+灵气
+export const IconArtifactSpiritBottle: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <path d="M10 3 L14 3 L14 6 L15 8 L15 19 Q15 20 14 20 L10 20 Q9 20 9 19 L9 8 L10 6 Z" />
+    <path d="M9 12 Q12 10 15 12" />
+    <circle cx="12" cy="15" r="1.5" />
+  </svg>
+);
+// 储物戒 —— 戒指+空间纹
+export const IconArtifactSpaceRing: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <ellipse cx="12" cy="14" rx="7" ry="3" />
+    <circle cx="12" cy="8" r="2.5" />
+    <path d="M9 14 Q12 12 15 14" />
+  </svg>
+);
+// 雷珠 —— 珠+雷电
+export const IconArtifactThunderPearl: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <circle cx="12" cy="13" r="6" />
+    <path d="M12 3 L9 8 L12 8 L10 13" />
+    <path d="M14 9 L17 6" />
+  </svg>
+);
+// 八卦镜 —— 镜+八卦
+export const IconArtifactBaguaMirror: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <circle cx="12" cy="12" r="8" />
+    <circle cx="12" cy="12" r="3" />
+    <path d="M12 4 L12 7 M12 17 L12 20 M4 12 L7 12 M17 12 L20 12" />
+    <path d="M6.5 6.5 L8.5 8.5 M15.5 15.5 L17.5 17.5 M6.5 17.5 L8.5 15.5 M15.5 8.5 L17.5 6.5" />
+  </svg>
+);
+// 镇妖塔 —— 多层塔
+export const IconArtifactDemonPagoda: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <path d="M12 2 L8 5 L16 5 Z" />
+    <path d="M8 5 L8 9 L16 9 L16 5" />
+    <path d="M7 9 L7 13 L17 13 L17 9" />
+    <path d="M6 13 L6 17 L18 17 L18 13" />
+    <path d="M5 17 L5 21 L19 21 L19 17" />
+    <path d="M12 9 L12 11" />
+  </svg>
+);
+
+// ============== 符箓专属图标（9 种）==============
+// 烈火符 —— 符+火焰
+export const IconTalismanFire: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <path d="M7 3 L17 3 L17 21 L7 21 Z" />
+    <path d="M12 7 Q9 10 12 13 Q15 10 12 7" />
+    <path d="M12 11 Q10 13 12 15 Q14 13 12 11" />
+  </svg>
+);
+// 寒冰符 —— 符+冰晶
+export const IconTalismanIce: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <path d="M7 3 L17 3 L17 21 L7 21 Z" />
+    <path d="M12 7 L12 17 M8 12 L16 12 M9 9 L15 15 M15 9 L9 15" />
+  </svg>
+);
+// 惊雷符 —— 符+闪电
+export const IconTalismanThunder: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <path d="M7 3 L17 3 L17 21 L7 21 Z" />
+    <path d="M13 6 L9 13 L12 13 L10 18 L15 11 L12 11 Z" fill="currentColor" />
+  </svg>
+);
+// 回春符 —— 符+生机叶
+export const IconTalismanHeal: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <path d="M7 3 L17 3 L17 21 L7 21 Z" />
+    <path d="M12 17 L12 10 Q9 10 8 7 Q11 7 12 10 Q13 7 16 7 Q15 10 12 10" />
+  </svg>
+);
+// 传送符 —— 符+漩涡
+export const IconTalismanTeleport: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <path d="M7 3 L17 3 L17 21 L7 21 Z" />
+    <path d="M12 7 Q7 9 9 13 Q11 16 14 14 Q16 12 13 11" />
+    <circle cx="12" cy="12" r="0.8" fill="currentColor" />
+  </svg>
+);
+// 隐身符 —— 符+虚影
+export const IconTalismanStealth: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <path d="M7 3 L17 3 L17 21 L7 21 Z" strokeDasharray="2 1.5" />
+    <circle cx="12" cy="10" r="2" />
+    <path d="M9 18 Q9 13 12 13 Q15 13 15 18" strokeDasharray="2 1.5" />
+  </svg>
+);
+// 镇宅符 —— 符+山门
+export const IconTalismanWard: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <path d="M7 3 L17 3 L17 21 L7 21 Z" />
+    <path d="M9 18 L9 12 L12 9 L15 12 L15 18" />
+    <path d="M11 18 L11 14 L13 14 L13 18" />
+  </svg>
+);
+// 剑气符 —— 符+剑
+export const IconTalismanSword: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <path d="M7 3 L17 3 L17 21 L7 21 Z" />
+    <path d="M10 17 L15 12 L17 10 L13 14 L10 17 Z" />
+    <path d="M10 17 L8 19" />
+  </svg>
+);
+// 神行符 —— 符+风
+export const IconTalismanDivine: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <path d="M7 3 L17 3 L17 21 L7 21 Z" />
+    <path d="M8 10 Q12 8 16 10 M8 13 Q12 11 16 13 M8 16 Q12 14 16 16" />
+  </svg>
+);
+
+// ============== 灵兽专属图标（7 种）==============
+// 灵狐 —— 狐首
+export const IconBeastSpiritFox: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <path d="M5 8 L8 4 L9 8 M19 8 L16 4 L15 8" />
+    <path d="M5 8 Q4 14 8 16 Q12 18 16 16 Q20 14 19 8" />
+    <circle cx="10" cy="11" r="0.8" fill="currentColor" />
+    <circle cx="14" cy="11" r="0.8" fill="currentColor" />
+    <path d="M12 13 L11 14 L12 14.5 L13 14 L12 13" />
+  </svg>
+);
+// 玄龟 —— 龟壳
+export const IconBeastMysticTurtle: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <path d="M4 14 Q4 8 12 8 Q20 8 20 14 L18 18 L6 18 Z" />
+    <path d="M4 14 L2 13 M20 14 L22 13 M9 18 L9 20 M15 18 L15 20" />
+    <path d="M8 12 L12 11 L16 12 M10 15 L14 15" />
+  </svg>
+);
+// 火鸦 —— 鸦+火
+export const IconBeastFireCrow: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <path d="M5 12 Q8 6 12 6 Q16 6 19 12 L21 11 L19 14 L5 14 L3 13 Z" />
+    <circle cx="14" cy="10" r="0.8" fill="currentColor" />
+    <path d="M10 16 Q8 19 10 20 M14 16 Q12 19 14 20" />
+  </svg>
+);
+// 玉兔 —— 兔首
+export const IconBeastJadeRabbit: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <path d="M8 4 Q7 8 9 9 M16 4 Q17 8 15 9" />
+    <circle cx="12" cy="13" r="5" />
+    <circle cx="10" cy="12" r="0.6" fill="currentColor" />
+    <circle cx="14" cy="12" r="0.6" fill="currentColor" />
+    <path d="M11 15 Q12 16 13 15" />
+  </svg>
+);
+// 金鹏 —— 展翅鸟
+export const IconBeastGoldenRoc: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <path d="M12 6 L12 18" />
+    <path d="M12 9 Q6 6 3 9 Q6 10 12 11" />
+    <path d="M12 9 Q18 6 21 9 Q18 10 12 11" />
+    <path d="M10 18 Q12 21 14 18" />
+    <path d="M11 6 L13 6" />
+  </svg>
+);
+// 寒霜蛇 —— 蛇形
+export const IconBeastIceSerpent: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <path d="M4 6 Q8 8 8 12 Q8 16 14 16 Q20 16 20 12 Q20 8 16 8" />
+    <circle cx="18" cy="9" r="0.6" fill="currentColor" />
+    <path d="M19 9 L21 8" />
+    <path d="M6 4 L8 5 M5 18 L7 19" />
+  </svg>
+);
+// 巨力熊 —— 熊首
+export const IconBeastEarthBear: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <circle cx="12" cy="12" r="6" />
+    <circle cx="7" cy="8" r="2" />
+    <circle cx="17" cy="8" r="2" />
+    <circle cx="10" cy="11" r="0.8" fill="currentColor" />
+    <circle cx="14" cy="11" r="0.8" fill="currentColor" />
+    <path d="M10 14 Q12 16 14 14" />
+    <path d="M9 19 L9 21 M15 19 L15 21" />
+  </svg>
+);
+
 export type IconName =
   | 'mountain' | 'building' | 'disciple' | 'cultivate' | 'warehouse'
   | 'battle' | 'world' | 'nextMonth' | 'scroll' | 'talisman'
@@ -355,7 +639,23 @@ export type IconName =
   | 'gem' | 'crystal' | 'pill' | 'book' | 'bulb'
   | 'warning' | 'herb' | 'lantern' | 'balance' | 'trophy'
   | 'chart' | 'trendUp' | 'trendDown' | 'yinyang' | 'mobile'
-  | 'temple' | 'group' | 'steam' | 'scrollText' | 'sword';
+  | 'temple' | 'group' | 'steam' | 'scrollText' | 'sword'
+  // 丹药专属
+  | 'pillFoundation' | 'pillGolden' | 'pillNascent' | 'pillSpirit'
+  | 'pillRecovery' | 'pillLongevity' | 'pillDetox'
+  | 'pillQiGathering' | 'pillBodyForging'
+  // 法器专属
+  | 'artifactFlyingSword' | 'artifactShield' | 'artifactAttackTalisman'
+  | 'artifactSpiritBottle' | 'artifactSpaceRing' | 'artifactThunderPearl'
+  | 'artifactBaguaMirror' | 'artifactDemonPagoda'
+  // 符箓专属
+  | 'talismanFire' | 'talismanIce' | 'talismanThunder' | 'talismanHeal'
+  | 'talismanTeleport' | 'talismanStealth' | 'talismanWard'
+  | 'talismanSword' | 'talismanDivine'
+  // 灵兽专属
+  | 'beastSpiritFox' | 'beastMysticTurtle' | 'beastFireCrow'
+  | 'beastJadeRabbit' | 'beastGoldenRoc' | 'beastIceSerpent'
+  | 'beastEarthBear';
 
 const ICON_MAP: Record<IconName, React.FC<IconProps>> = {
   mountain: IconMountain,
@@ -393,6 +693,43 @@ const ICON_MAP: Record<IconName, React.FC<IconProps>> = {
   steam: IconSteam,
   scrollText: IconScrollText,
   sword: IconSword,
+  // 丹药
+  pillFoundation: IconPillFoundation,
+  pillGolden: IconPillGolden,
+  pillNascent: IconPillNascent,
+  pillSpirit: IconPillSpirit,
+  pillRecovery: IconPillRecovery,
+  pillLongevity: IconPillLongevity,
+  pillDetox: IconPillDetox,
+  pillQiGathering: IconPillQiGathering,
+  pillBodyForging: IconPillBodyForging,
+  // 法器
+  artifactFlyingSword: IconArtifactFlyingSword,
+  artifactShield: IconArtifactShield,
+  artifactAttackTalisman: IconArtifactAttackTalisman,
+  artifactSpiritBottle: IconArtifactSpiritBottle,
+  artifactSpaceRing: IconArtifactSpaceRing,
+  artifactThunderPearl: IconArtifactThunderPearl,
+  artifactBaguaMirror: IconArtifactBaguaMirror,
+  artifactDemonPagoda: IconArtifactDemonPagoda,
+  // 符箓
+  talismanFire: IconTalismanFire,
+  talismanIce: IconTalismanIce,
+  talismanThunder: IconTalismanThunder,
+  talismanHeal: IconTalismanHeal,
+  talismanTeleport: IconTalismanTeleport,
+  talismanStealth: IconTalismanStealth,
+  talismanWard: IconTalismanWard,
+  talismanSword: IconTalismanSword,
+  talismanDivine: IconTalismanDivine,
+  // 灵兽
+  beastSpiritFox: IconBeastSpiritFox,
+  beastMysticTurtle: IconBeastMysticTurtle,
+  beastFireCrow: IconBeastFireCrow,
+  beastJadeRabbit: IconBeastJadeRabbit,
+  beastGoldenRoc: IconBeastGoldenRoc,
+  beastIceSerpent: IconBeastIceSerpent,
+  beastEarthBear: IconBeastEarthBear,
 };
 
 export const SectIcon: React.FC<IconProps & { name: IconName }> = ({ name, size, className, strokeWidth }) => {

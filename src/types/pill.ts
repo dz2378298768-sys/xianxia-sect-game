@@ -1,10 +1,13 @@
-export type PillType = 
+export type PillType =
   | 'foundation_pill'
   | 'golden_pill'
   | 'nascent_pill'
   | 'spirit_pill'
   | 'recovery_pill'
-  | 'longevity_pill';
+  | 'longevity_pill'
+  | 'detox_pill'
+  | 'qi_gathering_pill'
+  | 'body_forging_pill';
 
 export const PillTypeNames: Record<PillType, string> = {
   foundation_pill: '筑基丹',
@@ -13,6 +16,9 @@ export const PillTypeNames: Record<PillType, string> = {
   spirit_pill: '化神渡劫丹',
   recovery_pill: '回灵丹',
   longevity_pill: '增寿丹',
+  detox_pill: '清心丹',
+  qi_gathering_pill: '聚气丹',
+  body_forging_pill: '锻骨丹',
 };
 
 export interface Pill {
