@@ -84,10 +84,15 @@ function getBaseCultivationSpeed(disciple: any): number {
 
 
 export const DisciplesPanel: React.FC = () => {
-  const { disciples, recruitDisciple, spiritStones, getBuildingById, followedDiscipleIds, toggleFollowDisciple } = useGameStore();
+  const {
+    disciples, recruitDisciple, recruitCandidates, recruitCostPerDisciple, recruitConfirmDisciple,
+    clearRecruitCandidates, spiritStones, getBuildingById, followedDiscipleIds, toggleFollowDisciple,
+  } = useGameStore();
   const { selectedDiscipleId, setSelectedDiscipleId } = useUIStore();
   const [statusFilter, setStatusFilter] = useState<DiscipleStatus | 'all'>('all');
   const [detailTab, setDetailTab] = useState<'basic' | 'combat' | 'experience'>('basic');
+  const [showRecruitModal, setShowRecruitModal] = useState(false);
+  const [recruitResultMsg, setRecruitResultMsg] = useState<string | null>(null);
 
   // 左侧等级分布导航：按 status 分组
   const statusNavItems: { value: DiscipleStatus | 'all'; label: string; count: number }[] = [
@@ -105,7 +110,22 @@ export const DisciplesPanel: React.FC = () => {
 
   const selectedDisciple = disciples.find(d => d.id === selectedDiscipleId);
 
-  const canRecruit = spiritStones >= 50;
+  const canRecruit = spiritStones >= recruitCostPerDisciple;
+
+  const handleRecruit = () => {
+    // 有候选就直接打开，否则先 recruitDisciple 生成候选
+    if (recruitCandidates.length > 0) {
+      setShowRecruitModal(true);
+      return;
+    }
+    const { candidates, costPerDisciple } = recruitDisciple();
+    if (candidates && candidates.length > 0) {
+      setShowRecruitModal(true);
+    } else {
+      setRecruitResultMsg('未能招募到合适的候选人');
+      setTimeout(() => setRecruitResultMsg(null), 2000);
+    }
+  };
 
   return (
     <div className="flex flex-col h-full min-h-0 gap-2">
@@ -120,12 +140,15 @@ export const DisciplesPanel: React.FC = () => {
         <Button
           variant="ghost"
           size="sm"
-          onClick={recruitDisciple}
+          onClick={handleRecruit}
           disabled={!canRecruit}
         >
           <UserPlus size={14} className="mr-1" />
-          招募(50灵石)
+          招募({recruitCostPerDisciple}灵石/人)
         </Button>
+        {recruitResultMsg && (
+          <span className="text-xs text-rose-300 ml-2">{recruitResultMsg}</span>
+        )}
       </div>
 
       {/* 主区域：左侧等级导航 + 右侧弟子列表（长方形卡片） */}
@@ -1048,6 +1071,115 @@ export const DisciplesPanel: React.FC = () => {
           </div>
         )}
       </Modal>
+
+      {/* 招收候选弹窗 */}
+      {showRecruitModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center modal-overlay"
+          style={{ background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(3px)', padding: 0 }}>
+          <div
+            className="relative overflow-hidden modal-body animate-modal-fade-in scroll-panel-dark"
+            style={{ width: 'min(96vw, 900px)', maxHeight: '90vh', borderRadius: 6 }}
+          >
+            <div className="flex items-center gap-2 px-3 py-1.5 border-b border-sect-gold/20 modal-header">
+              <SectIcon name="disciple" size={14} strokeWidth={1.8} />
+              <span className="font-display text-sm text-gold-gradient">招募候选人</span>
+              <span className="text-[10px] text-sect-jade/60 ml-1">
+                每人 {recruitCostPerDisciple} 灵石 · 当前灵石 {Math.floor(spiritStones)}
+              </span>
+              <button
+                className="ml-auto text-sect-jade/60 hover:text-sect-gold transition-colors"
+                onClick={() => {
+                  setShowRecruitModal(false);
+                  clearRecruitCandidates();
+                }}
+              >
+                <SectIcon name="close" size={14} strokeWidth={2} />
+              </button>
+            </div>
+            <div className="p-3 overflow-y-auto" style={{ maxHeight: 'calc(90vh - 40px)' }}>
+              {recruitCandidates.length === 0 ? (
+                <div className="text-sect-jade/50 italic text-sm py-8 text-center">没有候选人</div>
+              ) : (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                  {recruitCandidates.map((c, i) => {
+                    const t = c.hiddenTalents;
+                    const maxAttr = Math.max(t.rootBone, t.spiritRhythm, t.constitution, t.daoFate);
+                    return (
+                      <div key={i} className="p-2 rounded bg-sect-ink-light/30 border border-sect-gold/20 flex flex-col gap-1.5">
+                        <div className="flex items-center gap-2">
+                          <DiscipleAvatar seed={c.avatarSeed || 0} size={40} status={c.status} realm={c.realm} />
+                          <div className="min-w-0 flex-1">
+                            <div className="font-display text-sm text-sect-gold truncate">{c.name}</div>
+                            <div className="text-[10px] text-sect-jade/60 flex items-center gap-1">
+                              {getRealmDisplay({ realm: c.realm, realmStage: c.realmStage })}
+                              {maxAttr >= 85 && (
+                                <span className="text-[9px] px-1 py-0.5 rounded bg-yellow-500/10 text-yellow-300 border border-yellow-500/20">破格</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        {/* 属性条 */}
+                        <div className="space-y-0.5 text-[10px]">
+                          <div className="flex justify-between"><span className="text-sect-jade/60">根骨</span><span className="text-sect-jade">{t.rootBone}</span></div>
+                          <div className="flex justify-between"><span className="text-sect-jade/60">灵韵</span><span className="text-sect-jade">{t.spiritRhythm}</span></div>
+                          <div className="flex justify-between"><span className="text-sect-jade/60">体质</span><span className="text-sect-jade">{t.constitution}</span></div>
+                          <div className="flex justify-between"><span className="text-sect-jade/60">道缘</span><span className="text-sect-jade">{t.daoFate}</span></div>
+                        </div>
+                        {/* 灵根 */}
+                        <div className="flex flex-wrap gap-1 pt-0.5">
+                          {(t.spiritRoots || []).slice(0, 3).map((r, idx) => (
+                            <span key={idx} className={`text-[9px] px-1 py-0.5 rounded bg-sect-ink-light/40 ${getSpiritRootQualityClass(r.quality)}`}>
+                              {SpiritRootNames[r.type]}{r.quality}
+                            </span>
+                          ))}
+                        </div>
+                        <div className="mt-auto pt-1 flex gap-1">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={spiritStones < recruitCostPerDisciple}
+                            onClick={() => {
+                              const res = recruitConfirmDisciple(c);
+                              if (res && !res.ok) {
+                                setRecruitResultMsg(res.reason || '招收失败');
+                                setTimeout(() => setRecruitResultMsg(null), 2000);
+                              }
+                            }}
+                          >
+                            招入 ({recruitCostPerDisciple})
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <div className="flex justify-between pt-3 mt-2 border-t border-sect-gold/10">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    recruitDisciple();  // 重新生成一轮候选人
+                  }}
+                  disabled={spiritStones < recruitCostPerDisciple}
+                >
+                  <UserPlus size={12} className="mr-1" /> 换一批
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setShowRecruitModal(false);
+                    clearRecruitCandidates();
+                  }}
+                >
+                  完成
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

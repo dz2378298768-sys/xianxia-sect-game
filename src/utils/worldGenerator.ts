@@ -1,7 +1,18 @@
 import type { OtherSect, SectAlignment, SectLevel, SectRelation, Trial, TrialType, TrialDifficulty, TrialReward } from '@/types/game';
+import type { Realm } from '@/types/disciple';
 import { SectLevelOrder } from '@/types/game';
 import { randomInt, pickRandom, generateId, weightedRandom, randomFloat } from './random';
 import { SPECIAL_MATERIALS } from '@/data/specialMaterials';
+
+// 每个境界的基础战力（与 calculateDiscipleCombatPower 中的 RealmCombatPower 保持一致，用于试炼战力分层）
+const REALM_BASE_COMBAT: Record<Realm, number> = {
+  mortal: 10,
+  qi: 50,
+  foundation: 200,
+  golden: 800,
+  nascent: 3200,
+  spirit: 12800,
+};
 
 // 宗门名字片段
 const SECT_PREFIX = [
@@ -267,7 +278,8 @@ const DIFFICULTY_WEIGHTS: { value: TrialDifficulty; weight: number }[] = [
 // sectCombatPower: 本宗总战力（calculateSectCombatPower.totalPower）
 // discipleCount: 本宗弟子数（用于估算平均弟子战力）
 // year: 当前年份
-export function generateTrials(sectCombatPower: number, discipleCount: number, year: number): Trial[] {
+// realmGuarantee: 是否生成按境界分层的保底试炼（保证炼气~化神各有一项，避免高阶弟子无试炼可做）
+export function generateTrials(sectCombatPower: number, discipleCount: number, year: number, realmGuarantee = false): Trial[] {
   // 估算平均弟子战力 = 总战力 / 弟子数（至少 10）
   const avgDisciplePower = discipleCount > 0
     ? Math.max(10, Math.floor(sectCombatPower / discipleCount))
@@ -277,17 +289,22 @@ export function generateTrials(sectCombatPower: number, discipleCount: number, y
   const trials: Trial[] = [];
   const usedNames = new Set<string>();
 
-  for (let i = 0; i < count; i++) {
+  const generateOne = (forcedPower?: number, forcedDifficulty?: TrialDifficulty): Trial | null => {
     const type = weightedRandom([
       { value: 'town' as TrialType,    weight: 35 },
       { value: 'monster' as TrialType, weight: 35 },
       { value: 'realm' as TrialType,   weight: 30 },
     ]);
-    const difficulty = weightedRandom(DIFFICULTY_WEIGHTS);
+    const difficulty = forcedDifficulty ?? weightedRandom(DIFFICULTY_WEIGHTS);
     const diffCfg = DIFFICULTY_CONFIG[difficulty];
 
-    // 建议战力 = 平均弟子战力 × 难度倍率
-    const requiredPower = Math.floor(avgDisciplePower * randomFloat(diffCfg.powerMul[0], diffCfg.powerMul[1]));
+    // 建议战力
+    let requiredPower: number;
+    if (forcedPower !== undefined) {
+      requiredPower = forcedPower;
+    } else {
+      requiredPower = Math.floor(avgDisciplePower * randomFloat(diffCfg.powerMul[0], diffCfg.powerMul[1]));
+    }
     const durationMonths = randomInt(diffCfg.duration[0], diffCfg.duration[1]);
     const riskRate = randomFloat(diffCfg.risk[0], diffCfg.risk[1]);
     const injuryRate = randomFloat(diffCfg.injury[0], diffCfg.injury[1]);
@@ -300,15 +317,18 @@ export function generateTrials(sectCombatPower: number, discipleCount: number, y
       name = pickRandom(namePool);
       attempts++;
     }
+    if (usedNames.has(name)) return null; // 该类型名称池已满
     usedNames.add(name);
 
     const desc = pickRandom(TRIAL_DESCS[type]);
 
-    // 奖励：根据难度倍率 × 基础值
-    const mul = diffCfg.rewardMul;
-    const reward = generateTrialReward(type, difficulty, mul);
+    // 奖励：根据难度倍率 × 基础值（基于 requiredPower 估算倍率）
+    const baseMul = forcedPower !== undefined
+      ? Math.max(1, Math.min(8, requiredPower / Math.max(1, avgDisciplePower)))
+      : diffCfg.rewardMul;
+    const reward = generateTrialReward(type, difficulty, baseMul);
 
-    trials.push({
+    return {
       id: generateId(),
       type,
       name,
@@ -325,7 +345,27 @@ export function generateTrials(sectCombatPower: number, discipleCount: number, y
       startMonth: 0,
       progress: 0,
       generatedYear: year,
-    });
+    };
+  };
+
+  for (let i = 0; i < count; i++) {
+    const t = generateOne();
+    if (t) trials.push(t);
+  }
+
+  // 按境界分层保底：为常见高阶段弟子生成匹配试炼（每个境界1项，要求战力 ~ 该境界基础战力 × 0.8 ~ 1.2）
+  if (realmGuarantee) {
+    const guaranteeRealms: Realm[] = ['qi', 'foundation', 'golden', 'nascent', 'spirit'];
+    const realmDifficulty: Record<number, TrialDifficulty> = {
+      0: 'easy', 1: 'normal', 2: 'normal', 3: 'hard', 4: 'extreme',
+    };
+    for (let i = 0; i < guaranteeRealms.length; i++) {
+      const realm = guaranteeRealms[i];
+      const base = REALM_BASE_COMBAT[realm] ?? 50;
+      const power = Math.max(5, Math.floor(base * randomFloat(0.85, 1.3)));
+      const t = generateOne(power, realmDifficulty[i] || 'easy');
+      if (t) trials.push(t);
+    }
   }
 
   return trials;

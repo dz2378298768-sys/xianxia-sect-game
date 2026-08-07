@@ -192,15 +192,50 @@ export function autoAssignManagers(
   // 堂主任命规则：必须金丹期（golden）及以上
   const goldenIndex = RealmOrder.indexOf('golden');
 
-  // 每月重算：先清空所有弟子的 managingBuilding，再逐堂重新任命
-  let newDisciples = disciples.map(d => ({ ...d, managingBuilding: null as string | null }));
+  // 先保留玩家手动锁定的 manager（managerLocked 为 true）：
+  //  - managerId 与 managingBuilding 关系直接沿用，不再被覆盖。
+  //  - 若堂主不在 assignedDisciples 中，加入 assignedDisciples（确保归属此堂生产）。
+  let newBuildings = buildings.map(b => ({ ...b, assignedDisciples: [...b.assignedDisciples] }));
+  let newDisciples = disciples.map(d => ({ ...d }));
   const managedDiscipleIds = new Set<string>();
 
-  const newBuildings = buildings.map(b => {
-    if (b.status !== 'active') return { ...b, managerId: null };
-    if (b.discipleCapacity <= 0) return { ...b, managerId: null };
-    if (RESIDENCE_TYPES_SET.has(b.type)) return { ...b, managerId: null };
-    if (SKIP_TYPES.has(b.type)) return { ...b, managerId: null };
+  // ========== 先处理锁定的堂主 ==========
+  for (const b of newBuildings) {
+    if (b.managerLocked && b.managerId) {
+      const m = newDisciples.find(d => d.id === b.managerId);
+      if (!m || RealmOrder.indexOf(m.realm) < goldenIndex) {
+        // 修为已不足，解除锁定并降级为自动
+        b.managerLocked = false;
+      } else {
+        // 登记该弟子已担任此堂主：managingBuilding 设为此建筑，加入 assignedDisciples，移出他堂
+        if (!b.assignedDisciples.includes(b.managerId)) {
+          if (b.assignedDisciples.length < b.discipleCapacity) {
+            b.assignedDisciples.push(b.managerId);
+          } else {
+            // 容量不足：仍锁定，但无法将堂主加入 assignedDisciples——跳过以免覆盖他堂
+          }
+        }
+        // 从其他堂 assignedDisciples 移出（防止他同时出现在两堂），但保留居所
+        for (const other of newBuildings) {
+          if (other.id === b.id) continue;
+          if (RESIDENCE_TYPES_SET.has(other.type)) continue;
+          if (other.assignedDisciples.includes(b.managerId)) {
+            other.assignedDisciples = other.assignedDisciples.filter(id => id !== b.managerId);
+          }
+        }
+        m.managingBuilding = b.id;
+        managedDiscipleIds.add(b.managerId);
+      }
+    }
+  }
+
+  // ========== 再处理未锁定的堂主 ==========
+  newBuildings = newBuildings.map(b => {
+    if (b.status !== 'active') return { ...b, managerId: b.managerLocked ? b.managerId : null };
+    if (b.discipleCapacity <= 0) return { ...b, managerId: b.managerLocked ? b.managerId : null };
+    if (RESIDENCE_TYPES_SET.has(b.type)) return { ...b, managerId: b.managerLocked ? b.managerId : null };
+    if (SKIP_TYPES.has(b.type)) return { ...b, managerId: b.managerLocked ? b.managerId : null };
+    if (b.managerLocked) return b; // 已在上面处理
 
     // 候选 = 当前在堂内 + 修为金丹期及以上的弟子
     const candidates = newDisciples.filter(d =>
@@ -230,12 +265,25 @@ export function autoAssignManagers(
     return { ...b, managerId: chosen.id };
   });
 
+  // 对非当前管理的弟子，清空 managingBuilding（保留锁定堂的）
+  newDisciples = newDisciples.map(d => {
+    if (d.managingBuilding && !managedDiscipleIds.has(d.id)) {
+      return { ...d, managingBuilding: null };
+    }
+    return d;
+  });
+
   return { disciples: newDisciples, buildings: newBuildings };
 }
 
 /**
  * 每月重新分配：为没有工作的弟子分配建筑，为居所不匹配的弟子重新分配居所
- * 同时处理新入门弟子和晋升后弟子未分配的问题
+ * 同时处理新入门弟子和晋升后弟子未分配的问题。
+ *
+ * 玩家分配保护：
+ *  - 若 Disciple.assignedBuilding 非空，视为玩家手动指定；除非该建筑已关闭/不存在/身份不匹配/满员，
+ *    否则坚持让该弟子留在 assignedBuilding。
+ *  - 堂主 (managingBuilding 非空)：若在其管理堂 assignedDisciples 中就保留。
  */
 export function monthlyReassign(
   disciples: Disciple[],
@@ -245,31 +293,80 @@ export function monthlyReassign(
   let currentDisciples = disciples.map(d => ({ ...d }));
 
   const RESIDENCE_TYPES_SET = new Set<string>(RESIDENCE_TYPES_WITH_CAVE);
+  const statusOrder: DiscipleStatus[] = ['mortal', 'servant', 'outer', 'inner', 'core', 'elder'];
 
   for (const disciple of currentDisciples) {
     // 跳过凡人和长老
     if (disciple.status === 'mortal' || disciple.status === 'elder') continue;
 
-    // 1. 检查工作建筑：是否已分配、建筑是否存在、建筑是否活跃、是否满员
-    const workBuilding = currentBuildings.find(b => b.assignedDisciples.includes(disciple.id) && !RESIDENCE_TYPES_SET.has(b.type));
-    const hasValidWork = workBuilding && workBuilding.status === 'active';
-
-    if (!hasValidWork) {
-      // 从无效工作建筑中移除
-      if (workBuilding) {
-        currentBuildings = currentBuildings.map(b =>
-          b.id === workBuilding.id
-            ? { ...b, assignedDisciples: b.assignedDisciples.filter(id => id !== disciple.id) }
-            : b
-        );
+    // ========== 玩家手动分配：assignedBuilding 优先 ==========
+    let assignedOk = false;
+    if (disciple.assignedBuilding) {
+      const target = currentBuildings.find(b => b.id === disciple.assignedBuilding);
+      if (target && target.status === 'active' && !RESIDENCE_TYPES_SET.has(target.type)) {
+        // 身份门槛
+        const minIdx = target.minDiscipleStatus ? statusOrder.indexOf(target.minDiscipleStatus) : 0;
+        const myIdx = statusOrder.indexOf(disciple.status as DiscipleStatus);
+        if (myIdx >= minIdx) {
+          // 若不在 assignedDisciples 中且未满，加入
+          if (!target.assignedDisciples.includes(disciple.id) &&
+              target.assignedDisciples.length < target.discipleCapacity) {
+            target.assignedDisciples.push(disciple.id);
+          }
+          // 若此时仍不在该堂（可能满员），就不强行，继续下一个逻辑
+          if (target.assignedDisciples.includes(disciple.id)) {
+            assignedOk = true;
+          }
+        }
       }
-      // 尝试重新分配工作
-      const result = autoAssignBuilding(disciple, currentBuildings);
-      if (result.buildingId) {
-        currentBuildings = result.newBuildings;
-        disciple.assignedBuilding = result.buildingId;
-      } else {
+      if (!assignedOk) {
+        // assignedBuilding 无效：清零
         disciple.assignedBuilding = null;
+      }
+    }
+
+    // ========== 堂主：保证留在管理堂（未被手动 assignedBuilding 覆盖） ==========
+    if (!assignedOk && disciple.managingBuilding) {
+      const mgrTarget = currentBuildings.find(b => b.id === disciple.managingBuilding);
+      if (mgrTarget && mgrTarget.status === 'active' && !RESIDENCE_TYPES_SET.has(mgrTarget.type)) {
+        if (!mgrTarget.assignedDisciples.includes(disciple.id) &&
+            mgrTarget.assignedDisciples.length < mgrTarget.discipleCapacity) {
+          mgrTarget.assignedDisciples.push(disciple.id);
+        }
+        if (mgrTarget.assignedDisciples.includes(disciple.id)) {
+          disciple.assignedBuilding = mgrTarget.id;
+          assignedOk = true;
+        }
+      }
+    }
+
+    if (assignedOk) {
+      // 已是有效分配：不需要再分配工作，直接跳到居所检查
+    } else {
+      // 1. 检查工作建筑：是否已分配、建筑是否存在、建筑是否活跃、是否满员
+      const workBuilding = currentBuildings.find(b => b.assignedDisciples.includes(disciple.id) && !RESIDENCE_TYPES_SET.has(b.type));
+      const hasValidWork = workBuilding && workBuilding.status === 'active';
+
+      if (!hasValidWork) {
+        // 从无效工作建筑中移除
+        if (workBuilding) {
+          currentBuildings = currentBuildings.map(b =>
+            b.id === workBuilding.id
+              ? { ...b, assignedDisciples: b.assignedDisciples.filter(id => id !== disciple.id) }
+              : b
+          );
+        }
+        // 尝试重新分配工作
+        const result = autoAssignBuilding(disciple, currentBuildings);
+        if (result.buildingId) {
+          currentBuildings = result.newBuildings;
+          disciple.assignedBuilding = result.buildingId;
+        } else {
+          disciple.assignedBuilding = null;
+        }
+      } else {
+        // 已在工作堂：同步 assignedBuilding
+        disciple.assignedBuilding = workBuilding!.id;
       }
     }
 
@@ -844,63 +941,121 @@ const REALM_TO_BOOK_TIER: Record<Realm, BookTier | null> = {
 };
 
 /**
- * 突破后自动去藏经阁学习更优秀的功法（功法可被替换）。
+ * 突破后自动去藏经阁学习更优秀的功法/战技（可替换低级）。
  *
  * 行为：
  *  - 已在学习中则不打断。
- *  - 取弟子新境界对应层级的功法(type=technique)，按灵根可学筛选，
- *    选 cultivationBonus 最高者（同值取 combatBonus 高者）。
- *  - 若当前已学功法不弱于候选，则不替换。
- *  - 否则开始学习新功法（免费，不扣贡献）；学成时由 processMonthlyLearning
- *    自动替换 learnedTechnique，实现"每次突破挑选更优秀功法"。
+ *  - 优先选 功法 (technique)，按 cultivationBonus 最高者；
+ *  - 若功法没有更优，再看战技 (battle) 有更优（或未满槽）则挑最好的学，
+ *    已满两本时淘汰最弱那本（由调用方 forget）。
  *
- * 注：手动 learnBook 仍受"已有功法不可再学"限制；本函数专用于突破后自动升级功法。
+ * 返回：{ disciple, learned?: { type: 'technique' | 'battle', book: BookConfig } }
+ *  - learned 存在时：调用方需要处理贡献扣费、战技槽淘汰等额外动作（本函数是纯工具，不扣贡献）
  */
 export function autoLearnTechniqueOnBreakthrough(
   disciple: Disciple,
   libraryBooks: BookConfig[],
 ): Disciple {
+  const res = pickUpgradeBook(disciple, libraryBooks);
+  if (!res) return disciple;
+  return {
+    ...disciple,
+    learningBook: res.learningBook,
+    isLearningSecret: true,
+    learnedTechnique: res.forgetTechnique ? null : disciple.learnedTechnique,
+    learnedBattles: res.forgetBattleBookId
+      ? disciple.learnedBattles.filter(b => b.bookId !== res.forgetBattleBookId)
+      : disciple.learnedBattles,
+  };
+}
+
+/**
+ * 挑一本可升级的功法/战技（供自动学习使用）。
+ * 不会扣贡献；返回构造好的 LearningBook 与需要忘掉的旧书 id。
+ * 找不到更优则返回 null。
+ */
+export function pickUpgradeBook(
+  disciple: Disciple,
+  libraryBooks: BookConfig[],
+): {
+  learningBook: NonNullable<Disciple['learningBook']>;
+  pickType: 'technique' | 'battle';
+  pickBook: BookConfig;
+  forgetTechnique: boolean;
+  forgetBattleBookId?: string;
+} | null {
   // 已在学习中，不打断当前学习
-  if (disciple.learningBook) return disciple;
+  if (disciple.learningBook) return null;
 
   const targetTier = REALM_TO_BOOK_TIER[disciple.realm];
-  if (!targetTier) return disciple;
+  if (!targetTier) return null;
 
-  // 候选 = 藏经阁中该层级的功法，且弟子灵根可学
-  const candidates = libraryBooks.filter(b =>
+  // ========== 功法 ==========
+  const techCandidates = libraryBooks.filter(b =>
     b.type === 'technique' &&
     b.tier === targetTier &&
     canLearnBook(disciple.hiddenTalents.spiritRoots || [], b),
   );
-  if (candidates.length === 0) return disciple;
-
-  // 挑选更优秀：cultivationBonus 高者优先，同值取 combatBonus 高者
-  candidates.sort((a, b) => b.cultivationBonus - a.cultivationBonus || b.combatBonus - a.combatBonus);
-  const best = candidates[0];
-
-  // 当前已学功法不弱于候选 → 无需替换
-  const current = disciple.learnedTechnique;
-  if (current && current.cultivationBonus >= best.cultivationBonus) {
-    return disciple;
+  if (techCandidates.length > 0) {
+    techCandidates.sort((a, b) => b.cultivationBonus - a.cultivationBonus || b.combatBonus - a.combatBonus);
+    const bestTech = techCandidates[0];
+    const curTech = disciple.learnedTechnique;
+    if (!curTech || curTech.cultivationBonus < bestTech.cultivationBonus) {
+      return {
+        pickType: 'technique',
+        pickBook: bestTech,
+        forgetTechnique: !!curTech && curTech.cultivationBonus < bestTech.cultivationBonus,
+        learningBook: {
+          bookId: bestTech.id, name: bestTech.name, type: 'technique', tier: bestTech.tier,
+          attribute: bestTech.attribute, cultivationBonus: bestTech.cultivationBonus,
+          combatBonus: bestTech.combatBonus, progress: 0, totalDays: bestTech.learnDays, isLearned: false,
+        },
+      };
+    }
   }
 
-  // 开始学习新功法（学成时由 processMonthlyLearning 替换旧功法）
-  return {
-    ...disciple,
-    learningBook: {
-      bookId: best.id,
-      name: best.name,
-      type: 'technique',
-      tier: best.tier,
-      attribute: best.attribute,
-      cultivationBonus: best.cultivationBonus,
-      combatBonus: best.combatBonus,
-      progress: 0,
-      totalDays: best.learnDays,
-      isLearned: false,
-    },
-    isLearningSecret: true,
-  };
+  // ========== 战技 ==========
+  const battleCandidates = libraryBooks.filter(b =>
+    b.type === 'battle' &&
+    b.tier === targetTier &&
+    canLearnBook(disciple.hiddenTalents.spiritRoots || [], b),
+  );
+  if (battleCandidates.length > 0) {
+    battleCandidates.sort((a, b) => b.combatBonus - a.combatBonus);
+    const bestBattle = battleCandidates[0];
+    const battles = disciple.learnedBattles || [];
+    if (battles.length < 2) {
+      // 未满 2 本且没有更差的 → 直接学
+      return {
+        pickType: 'battle',
+        pickBook: bestBattle,
+        forgetTechnique: false,
+        learningBook: {
+          bookId: bestBattle.id, name: bestBattle.name, type: 'battle', tier: bestBattle.tier,
+          attribute: bestBattle.attribute, cultivationBonus: bestBattle.cultivationBonus,
+          combatBonus: bestBattle.combatBonus, progress: 0, totalDays: bestBattle.learnDays, isLearned: false,
+        },
+      };
+    }
+    // 满 2 本：比最弱的强就换
+    const sorted = [...battles].sort((a, b) => a.combatBonus - b.combatBonus);
+    const weakest = sorted[0];
+    if (weakest && bestBattle.combatBonus > weakest.combatBonus) {
+      return {
+        pickType: 'battle',
+        pickBook: bestBattle,
+        forgetTechnique: false,
+        forgetBattleBookId: weakest.bookId,
+        learningBook: {
+          bookId: bestBattle.id, name: bestBattle.name, type: 'battle', tier: bestBattle.tier,
+          attribute: bestBattle.attribute, cultivationBonus: bestBattle.cultivationBonus,
+          combatBonus: bestBattle.combatBonus, progress: 0, totalDays: bestBattle.learnDays, isLearned: false,
+        },
+      };
+    }
+  }
+
+  return null;
 }
 
 export function createNotification(

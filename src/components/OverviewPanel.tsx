@@ -14,7 +14,7 @@ export const OverviewPanel: React.FC = () => {
     canPromoteSect, promoteSect,
   } = useGameStore();
 
-  const { canPromote, nextLevel } = canPromoteSect();
+  const { canPromote, nextLevel, reasons } = canPromoteSect();
   const currentLevelIndex = SectLevelOrder.indexOf(sectLevel);
   const nextLevelReq = nextLevel ? SectLevelRequirementsMap[nextLevel] : null;
 
@@ -28,7 +28,6 @@ export const OverviewPanel: React.FC = () => {
   const coreCount = disciples.filter(d => d.status === 'core').length;
   const elderCount = disciples.filter(d => d.status === 'elder').length;
 
-  // 维护费与产出按真实公式计算（含等级/工人/管理者），不再读 L1 基础值。
   const totalMaintenance = buildings.reduce((sum, b) => {
     if (b.status !== 'active') return sum;
     return sum + calculateBuildingMaintenance(b);
@@ -42,6 +41,36 @@ export const OverviewPanel: React.FC = () => {
 
   const netIncome = totalOutput - totalMaintenance;
 
+  const RequirementBar: React.FC<{
+    label: string;
+    current: number;
+    required: number;
+    icon?: React.ReactNode;
+    color: string;
+  }> = ({ label, current, required, icon, color }) => {
+    const pct = required > 0 ? Math.min(100, (current / required) * 100) : 100;
+    const met = current >= required;
+    return (
+      <div className="flex items-center gap-3">
+        <div className="w-16 flex-shrink-0 text-xs text-[var(--ink-300)] flex items-center gap-1">
+          {icon}{label}
+        </div>
+        <div className="flex-1 h-2.5 bg-[var(--ink-dark)] rounded-full overflow-hidden border border-[var(--gold-dark)]/20">
+          <div
+            className={`h-full rounded-full transition-all duration-500 ${met ? 'bg-green-500/80' : color}`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+        <div className={`w-28 flex-shrink-0 text-right text-xs font-mono ${met ? 'text-green-400' : 'text-red-400'}`}>
+          {Math.floor(current)} / {required}
+        </div>
+        <div className={`w-5 flex-shrink-0 text-center text-sm ${met ? 'text-green-400' : 'text-red-400'}`}>
+          {met ? '✓' : '✗'}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-4">
       {/* 宗门等级 */}
@@ -53,42 +82,96 @@ export const OverviewPanel: React.FC = () => {
       <div className="p-3">
         <p className="text-sm text-[var(--ink-300)] italic mb-3">{SectLevelDescriptions[sectLevel]}</p>
 
-        {nextLevel && nextLevelReq && (
-          <div className="scroll-panel-dark p-3">
-            <div className="text-sm text-[var(--gold-200)] mb-2">
-              下一阶段：{SectLevelNames[nextLevel]}
+        {nextLevel && nextLevelReq ? (
+          <div className="scroll-panel-dark p-4">
+            {/* 下一阶段标题 */}
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-sm text-[var(--gold-200)] font-display">
+                <span className="text-[var(--jade-light)] mr-1">→</span>
+                下一阶段：{SectLevelNames[nextLevel]}
+              </div>
+              <div className={`text-[10px] px-2 py-0.5 rounded-full border ${canPromote ? 'bg-green-500/10 border-green-500/40 text-green-400' : 'bg-red-500/10 border-red-500/40 text-red-400'}`}>
+                {canPromote ? '条件达成' : '条件未达成'}
+              </div>
             </div>
-            <div className="space-y-1 text-xs">
-              <div className={`flex justify-between ${reputation >= nextLevelReq.reputation ? 'text-green-400' : 'text-red-400'}`}>
-                <span>声望</span><span>{Math.floor(reputation)} / {nextLevelReq.reputation}</span>
-              </div>
-              <div className={`flex justify-between ${spiritStones >= nextLevelReq.spiritStones ? 'text-green-400' : 'text-red-400'}`}>
-                <span>灵石</span><span>{Math.floor(spiritStones)} / {nextLevelReq.spiritStones}</span>
-              </div>
+
+            {/* 需求进度条 */}
+            <div className="space-y-2.5">
+              <RequirementBar
+                label="声望"
+                current={reputation}
+                required={nextLevelReq.reputation}
+                color="bg-amber-500/70"
+              />
+              <RequirementBar
+                label="灵石"
+                current={spiritStones}
+                required={nextLevelReq.spiritStones}
+                color="bg-cyan-500/70"
+              />
               {nextLevelReq.discipleCount && (
-                <div className={`flex justify-between ${disciples.length >= nextLevelReq.discipleCount ? 'text-green-400' : 'text-red-400'}`}>
-                  <span>弟子数量</span><span>{disciples.length} / {nextLevelReq.discipleCount}</span>
-                </div>
+                <RequirementBar
+                  label="弟子数"
+                  current={disciples.length}
+                  required={nextLevelReq.discipleCount}
+                  color="bg-violet-500/70"
+                />
               )}
               {nextLevelReq.elderCount !== undefined && (
-                <div className={`flex justify-between ${elderCount >= nextLevelReq.elderCount ? 'text-green-400' : 'text-red-400'}`}>
-                  <span>长老数量</span><span>{elderCount} / {nextLevelReq.elderCount}</span>
-                </div>
+                <RequirementBar
+                  label="长老数"
+                  current={elderCount}
+                  required={nextLevelReq.elderCount}
+                  color="bg-rose-500/70"
+                />
+              )}
+              {nextLevelReq.promotionContribution !== undefined && nextLevelReq.promotionContribution > 0 && (
+                <RequirementBar
+                  label="贡献"
+                  current={useGameStore.getState().sectContribution || 0}
+                  required={nextLevelReq.promotionContribution}
+                  color="bg-yellow-500/70"
+                />
               )}
             </div>
-            <div className="flex items-center justify-between mt-3">
+
+            {/* 未达成原因 */}
+            {!canPromote && reasons.length > 0 && (
+              <div className="mt-3 p-2.5 bg-red-500/5 border border-red-500/20 rounded-lg">
+                <div className="text-[10px] text-red-400 mb-1 flex items-center gap-1">
+                  <span>⚠</span> 缺少以下条件：
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {reasons.map((reason, idx) => (
+                    <span key={idx} className="text-[10px] text-red-300 bg-red-500/10 px-2 py-0.5 rounded">
+                      {reason}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 消耗与晋升按钮 */}
+            <div className="mt-3 flex items-center justify-between pt-3 border-t border-[var(--gold-dark)]/20">
               <div className="text-xs text-[var(--ink-400)]">
-                消耗：{nextLevelReq.promotionCost} 灵石
-                {nextLevelReq.promotionContribution ? ` + ${nextLevelReq.promotionContribution} 贡献` : ''}
+                <span className="text-[var(--ink-300)]">晋升消耗：</span>
+                <span className="text-amber-400">{nextLevelReq.promotionCost} 灵石</span>
+                {nextLevelReq.promotionContribution ? (
+                  <span className="ml-1 text-yellow-400">+ {nextLevelReq.promotionContribution} 贡献</span>
+                ) : null}
               </div>
               <button
-                className="btn-ink text-xs"
+                className={`btn-ink text-sm px-4 py-1.5 ${canPromote ? '' : 'opacity-50 cursor-not-allowed'}`}
                 disabled={!canPromote}
                 onClick={promoteSect}
               >
-                {canPromote ? '晋升' : '条件未达成'}
+                {canPromote ? '晋升宗门' : '条件未达成'}
               </button>
             </div>
+          </div>
+        ) : (
+          <div className="scroll-panel-dark p-4 text-center text-sm text-[var(--gold-300)]">
+            已达宗门最高等级
           </div>
         )}
       </div>

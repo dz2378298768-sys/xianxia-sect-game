@@ -254,3 +254,25 @@ export interface Trial {
   progress: number;            // 0-100
   generatedYear: number;       // 生成年份（用于年度刷新）
 }
+
+// 弟子贡献值流水记录
+export type ContributionLogType =
+  | 'work'          // 工作产出（身份俸禄 + 建筑加成 + 手动调整）
+  | 'deduct'        // 讲经堂/居所等消耗
+  | 'library'       // 藏经阁推演功法
+  | 'learn_secret'  // 学习秘籍扣费
+  | 'trial_reward'  // 试炼奖励
+  | 'tournament'    // 大比奖励
+  | 'promotion'     // 晋升身份扣除
+  | 'manual_adjust' // 玩家手动调整（预留）
+  | 'other';
+
+export interface ContributionLog {
+  id: string;             // 记录ID
+  discipleId: string;     // 弟子ID
+  date: { year: number; month: number }; // 发生日期
+  type: ContributionLogType;
+  amount: number;         // 变动值（正数=增加，负数=减少）
+  balance: number;        // 变动后余额
+  description: string;    // 描述文本
+}

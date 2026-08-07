@@ -98,27 +98,75 @@ export const SectInfoDrawer: React.FC = () => {
                 {SectLevelDescriptions[sectLevel]}
               </p>
               {nextLevel && nextLevelReq && (
-                <div className="space-y-0.5 text-[10px]">
-                  <div className="text-[var(--gold-200)] mb-0.5">
-                    下一阶段：{SectLevelNames[nextLevel]}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="text-[var(--gold-200)]">
+                      → 下一阶段：{SectLevelNames[nextLevel]}
+                    </div>
+                    <div className={`text-[8px] px-1.5 py-0.5 rounded-full border ${canPromote ? 'bg-green-500/10 border-green-500/40 text-green-400' : 'bg-red-500/10 border-red-500/40 text-red-400'}`}>
+                      {canPromote ? '达成' : '未达成'}
+                    </div>
                   </div>
-                  <div className={`flex justify-between ${reputation >= nextLevelReq.reputation ? 'text-green-400' : 'text-red-400'}`}>
-                    <span>声望</span><span>{Math.floor(reputation)}/{nextLevelReq.reputation}</span>
+                  
+                  {/* 声望 */}
+                  <div className="flex items-center gap-1.5 text-[9px]">
+                    <span className="w-8 flex-shrink-0 text-[var(--ink-300)]">声望</span>
+                    <div className="flex-1 h-1.5 bg-[var(--ink-dark)] rounded-full overflow-hidden border border-[var(--gold-dark)]/20">
+                      <div className={`h-full rounded-full transition-all ${reputation >= nextLevelReq.reputation ? 'bg-green-500/80' : 'bg-amber-500/70'}`} style={{ width: `${Math.min(100, (reputation / nextLevelReq.reputation) * 100)}%` }} />
+                    </div>
+                    <span className={`w-16 flex-shrink-0 text-right ${reputation >= nextLevelReq.reputation ? 'text-green-400' : 'text-red-400'}`}>{Math.floor(reputation)}/{nextLevelReq.reputation}</span>
                   </div>
-                  <div className={`flex justify-between ${spiritStones >= nextLevelReq.spiritStones ? 'text-green-400' : 'text-red-400'}`}>
-                    <span>灵石</span><span>{Math.floor(spiritStones)}/{nextLevelReq.spiritStones}</span>
+                  
+                  {/* 灵石 */}
+                  <div className="flex items-center gap-1.5 text-[9px]">
+                    <span className="w-8 flex-shrink-0 text-[var(--ink-300)]">灵石</span>
+                    <div className="flex-1 h-1.5 bg-[var(--ink-dark)] rounded-full overflow-hidden border border-[var(--gold-dark)]/20">
+                      <div className={`h-full rounded-full transition-all ${spiritStones >= nextLevelReq.spiritStones ? 'bg-green-500/80' : 'bg-cyan-500/70'}`} style={{ width: `${Math.min(100, (spiritStones / nextLevelReq.spiritStones) * 100)}%` }} />
+                    </div>
+                    <span className={`w-16 flex-shrink-0 text-right ${spiritStones >= nextLevelReq.spiritStones ? 'text-green-400' : 'text-red-400'}`}>{Math.floor(spiritStones)}/{nextLevelReq.spiritStones}</span>
                   </div>
+                  
+                  {/* 弟子数 */}
                   {nextLevelReq.discipleCount && (
-                    <div className={`flex justify-between ${disciples.length >= nextLevelReq.discipleCount ? 'text-green-400' : 'text-red-400'}`}>
-                      <span>弟子</span><span>{disciples.length}/{nextLevelReq.discipleCount}</span>
+                    <div className="flex items-center gap-1.5 text-[9px]">
+                      <span className="w-8 flex-shrink-0 text-[var(--ink-300)]">弟子</span>
+                      <div className="flex-1 h-1.5 bg-[var(--ink-dark)] rounded-full overflow-hidden border border-[var(--gold-dark)]/20">
+                        <div className={`h-full rounded-full transition-all ${disciples.length >= nextLevelReq.discipleCount ? 'bg-green-500/80' : 'bg-violet-500/70'}`} style={{ width: `${Math.min(100, (disciples.length / nextLevelReq.discipleCount) * 100)}%` }} />
+                      </div>
+                      <span className={`w-16 flex-shrink-0 text-right ${disciples.length >= nextLevelReq.discipleCount ? 'text-green-400' : 'text-red-400'}`}>{disciples.length}/{nextLevelReq.discipleCount}</span>
                     </div>
                   )}
-                  <div className="flex items-center justify-between mt-1.5 pt-1 border-t border-[rgba(212,168,87,0.2)]">
+                  
+                  {/* 长老数 */}
+                  {nextLevelReq.elderCount !== undefined && (
+                    <div className="flex items-center gap-1.5 text-[9px]">
+                      <span className="w-8 flex-shrink-0 text-[var(--ink-300)]">长老</span>
+                      <div className="flex-1 h-1.5 bg-[var(--ink-dark)] rounded-full overflow-hidden border border-[var(--gold-dark)]/20">
+                        <div className={`h-full rounded-full transition-all ${elderCount >= nextLevelReq.elderCount ? 'bg-green-500/80' : 'bg-rose-500/70'}`} style={{ width: `${Math.min(100, (elderCount / nextLevelReq.elderCount) * 100)}%` }} />
+                      </div>
+                      <span className={`w-16 flex-shrink-0 text-right ${elderCount >= nextLevelReq.elderCount ? 'text-green-400' : 'text-red-400'}`}>{elderCount}/{nextLevelReq.elderCount}</span>
+                    </div>
+                  )}
+                  
+                  {/* 贡献 */}
+                  {nextLevelReq.promotionContribution !== undefined && nextLevelReq.promotionContribution > 0 && (
+                    <div className="flex items-center gap-1.5 text-[9px]">
+                      <span className="w-8 flex-shrink-0 text-[var(--ink-300)]">贡献</span>
+                      <div className="flex-1 h-1.5 bg-[var(--ink-dark)] rounded-full overflow-hidden border border-[var(--gold-dark)]/20">
+                        <div className={`h-full rounded-full transition-all ${(useGameStore.getState().sectContribution || 0) >= nextLevelReq.promotionContribution ? 'bg-green-500/80' : 'bg-yellow-500/70'}`} style={{ width: `${Math.min(100, ((useGameStore.getState().sectContribution || 0) / nextLevelReq.promotionContribution) * 100)}%` }} />
+                      </div>
+                      <span className={`w-16 flex-shrink-0 text-right ${(useGameStore.getState().sectContribution || 0) >= nextLevelReq.promotionContribution ? 'text-green-400' : 'text-red-400'}`}>{Math.floor(useGameStore.getState().sectContribution || 0)}/{nextLevelReq.promotionContribution}</span>
+                    </div>
+                  )}
+                  
+                  {/* 消耗与晋升按钮 */}
+                  <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-[rgba(212,168,87,0.2)]">
                     <div className="text-[9px] text-[var(--ink-400)]">
-                      消耗 {nextLevelReq.promotionCost} 灵石
+                      <span className="text-amber-400">{nextLevelReq.promotionCost}</span> 灵石
+                      {nextLevelReq.promotionContribution ? <span className="ml-0.5 text-yellow-400">+ {nextLevelReq.promotionContribution} 贡献</span> : null}
                     </div>
                     <button
-                      className="btn-ink text-[10px] px-2 py-0.5"
+                      className={`btn-ink text-[10px] px-2 py-0.5 ${canPromote ? '' : 'opacity-50 cursor-not-allowed'}`}
                       disabled={!canPromote}
                       onClick={promoteSect}
                     >

@@ -108,6 +108,7 @@ export interface Building {
   discipleCapacity: number;
   assignedDisciples: string[];
   managerId: string | null;
+  managerLocked?: boolean;  // 玩家手动指派的堂主：每月自动分配不再替换/移动，也不移出 assignedDisciples
   description: string;
   category: BuildingCategory;
   primaryOutput: keyof BuildingOutput;
