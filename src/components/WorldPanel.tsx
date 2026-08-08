@@ -451,7 +451,7 @@ type WorldTab = 'sects' | 'trials';
 
 export const WorldPanel: React.FC = () => {
   const store = useGameStore();
-  const { otherSects, trials, disciples, buildings, refreshOtherSects, refreshTrials } = store;
+  const { otherSects, trials, disciples, buildings } = store;
   const [activeTab, setActiveTab] = useState<WorldTab>('sects');
 
   // 本宗战力
@@ -612,14 +612,6 @@ export const WorldPanel: React.FC = () => {
                 <h2 className="font-display text-base text-gold-gradient">天下宗门</h2>
                 <Badge variant="default" size="sm">{otherSects.length} 个</Badge>
               </div>
-              <button
-                className="btn-ink text-xs flex items-center gap-1.5"
-                onClick={refreshOtherSects}
-                title="重新打探天下宗门情报"
-              >
-                <SectIcon name="nextMonth" size={12} strokeWidth={2} />
-                <span>刷新情报</span>
-              </button>
             </div>
 
             <p className="text-sect-jade/50 text-xs mb-3 leading-relaxed">
@@ -634,7 +626,7 @@ export const WorldPanel: React.FC = () => {
 
             {otherSects.length === 0 && (
               <div className="text-center py-8 text-sect-jade/40 text-sm">
-                暂无天下宗门情报，点击"刷新情报"打探
+                暂无天下宗门情报
               </div>
             )}
           </Card>
@@ -670,14 +662,6 @@ export const WorldPanel: React.FC = () => {
                 <h2 className="font-display text-base text-gold-gradient">试炼任务</h2>
                 <Badge variant="default" size="sm">{trials.length} 项</Badge>
               </div>
-              <button
-                className="btn-ink text-xs flex items-center gap-1.5"
-                onClick={refreshTrials}
-                title="按本宗战力刷新试炼列表"
-              >
-                <SectIcon name="nextMonth" size={12} strokeWidth={2} />
-                <span>刷新试炼</span>
-              </button>
             </div>
 
             <p className="text-sect-jade/50 text-xs mb-3 leading-relaxed">

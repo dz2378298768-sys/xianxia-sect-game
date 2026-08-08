@@ -26,7 +26,7 @@ dist-ssr
 .trae/
 
 # APK / Build artifacts
-*.apk
+# 注意：*.apk 规则已移除，允许将构建好的 APK 上传到 GitHub
 *.tar.gz
 old-apks/
 

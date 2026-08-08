@@ -632,10 +632,31 @@ export const IconBeastEarthBear: React.FC<IconProps> = ({ size = 24, className =
   </svg>
 );
 
+// 礼物/兑换：礼盒
+export const IconGift: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <path d="M3 10 L21 10 L21 20 L3 20 Z" />
+    <path d="M12 10 L12 20" />
+    <path d="M3 10 L3 8 Q3 6 5 6 L8 6 Q10 6 10 8 L10 10" />
+    <path d="M21 10 L21 8 Q21 6 19 6 L16 6 Q14 6 14 8 L14 10" />
+    <path d="M12 6 L12 10" />
+    <path d="M10 6 Q12 3 14 6 Q16 4 15 2 M14 6 Q12 3 10 6 Q8 4 9 2" />
+  </svg>
+);
+
+// 播放/广告：三角形播放键
+export const IconPlay: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <circle cx="12" cy="12" r="10" />
+    <path d="M10 8 L17 12 L10 16 Z" fill="currentColor" />
+  </svg>
+);
+
 export type IconName =
   | 'mountain' | 'building' | 'disciple' | 'cultivate' | 'warehouse'
   | 'battle' | 'world' | 'nextMonth' | 'scroll' | 'talisman'
   | 'close' | 'arrowRight' | 'back' | 'eye' | 'gear'
+  | 'gift' | 'play'
   | 'gem' | 'crystal' | 'pill' | 'book' | 'bulb'
   | 'warning' | 'herb' | 'lantern' | 'balance' | 'trophy'
   | 'chart' | 'trendUp' | 'trendDown' | 'yinyang' | 'mobile'
@@ -693,6 +714,8 @@ const ICON_MAP: Record<IconName, React.FC<IconProps>> = {
   steam: IconSteam,
   scrollText: IconScrollText,
   sword: IconSword,
+  gift: IconGift,
+  play: IconPlay,
   // 丹药
   pillFoundation: IconPillFoundation,
   pillGolden: IconPillGolden,

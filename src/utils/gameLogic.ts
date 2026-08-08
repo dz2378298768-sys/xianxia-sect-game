@@ -106,7 +106,7 @@ export function autoAssignBuilding(disciple: Disciple, buildings: Building[]): {
 }
 
 const RESIDENCE_STATUS_MAP: Record<string, BuildingType> = {
-  elder: 'core_residence',
+  elder: 'cave_mansion',
   core: 'core_residence',
   inner: 'inner_residence',
   outer: 'outer_residence',
@@ -118,9 +118,9 @@ export function autoAssignResidence(disciple: Disciple, buildings: Building[]): 
     return { buildingId: null, newBuildings: buildings };
   }
 
-  // 局部有序数组：core→inner→outer（降序），用于"从弟子身份对应居所往低级居所回退查找空位"
+  // 局部有序数组：cave_mansion→core→inner→outer（降序），用于"从弟子身份对应居所往低级居所回退查找空位"
   // 注意：导出常量 RESIDENCE_TYPES 顺序为 outer→inner→core（升序），语义不同，故此处保留局部有序数组
-  const RESIDENCE_ORDERED: BuildingType[] = ['core_residence', 'inner_residence', 'outer_residence'];
+  const RESIDENCE_ORDERED: BuildingType[] = ['cave_mansion', 'core_residence', 'inner_residence', 'outer_residence'];
 
   const targetType = RESIDENCE_STATUS_MAP[disciple.status];
   if (!targetType) {
@@ -380,10 +380,11 @@ export function monthlyReassign(
       outer: 'outer_residence',
       inner: 'inner_residence',
       core: 'core_residence',
+      elder: 'cave_mansion',
     };
     const requiredType = requiredResidenceType[disciple.status];
     if (!requiredType) continue;
-    const residenceOrder = ['outer_residence', 'inner_residence', 'core_residence'];
+    const residenceOrder = ['outer_residence', 'inner_residence', 'core_residence', 'cave_mansion'];
     const requiredIdx = residenceOrder.indexOf(requiredType);
     const actualIdx = currentResidence ? residenceOrder.indexOf(currentResidence.type) : -1;
 
@@ -418,16 +419,35 @@ export function getResidenceUpgradeCost(building: Building): { spiritStones: num
   return { spiritStones, reputation: 0 };
 }
 
-// 居所容量公式：每级10人（Lv1=10, Lv2=20, Lv3=30...）无上限
-export function getResidenceCapacityByLevel(_type: string, level: number): number {
+// 居所容量公式：
+//  - 普通居所：每级10人（Lv1=10, Lv2=20, Lv3=30...）无上限
+//  - 洞府（cave_mansion）：Lv1=1 人，每级+2 人（Lv2=3, Lv3=5, Lv4=7, Lv5=9），最高 5 级
+export function getResidenceCapacityByLevel(type: string, level: number): number {
+  if (type === 'cave_mansion') {
+    if (level <= 0) return 0;
+    const cappedLevel = Math.min(level, 5);
+    return 1 + (cappedLevel - 1) * 2;
+  }
   return level * 10;
+}
+
+// 洞府专属升级费用（因其 maxLevel=5，不参与普通居所通用 3 级递增表）
+export function getCaveMansionUpgradeCost(currentLevel: number): { spiritStones: number } | null {
+  const COSTS: Record<number, number> = {
+    1: 800,   // Lv1 → Lv2
+    2: 1800,  // Lv2 → Lv3
+    3: 3600,  // Lv3 → Lv4
+    4: 6400,  // Lv4 → Lv5
+  };
+  const cost = COSTS[currentLevel];
+  return cost ? { spiritStones: cost } : null;
 }
 
 // 建筑维护费按等级递增表
 export const MAINTENANCE_COST_TABLE: Record<string, number[]> = {
   mountain_gate: [15, 30, 60, 100, 150, 220, 300, 400, 550, 750],
   lecture_hall: [10, 25, 50],
-  servant_hall: [10, 10, 10, 10, 10],
+  servant_hall: [10, 10, 10, 10, 10, 10, 10, 10, 10, 10],
   outer_residence: [10, 20, 40],
   inner_residence: [15, 30, 60],
   core_residence: [20, 40, 80],
@@ -437,7 +457,7 @@ export const MAINTENANCE_COST_TABLE: Record<string, number[]> = {
   artifact_hall: [20, 45, 90],
   array_hall: [20, 45, 90],
   spirit_beast_garden: [40, 85, 170],
-  cave_mansion: [20],
+  cave_mansion: [30, 60, 120, 240, 400],
   skyscraper_tower: [0, 0, 0, 0, 0, 0, 0, 0, 0],
 };
 
@@ -1083,6 +1103,9 @@ const RealmCombatPower: Record<string, number> = {
   nascent: 3200,
   spirit: 12800,
 };
+
+// 通天塔战力：弟子战力达到此值方可挑战，挑战成功即飞升
+export const SKYSCRAPER_TOWER_COMBAT_POWER = 200000;
 
 // 计算弟子战力
 export function calculateDiscipleCombatPower(disciple: Disciple): number {

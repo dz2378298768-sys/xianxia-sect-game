@@ -10,6 +10,35 @@ import {
 import { SectIcon } from '@/components/icons/SectIcons';
 
 /**
+ * 单个需求进度条行组件
+ */
+const RequirementRow: React.FC<{
+  label: string;
+  current: number;
+  required: number;
+  color: string;
+  displayBool?: boolean;
+}> = ({ label, current, required, color, displayBool }) => {
+  const met = current >= required;
+  const pct = required > 0 ? Math.min(100, (current / required) * 100) : 100;
+  const display = displayBool ? (met ? '✓' : '✗') : `${current}/${required}`;
+  return (
+    <div className="flex items-center gap-1 text-[9px]">
+      <span className="w-14 flex-shrink-0 text-[var(--ink-300)]">{label}</span>
+      <div className="flex-1 h-1.5 bg-[var(--ink-dark)] rounded-full overflow-hidden border border-[var(--gold-dark)]/20">
+        <div
+          className={`h-full rounded-full transition-all duration-300 ${met ? 'bg-green-500/80' : color}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <span className={`w-12 flex-shrink-0 text-right font-mono ${met ? 'text-green-400' : 'text-red-400'}`}>
+        {display}
+      </span>
+    </div>
+  );
+};
+
+/**
  * 宗门信息抽屉：全屏显示，顶部三栏（宗门等级 / 经济概览 / 弟子分布）
  */
 export const SectInfoDrawer: React.FC = () => {
@@ -98,7 +127,7 @@ export const SectInfoDrawer: React.FC = () => {
                 {SectLevelDescriptions[sectLevel]}
               </p>
               {nextLevel && nextLevelReq && (
-                <div className="space-y-1">
+                <div className="space-y-0.5">
                   <div className="flex items-center justify-between mb-1">
                     <div className="text-[var(--gold-200)]">
                       → 下一阶段：{SectLevelNames[nextLevel]}
@@ -108,59 +137,46 @@ export const SectInfoDrawer: React.FC = () => {
                     </div>
                   </div>
                   
-                  {/* 声望 */}
-                  <div className="flex items-center gap-1.5 text-[9px]">
-                    <span className="w-8 flex-shrink-0 text-[var(--ink-300)]">声望</span>
-                    <div className="flex-1 h-1.5 bg-[var(--ink-dark)] rounded-full overflow-hidden border border-[var(--gold-dark)]/20">
-                      <div className={`h-full rounded-full transition-all ${reputation >= nextLevelReq.reputation ? 'bg-green-500/80' : 'bg-amber-500/70'}`} style={{ width: `${Math.min(100, (reputation / nextLevelReq.reputation) * 100)}%` }} />
-                    </div>
-                    <span className={`w-16 flex-shrink-0 text-right ${reputation >= nextLevelReq.reputation ? 'text-green-400' : 'text-red-400'}`}>{Math.floor(reputation)}/{nextLevelReq.reputation}</span>
-                  </div>
-                  
-                  {/* 灵石 */}
-                  <div className="flex items-center gap-1.5 text-[9px]">
-                    <span className="w-8 flex-shrink-0 text-[var(--ink-300)]">灵石</span>
-                    <div className="flex-1 h-1.5 bg-[var(--ink-dark)] rounded-full overflow-hidden border border-[var(--gold-dark)]/20">
-                      <div className={`h-full rounded-full transition-all ${spiritStones >= nextLevelReq.spiritStones ? 'bg-green-500/80' : 'bg-cyan-500/70'}`} style={{ width: `${Math.min(100, (spiritStones / nextLevelReq.spiritStones) * 100)}%` }} />
-                    </div>
-                    <span className={`w-16 flex-shrink-0 text-right ${spiritStones >= nextLevelReq.spiritStones ? 'text-green-400' : 'text-red-400'}`}>{Math.floor(spiritStones)}/{nextLevelReq.spiritStones}</span>
-                  </div>
-                  
-                  {/* 弟子数 */}
+                  {/* 动态条件列表 */}
+                  <RequirementRow label="声望" current={Math.floor(reputation)} required={nextLevelReq.reputation} color="bg-amber-500/70" />
+                  <RequirementRow label="灵石" current={Math.floor(spiritStones)} required={nextLevelReq.spiritStones} color="bg-cyan-500/70" />
                   {nextLevelReq.discipleCount && (
-                    <div className="flex items-center gap-1.5 text-[9px]">
-                      <span className="w-8 flex-shrink-0 text-[var(--ink-300)]">弟子</span>
-                      <div className="flex-1 h-1.5 bg-[var(--ink-dark)] rounded-full overflow-hidden border border-[var(--gold-dark)]/20">
-                        <div className={`h-full rounded-full transition-all ${disciples.length >= nextLevelReq.discipleCount ? 'bg-green-500/80' : 'bg-violet-500/70'}`} style={{ width: `${Math.min(100, (disciples.length / nextLevelReq.discipleCount) * 100)}%` }} />
-                      </div>
-                      <span className={`w-16 flex-shrink-0 text-right ${disciples.length >= nextLevelReq.discipleCount ? 'text-green-400' : 'text-red-400'}`}>{disciples.length}/{nextLevelReq.discipleCount}</span>
-                    </div>
+                    <RequirementRow label="弟子" current={disciples.length} required={nextLevelReq.discipleCount} color="bg-violet-500/70" />
                   )}
-                  
-                  {/* 长老数 */}
                   {nextLevelReq.elderCount !== undefined && (
-                    <div className="flex items-center gap-1.5 text-[9px]">
-                      <span className="w-8 flex-shrink-0 text-[var(--ink-300)]">长老</span>
-                      <div className="flex-1 h-1.5 bg-[var(--ink-dark)] rounded-full overflow-hidden border border-[var(--gold-dark)]/20">
-                        <div className={`h-full rounded-full transition-all ${elderCount >= nextLevelReq.elderCount ? 'bg-green-500/80' : 'bg-rose-500/70'}`} style={{ width: `${Math.min(100, (elderCount / nextLevelReq.elderCount) * 100)}%` }} />
-                      </div>
-                      <span className={`w-16 flex-shrink-0 text-right ${elderCount >= nextLevelReq.elderCount ? 'text-green-400' : 'text-red-400'}`}>{elderCount}/{nextLevelReq.elderCount}</span>
-                    </div>
+                    <RequirementRow label="长老" current={elderCount} required={nextLevelReq.elderCount} color="bg-rose-500/70" />
                   )}
-                  
-                  {/* 贡献 */}
                   {nextLevelReq.promotionContribution !== undefined && nextLevelReq.promotionContribution > 0 && (
-                    <div className="flex items-center gap-1.5 text-[9px]">
-                      <span className="w-8 flex-shrink-0 text-[var(--ink-300)]">贡献</span>
-                      <div className="flex-1 h-1.5 bg-[var(--ink-dark)] rounded-full overflow-hidden border border-[var(--gold-dark)]/20">
-                        <div className={`h-full rounded-full transition-all ${(useGameStore.getState().sectContribution || 0) >= nextLevelReq.promotionContribution ? 'bg-green-500/80' : 'bg-yellow-500/70'}`} style={{ width: `${Math.min(100, ((useGameStore.getState().sectContribution || 0) / nextLevelReq.promotionContribution) * 100)}%` }} />
-                      </div>
-                      <span className={`w-16 flex-shrink-0 text-right ${(useGameStore.getState().sectContribution || 0) >= nextLevelReq.promotionContribution ? 'text-green-400' : 'text-red-400'}`}>{Math.floor(useGameStore.getState().sectContribution || 0)}/{nextLevelReq.promotionContribution}</span>
-                    </div>
+                    <RequirementRow label="贡献" current={Math.floor(useGameStore.getState().sectContribution || 0)} required={nextLevelReq.promotionContribution} color="bg-yellow-500/70" />
                   )}
+                  {nextLevelReq.level2Buildings && (() => {
+                    const lv2Count = buildings.filter(b => b.level >= 2 && b.status === 'active').length;
+                    return <RequirementRow label="Lv2建筑" current={lv2Count} required={nextLevelReq.level2Buildings} color="bg-blue-500/70" />;
+                  })()}
+                  {nextLevelReq.level3Buildings && (() => {
+                    const lv3Count = buildings.filter(b => b.level >= 3 && b.status === 'active').length;
+                    return <RequirementRow label="Lv3建筑" current={lv3Count} required={nextLevelReq.level3Buildings} color="bg-indigo-500/70" />;
+                  })()}
+                  {nextLevelReq.allLevel2 && (() => {
+                    const activeBuildings = buildings.filter(b => b.status === 'active');
+                    const allLv2 = activeBuildings.every(b => b.level >= 2);
+                    return <RequirementRow label="全建筑Lv2" current={allLv2 ? 1 : 0} required={1} color="bg-blue-500/70" displayBool />;
+                  })()}
+                  {nextLevelReq.goldenDisciple && (() => {
+                    const hasGolden = disciples.some(d => d.realm === 'golden' || d.realm === 'nascent' || d.realm === 'spirit');
+                    return <RequirementRow label="金丹期弟子" current={hasGolden ? 1 : 0} required={1} color="bg-amber-500/70" displayBool />;
+                  })()}
+                  {nextLevelReq.nascentDisciple && (() => {
+                    const hasNascent = disciples.some(d => d.realm === 'nascent' || d.realm === 'spirit');
+                    return <RequirementRow label="元婴期弟子" current={hasNascent ? 1 : 0} required={1} color="bg-purple-500/70" displayBool />;
+                  })()}
+                  {nextLevelReq.spiritDisciple && (() => {
+                    const hasSpirit = disciples.some(d => d.realm === 'spirit');
+                    return <RequirementRow label="化神期弟子" current={hasSpirit ? 1 : 0} required={1} color="bg-emerald-500/70" displayBool />;
+                  })()}
                   
                   {/* 消耗与晋升按钮 */}
-                  <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-[rgba(212,168,87,0.2)]">
+                  <div className="flex items-center justify-between mt-1 pt-1.5 border-t border-[rgba(212,168,87,0.2)]">
                     <div className="text-[9px] text-[var(--ink-400)]">
                       <span className="text-amber-400">{nextLevelReq.promotionCost}</span> 灵石
                       {nextLevelReq.promotionContribution ? <span className="ml-0.5 text-yellow-400">+ {nextLevelReq.promotionContribution} 贡献</span> : null}

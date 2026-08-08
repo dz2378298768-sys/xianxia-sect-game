@@ -19,3 +19,16 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# ========== Dirichlet 聚合广告 SDK（避免二次混淆报错） ==============================
+-keep class com.tapsdk.tapad.group.** { *; }
+-keep class com.bytedance.sdk.openadsdk.** { *; }
+-keep class com.qq.e.** { *; }
+
+# ========== TapTap 更新唤起 SDK v4（官方 FAQ 推荐） ==================================
+# 官方 FAQ：https://developer.taptap.cn/docs/sdk/update/faq/
+-keep class com.tds.** { *; }
+-keep class com.taptap.** { *; }
+-keep class com.tapsdk.** { *; }
+-keep class tds.androidx.** { *; }
+

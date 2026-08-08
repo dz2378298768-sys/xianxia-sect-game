@@ -51,7 +51,6 @@ export const SectLevelRequirementsMap: Record<SectLevel, SectLevelRequirements> 
     level2Buildings: 2, 
     goldenDisciple: true,
     promotionCost: 1000,
-    promotionContribution: 500,
   },
   dominant: { 
     reputation: 800, 
@@ -60,7 +59,6 @@ export const SectLevelRequirementsMap: Record<SectLevel, SectLevelRequirements> 
     nascentDisciple: true,
     elderCount: 3,
     promotionCost: 3000,
-    promotionContribution: 1500,
   },
   eternal: { 
     reputation: 2000, 
@@ -69,7 +67,6 @@ export const SectLevelRequirementsMap: Record<SectLevel, SectLevelRequirements> 
     spiritDisciple: true,
     elderCount: 5,
     promotionCost: 10000,
-    promotionContribution: 5000,
   },
 };
 

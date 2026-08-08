@@ -50,9 +50,10 @@ export const OverviewPanel: React.FC = () => {
   }> = ({ label, current, required, icon, color }) => {
     const pct = required > 0 ? Math.min(100, (current / required) * 100) : 100;
     const met = current >= required;
+    const displayText = required === 1 ? (met ? '✓' : '✗') : `${Math.floor(current)} / ${required}`;
     return (
       <div className="flex items-center gap-3">
-        <div className="w-16 flex-shrink-0 text-xs text-[var(--ink-300)] flex items-center gap-1">
+        <div className="w-20 flex-shrink-0 text-xs text-[var(--ink-300)] flex items-center gap-1">
           {icon}{label}
         </div>
         <div className="flex-1 h-2.5 bg-[var(--ink-dark)] rounded-full overflow-hidden border border-[var(--gold-dark)]/20">
@@ -61,8 +62,8 @@ export const OverviewPanel: React.FC = () => {
             style={{ width: `${pct}%` }}
           />
         </div>
-        <div className={`w-28 flex-shrink-0 text-right text-xs font-mono ${met ? 'text-green-400' : 'text-red-400'}`}>
-          {Math.floor(current)} / {required}
+        <div className={`w-24 flex-shrink-0 text-right text-xs font-mono ${met ? 'text-green-400' : 'text-red-400'}`}>
+          {displayText}
         </div>
         <div className={`w-5 flex-shrink-0 text-center text-sm ${met ? 'text-green-400' : 'text-red-400'}`}>
           {met ? '✓' : '✗'}
@@ -131,6 +132,54 @@ export const OverviewPanel: React.FC = () => {
                   current={useGameStore.getState().sectContribution || 0}
                   required={nextLevelReq.promotionContribution}
                   color="bg-yellow-500/70"
+                />
+              )}
+              {nextLevelReq.level2Buildings && (
+                <RequirementBar
+                  label="Lv2建筑"
+                  current={buildings.filter(b => b.level >= 2 && b.status === 'active').length}
+                  required={nextLevelReq.level2Buildings}
+                  color="bg-blue-500/70"
+                />
+              )}
+              {nextLevelReq.level3Buildings && (
+                <RequirementBar
+                  label="Lv3建筑"
+                  current={buildings.filter(b => b.level >= 3 && b.status === 'active').length}
+                  required={nextLevelReq.level3Buildings}
+                  color="bg-indigo-500/70"
+                />
+              )}
+              {nextLevelReq.allLevel2 && (
+                <RequirementBar
+                  label="全建筑Lv2"
+                  current={buildings.filter(b => b.status === 'active').every(b => b.level >= 2) ? 1 : 0}
+                  required={1}
+                  color="bg-blue-500/70"
+                />
+              )}
+              {nextLevelReq.goldenDisciple && (
+                <RequirementBar
+                  label="金丹期弟子"
+                  current={disciples.some(d => d.realm === 'golden' || d.realm === 'nascent' || d.realm === 'spirit') ? 1 : 0}
+                  required={1}
+                  color="bg-amber-500/70"
+                />
+              )}
+              {nextLevelReq.nascentDisciple && (
+                <RequirementBar
+                  label="元婴期弟子"
+                  current={disciples.some(d => d.realm === 'nascent' || d.realm === 'spirit') ? 1 : 0}
+                  required={1}
+                  color="bg-purple-500/70"
+                />
+              )}
+              {nextLevelReq.spiritDisciple && (
+                <RequirementBar
+                  label="化神期弟子"
+                  current={disciples.some(d => d.realm === 'spirit') ? 1 : 0}
+                  required={1}
+                  color="bg-emerald-500/70"
                 />
               )}
             </div>

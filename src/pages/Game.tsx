@@ -10,6 +10,7 @@ import { TasksPanel } from '@/components/TasksPanel';
 import { SideNav } from '@/components/SideNav';
 import { MainMenu } from '@/components/MainMenu';
 import { MonthlyReportModal } from '@/components/MonthlyReportModal';
+import { VictoryModal } from '@/components/VictoryModal';
 import { BuildingsPanel } from '@/components/BuildingsPanel';
 import { DisciplesPanel } from '@/components/DisciplesPanel';
 import { EconomyPanel } from '@/components/EconomyPanel';
@@ -118,6 +119,9 @@ const GameLayout: React.FC = () => {
 
       {/* 模态框 */}
       {showReport && <MonthlyReportModal />}
+
+      {/* 飞升胜利弹窗 */}
+      <VictoryModal />
 
       {/* 坊市商店 */}
       <ShopPanel />

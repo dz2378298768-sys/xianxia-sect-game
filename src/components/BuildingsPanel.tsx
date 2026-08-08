@@ -10,11 +10,11 @@ import {
   Building2, Wrench, Users, ArrowUp, ArrowDown, Power,
   Lock, Gem, Star, DoorOpen, Heart, Sparkles,
   TrendingUp, Plus, Shield, BookOpen, FlaskConical,
-  Hammer, Scroll, Zap, TreePine, Crown, Info, X
+  Hammer, Scroll, Zap, TreePine, Crown, Info, X, Swords
 } from 'lucide-react';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { LibraryPanel } from '@/components/LibraryPanel';
-import { calculateBuildingMaintenance, calculateBuildingOutput, getResidenceUpgradeCost } from '@/utils/gameLogic';
+import { calculateBuildingMaintenance, calculateBuildingOutput, getResidenceUpgradeCost, getCaveMansionUpgradeCost, calculateDiscipleCombatPower, SKYSCRAPER_TOWER_COMBAT_POWER } from '@/utils/gameLogic';
 import { RealmOrder, DiscipleStatusNames, getRealmDisplay } from '@/types/disciple';
 import { BuildingType, RESIDENCE_TYPES, RESIDENCE_TYPES_WITH_CAVE, isResidenceType, MAX_PRODUCTION_SLOTS, getAvailableSlots } from '@/types/building';
 import { BUILDING_CONFIGS } from '@/data/buildings';
@@ -363,14 +363,20 @@ export const BuildingsPanel: React.FC = () => {
     setProductionTarget, clearProductionTarget, setBuildingContributionSettings,
     unlockedPillRecipes, unlockedArtifactRecipes, unlockedTalismanRecipes,
     buyBeast, captureBeast, beastInventory,
+    buyCaveMansion, challengeCaveMansion, challengeSkyscraperTower,
+    assignDiscipleToBuilding,
   } = useGameStore();
-  const { selectedBuildingId, setSelectedBuildingId } = useUIStore();
+  const { selectedBuildingId, setSelectedBuildingId, setActivePanel } = useUIStore();
   const [showBuildModal, setShowBuildModal] = useState(false);
   const [buildError, setBuildError] = useState<string | null>(null);
   const [showVacant, setShowVacant] = useState(false);
   const [showManagerPicker, setShowManagerPicker] = useState(false);
   const [expandedBuildingId, setExpandedBuildingId] = useState<string | null>(null);
   const [showBeastCapturePicker, setShowBeastCapturePicker] = useState(false);
+  const [showChallengePicker, setShowChallengePicker] = useState(false);
+  const [showElderPicker, setShowElderPicker] = useState(false);
+  const [showAssignPicker, setShowAssignPicker] = useState(false);
+  const [towerChallengerId, setTowerChallengerId] = useState<string | null>(null);
 
   // 显示错误提示
   const showError = (message: string) => {
@@ -391,10 +397,16 @@ export const BuildingsPanel: React.FC = () => {
   // 灵石 + 声望 两类资源同时校验，避免按钮可点但点击静默失败。
   const getUpgradeBlockReason = (building: any): string | null => {
     if (building.level >= building.maxLevel) return '已满级';
+    // 通天塔为结局建筑，不可升级
+    if (building.type === 'skyscraper_tower') return '通天塔不可升级';
 
+    const isCave = building.type === 'cave_mansion';
     const isResidence = RESIDENCE_TYPES.includes(building.type);
     let cost;
-    if (isResidence) {
+    if (isCave) {
+      cost = getCaveMansionUpgradeCost(building.level);
+      if (!cost) return '无法升级';
+    } else if (isResidence) {
       cost = getResidenceUpgradeCost(building);
       if (!cost) return '无法升级';
     } else {
@@ -412,7 +424,11 @@ export const BuildingsPanel: React.FC = () => {
 
   const getUpgradeCost = (building: any) => {
     if (building.level >= building.maxLevel) return null;
+    const isCave = building.type === 'cave_mansion';
     const isResidence = RESIDENCE_TYPES.includes(building.type);
+    if (isCave) {
+      return getCaveMansionUpgradeCost(building.level);
+    }
     if (isResidence) {
       return getResidenceUpgradeCost(building);
     }
@@ -1050,6 +1066,266 @@ export const BuildingsPanel: React.FC = () => {
               </div>
             )}
 
+            {selectedBuilding.type === 'cave_mansion' && (() => {
+              const residents = assignedDisciples;
+              const elders = disciples.filter(d => d.status === 'elder');
+              const nonResidentElders = elders.filter(d => !selectedBuilding.assignedDisciples.includes(d.id));
+              const isFull = selectedBuilding.assignedDisciples.length >= selectedBuilding.discipleCapacity;
+              return (
+                <div className="bg-gradient-to-br from-purple-500/10 to-yellow-500/5 border border-sect-gold/40 rounded p-2 text-[11px] space-y-2">
+                  <div className="font-display text-sect-gold flex items-center gap-1">
+                    <Crown size={12} />洞府长老居所
+                  </div>
+                  <div className="space-y-0.5 text-sect-jade/80 leading-snug">
+                    <div>✓ 专属长老居所，Lv1=1 人，每级 +2 人，最高 5 级（9 人）</div>
+                    <div>★ 洞府住满后，其他长老可挑战现任长老以夺取洞府居住权</div>
+                    <div>↑ 升级洞府以容纳更多长老</div>
+                  </div>
+                  <div className="text-[10px] text-sect-gold/80">
+                    Lv.{selectedBuilding.level} · 容量 {selectedBuilding.assignedDisciples.length}/{selectedBuilding.discipleCapacity}
+                    {isFull ? <span className="text-red-400 ml-1">（已满）</span> : <span className="text-emerald-400 ml-1">（有空位）</span>}
+                  </div>
+
+                  {/* 当前居住长老 */}
+                  {residents.length > 0 && (
+                    <div className="bg-sect-ink-light/40 rounded p-1.5 border border-sect-gold/10">
+                      <div className="text-[10px] text-sect-gold/70 mb-1">洞府内长老</div>
+                      <div className="space-y-1">
+                        {residents.map(r => {
+                          const power = calculateDiscipleCombatPower(r);
+                          return (
+                            <div key={r.id} className="flex items-center justify-between gap-1 bg-sect-ink-light/30 rounded px-1.5 py-1">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <SimpleAvatar seed={r.avatarSeed} name={r.name} status={r.status} realm={r.realm} size={18} />
+                                <span className="text-[11px] text-sect-jade truncate">{r.name}</span>
+                              </div>
+                              <span className="text-[10px] text-sect-herb-light font-mono whitespace-nowrap">战力 {power}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 空位 / 挑战 操作区 */}
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {!isFull && (
+                      <Button
+                        variant="gold"
+                        size="sm"
+                        className="text-[11px] py-1 col-span-2"
+                        disabled={nonResidentElders.length === 0}
+                        onClick={() => setShowElderPicker(true)}
+                      >
+                        <span className="flex items-center justify-center gap-1">
+                          <Plus size={11} />安排长老入住 ({nonResidentElders.length})
+                        </span>
+                      </Button>
+                    )}
+                    {isFull && residents.length > 0 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-[11px] py-1 col-span-2 border-red-500/40 text-red-300 hover:bg-red-500/15"
+                        disabled={nonResidentElders.length === 0}
+                        onClick={() => setShowChallengePicker(true)}
+                      >
+                        <span className="flex items-center justify-center gap-1">
+                          <Swords size={11} />发起挑战 ({nonResidentElders.length})
+                        </span>
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* 选择长老入住 */}
+                  {showElderPicker && !isFull && (
+                    <div className="bg-sect-ink-light/40 border border-sect-gold/20 rounded p-1.5 max-h-40 overflow-y-auto">
+                      <div className="text-[10px] text-sect-gold/80 mb-1">选择一名无洞府长老入住（消耗 1000 贡献）</div>
+                      {nonResidentElders.length === 0 ? (
+                        <div className="text-[10px] text-sect-jade/50">所有长老均已入住</div>
+                      ) : (
+                        <div className="space-y-0.5">
+                          {nonResidentElders.map(d => (
+                            <button
+                              key={d.id}
+                              type="button"
+                              className="w-full flex items-center justify-between px-2 py-1 rounded bg-sect-ink-light/30 hover:bg-sect-gold/20 transition-colors disabled:opacity-50"
+                              disabled={d.contributionPoints < 1000}
+                              onClick={() => {
+                                if (buyCaveMansion(d.id)) {
+                                  setShowElderPicker(false);
+                                } else {
+                                  showError('入住洞府失败');
+                                }
+                              }}
+                            >
+                              <span className="flex items-center gap-1 text-[11px] text-sect-jade">
+                                <SimpleAvatar seed={d.avatarSeed} name={d.name} status={d.status} realm={d.realm} size={16} />
+                                {d.name}
+                              </span>
+                              <span className={`text-[10px] ${d.contributionPoints < 1000 ? 'text-red-400' : 'text-sect-gold'}`}>
+                                贡献 {Math.floor(d.contributionPoints)}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 挑战选择器 */}
+                  {showChallengePicker && isFull && (
+                    <div className="bg-sect-ink-light/40 border border-red-500/20 rounded p-1.5 max-h-56 overflow-y-auto space-y-2">
+                      <div className="text-[10px] text-red-300 mb-1">选择挑战方长老 → 再选择被挑战的洞府居住长老（挑战方消耗 1000 贡献）</div>
+                      {nonResidentElders.length === 0 ? (
+                        <div className="text-[10px] text-sect-jade/50">无符合条件的非洞府长老</div>
+                      ) : (
+                        nonResidentElders.map(challenger => (
+                          <div key={challenger.id} className="bg-sect-ink-light/30 rounded p-1.5 border border-sect-gold/10">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-[11px] text-sect-jade flex items-center gap-1">
+                                <SimpleAvatar seed={challenger.avatarSeed} name={challenger.name} status={challenger.status} realm={challenger.realm} size={16} />
+                                {challenger.name}
+                              </span>
+                              <span className="text-[10px] text-sect-herb-light font-mono">
+                                战力 {calculateDiscipleCombatPower(challenger)}
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-sect-jade/60 mb-1">挑战：</div>
+                            <div className="space-y-0.5">
+                              {residents.map(defender => {
+                                const dPower = calculateDiscipleCombatPower(defender);
+                                const cPower = calculateDiscipleCombatPower(challenger);
+                                const winRate = Math.round((cPower / (cPower + dPower)) * 100);
+                                return (
+                                  <button
+                                    key={defender.id}
+                                    type="button"
+                                    className="w-full flex items-center justify-between gap-1 px-2 py-1 rounded bg-sect-ink-light/40 hover:bg-red-500/15 transition-colors disabled:opacity-50"
+                                    disabled={challenger.contributionPoints < 1000}
+                                    onClick={() => {
+                                      const r = challengeCaveMansion(challenger.id, defender.id);
+                                      if (r.success) {
+                                        setShowChallengePicker(false);
+                                      } else if (r.reason) {
+                                        showError(r.reason);
+                                      }
+                                    }}
+                                  >
+                                    <span className="flex items-center gap-1 text-[11px] text-sect-jade">
+                                      <SimpleAvatar seed={defender.avatarSeed} name={defender.name} status={defender.status} realm={defender.realm} size={14} />
+                                      {defender.name}
+                                    </span>
+                                    <span className="text-[10px] text-red-300/80">
+                                      战力 {dPower} · 胜率约 {winRate}%
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {selectedBuilding.type === 'skyscraper_tower' && (() => {
+              // 通天塔挑战：战力达 20 万的弟子可挑战，胜利飞升，失败境界跌落一级
+              const eligibleDisciples = disciples.filter(d => calculateDiscipleCombatPower(d) >= SKYSCRAPER_TOWER_COMBAT_POWER);
+              const challenger = towerChallengerId ? disciples.find(d => d.id === towerChallengerId) : null;
+              const challengerPower = challenger ? calculateDiscipleCombatPower(challenger) : 0;
+              const winRate = challenger
+                ? Math.round(Math.min(0.95, Math.max(0.05, challengerPower / (challengerPower + SKYSCRAPER_TOWER_COMBAT_POWER))) * 100)
+                : 0;
+              return (
+                <div className="bg-gradient-to-br from-yellow-500/10 to-amber-600/5 border border-yellow-400/40 rounded p-2 text-[11px] space-y-2">
+                  <div className="font-display text-yellow-300 flex items-center gap-1">
+                    <Crown size={12} />通天塔 · 飞升试炼
+                  </div>
+                  <div className="space-y-0.5 text-sect-jade/80 leading-snug">
+                    <div>✓ 通天塔战力 <span className="text-yellow-300 font-mono">{SKYSCRAPER_TOWER_COMBAT_POWER.toLocaleString()}</span></div>
+                    <div>★ 弟子战力达 20 万方可挑战，胜利即飞升仙界，游戏胜利</div>
+                    <div>⚠ 挑战失败，境界跌落一级，修为受损</div>
+                  </div>
+
+                  {/* 候选挑战弟子列表 */}
+                  <div className="bg-sect-ink-light/40 rounded p-1.5 border border-yellow-400/20">
+                    <div className="text-[10px] text-yellow-300/80 mb-1">
+                      可挑战弟子（战力 ≥ 20 万）：{eligibleDisciples.length} 人
+                    </div>
+                    {eligibleDisciples.length === 0 ? (
+                      <div className="text-[10px] text-sect-jade/50">暂无弟子达到挑战条件，继续修炼。</div>
+                    ) : (
+                      <div className="space-y-0.5">
+                        {eligibleDisciples.map(d => {
+                          const power = calculateDiscipleCombatPower(d);
+                          const wr = Math.round(Math.min(0.95, Math.max(0.05, power / (power + SKYSCRAPER_TOWER_COMBAT_POWER))) * 100);
+                          const isSelected = towerChallengerId === d.id;
+                          return (
+                            <button
+                              key={d.id}
+                              type="button"
+                              className={`w-full flex items-center justify-between gap-1 px-2 py-1 rounded transition-colors ${isSelected ? 'bg-yellow-500/20 border border-yellow-400/50' : 'bg-sect-ink-light/30 hover:bg-yellow-500/15'}`}
+                              onClick={() => setTowerChallengerId(isSelected ? null : d.id)}
+                            >
+                              <span className="flex items-center gap-1 text-[11px] text-sect-jade min-w-0">
+                                <SimpleAvatar seed={d.avatarSeed} name={d.name} status={d.status} realm={d.realm} size={16} />
+                                <span className="truncate">{d.name}</span>
+                                <span className="text-[9px] text-sect-jade/50">{getRealmDisplay(d)}</span>
+                              </span>
+                              <span className="text-[10px] text-yellow-300/90 font-mono whitespace-nowrap">
+                                战力 {power.toLocaleString()} · 胜率 {wr}%
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 确认挑战 */}
+                  {challenger && (
+                    <div className="bg-yellow-500/10 border border-yellow-400/30 rounded p-1.5 space-y-1.5">
+                      <div className="text-[10px] text-yellow-200/90 leading-snug">
+                        确认由 <span className="text-yellow-300 font-display">{challenger.name}</span>（战力 {challengerPower.toLocaleString()}）挑战通天塔？
+                        <br />预估胜率 <span className="text-yellow-300 font-display">{winRate}%</span>，失败将跌落至 <span className="text-red-300">{getRealmDisplay({ realm: RealmOrder[Math.max(0, RealmOrder.indexOf(challenger.realm) - 1)], realmStage: 'late' })}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          variant="gold"
+                          size="sm"
+                          className="text-[11px] py-1 flex-1"
+                          onClick={() => {
+                            const r = challengeSkyscraperTower(challenger.id);
+                            if (!r.success && r.reason) {
+                              showError(r.reason);
+                            } else {
+                              setTowerChallengerId(null);
+                            }
+                          }}
+                        >
+                          <span className="flex items-center justify-center gap-1">
+                            <Sparkles size={11} />确认挑战 · 飞升试炼
+                          </span>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-[11px] py-1"
+                          onClick={() => setTowerChallengerId(null)}
+                        >
+                          取消
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             {selectedBuilding.discipleCapacity > 0 && (
               <>
                 {/* 升级区域 */}
@@ -1097,9 +1373,13 @@ export const BuildingsPanel: React.FC = () => {
                 {/* 降级区域 */}
                 {(() => {
                   if (selectedBuilding.level <= 1) return null;
+                  const isCave = selectedBuilding.type === 'cave_mansion';
                   const isRes = isResidenceBuilding(selectedBuilding.type);
                   let refundStones = 0;
-                  if (isRes) {
+                  if (isCave) {
+                    const c = getCaveMansionUpgradeCost(selectedBuilding.level - 1);
+                    if (c) refundStones = c.spiritStones;
+                  } else if (isRes) {
                     const c = getResidenceUpgradeCost({ ...selectedBuilding, level: selectedBuilding.level - 1 });
                     if (c) refundStones = c.spiritStones;
                   } else {
@@ -1121,7 +1401,9 @@ export const BuildingsPanel: React.FC = () => {
                         <div className="flex items-center gap-2 text-[11px] text-emerald-400 shrink-0 flex-wrap justify-end">
                           <span className="flex items-center gap-1"><Gem size={12} /> {refundStones}</span>
                           {(() => {
-                            const r = isRes
+                            const r = isCave
+                              ? 0
+                              : isRes
                               ? getResidenceUpgradeCost({ ...selectedBuilding, level: selectedBuilding.level - 1 })?.reputation ?? 0
                               : selectedBuilding.upgradeCosts[selectedBuilding.level - 2]?.reputation ?? 0;
                             return r > 0 ? <span className="flex items-center gap-1 text-blue-300"><Star size={12} /> {r}</span> : null;
@@ -1233,14 +1515,105 @@ export const BuildingsPanel: React.FC = () => {
 
                 {/* 在堂弟子 —— 再紧凑，头像小一点，行高差小 */}
                 <div>
-                  <h3 className="font-display text-xs text-sect-gold mb-1.5 flex items-center gap-1">
-                    <Users size={14} />
-                    在堂弟子 ({assignedDisciples.length})
-                  </h3>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <h3 className="font-display text-xs text-sect-gold flex items-center gap-1">
+                      <Users size={14} />
+                      在堂弟子 ({assignedDisciples.length}/{selectedBuilding.discipleCapacity})
+                    </h3>
+                    {!RESIDENCE_TYPES_FOR_VACANT.includes(selectedBuilding.type) && (
+                      <div className="flex items-center gap-1.5">
+                        {selectedBuilding.type !== 'secret_library' && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-[10px] py-0.5 px-2 border border-sect-gold/30 text-sect-jade/80 hover:text-sect-gold hover:border-sect-gold/60"
+                            onClick={() => { setSelectedBuildingId(selectedBuilding.id); setActivePanel('allocation'); }}
+                            title="跳转到「弟子分配」面板"
+                          >
+                            <Plus size={11} className="mr-0.5" />
+                            分配面板
+                          </Button>
+                        )}
+                        {!isResidenceType(selectedBuilding.type) && selectedBuilding.type !== 'cave_mansion' && (
+                          <Button
+                            size="sm"
+                            variant="gold"
+                            className="text-[10px] py-0.5 px-2"
+                            onClick={() => setShowAssignPicker(v => !v)}
+                            disabled={selectedBuilding.assignedDisciples.length >= selectedBuilding.discipleCapacity}
+                          >
+                            <Plus size={11} className="mr-0.5" />
+                            分配弟子
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 简易分配器：直接从符合条件的空闲弟子中挑一个加入 */}
+                  {showAssignPicker && !isResidenceType(selectedBuilding.type) && selectedBuilding.type !== 'cave_mansion' && (() => {
+                    const statusOrder: any[] = ['mortal', 'servant', 'outer', 'inner', 'core', 'elder'];
+                    const minIdx = selectedBuilding.minDiscipleStatus ? statusOrder.indexOf(selectedBuilding.minDiscipleStatus) : 0;
+                    // 找所有 1) 符合身份准入 2) 未在此工作 3) 非长老的弟子（长老不参与生产分配，除非是讲经堂/藏经阁——允许所有）
+                    const isSpecial = selectedBuilding.type === 'lecture_hall' || selectedBuilding.type === 'secret_library';
+                    const candidates = disciples.filter(d => {
+                      if (selectedBuilding.assignedDisciples.includes(d.id)) return false;
+                      const sIdx = statusOrder.indexOf(d.status);
+                      if (sIdx < minIdx) return false;
+                      if (!isSpecial && d.status === 'elder') return false;
+                      return true;
+                    });
+                    return (
+                      <div className="bg-sect-ink-light/40 border border-sect-gold/20 rounded p-1.5 mb-2">
+                        <div className="text-[10px] text-sect-jade/60 mb-1">
+                          点击弟子加入此堂口（会自动从之前的工作堂口移除，保留居所）
+                          {selectedBuilding.assignedDisciples.length >= selectedBuilding.discipleCapacity && <span className="ml-1 text-red-300">（已满）</span>}
+                        </div>
+                        {candidates.length === 0 ? (
+                          <div className="text-[10px] text-yellow-400 px-1 py-1">暂无符合条件的弟子（身份准入：{selectedBuilding.minDiscipleStatus || '无'}）</div>
+                        ) : (
+                          <div className="space-y-0.5 max-h-40 overflow-y-auto pr-0.5">
+                            {candidates.map(d => {
+                              const curBd = buildings.find(b =>
+                                !RESIDENCE_TYPES_FOR_VACANT.includes(b.type) && b.assignedDisciples.includes(d.id));
+                              return (
+                                <button
+                                  key={d.id}
+                                  type="button"
+                                  className="w-full flex items-center justify-between px-2 py-1 rounded bg-sect-ink-light/30 hover:bg-sect-gold/10 transition-colors disabled:opacity-40"
+                                  disabled={selectedBuilding.assignedDisciples.length >= selectedBuilding.discipleCapacity}
+                                  onClick={() => {
+                                    assignDiscipleToBuilding(d.id, selectedBuilding.id);
+                                    if (selectedBuilding.assignedDisciples.length + 1 >= selectedBuilding.discipleCapacity) {
+                                      setShowAssignPicker(false);
+                                    }
+                                  }}
+                                >
+                                  <div className="flex items-center gap-1.5 min-w-0">
+                                    <SimpleAvatar seed={d.avatarSeed} size={20} status={d.status} realm={d.realm} name={d.name} />
+                                    <span className="text-[11px] text-sect-jade">{d.name}</span>
+                                    <Badge variant="default" size="sm">{DiscipleStatusNames[d.status]}</Badge>
+                                    <span className={`text-[10px] ${getRealmColor(d.realm)}`}>{getRealmDisplay(d)}</span>
+                                  </div>
+                                  <span className="text-[10px] text-sect-jade/50">
+                                    {curBd ? `原：${curBd.name}` : '空闲'}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                        <div className="mt-1.5 text-right">
+                          <Button size="sm" variant="ghost" className="text-[10px] py-0.5 px-2"
+                            onClick={() => setShowAssignPicker(false)}>收起</Button>
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {assignedDisciples.length === 0 ? (
                     <div className="text-center py-4 text-[11px] text-sect-jade/40">
-                      暂无弟子在此处修行
+                      暂无弟子在此处修行，点击右上角「分配弟子」或前往「弟子分配」面板安排
                     </div>
                   ) : (
                     <div className="space-y-1 max-h-60 overflow-y-auto pr-1">
@@ -1278,10 +1651,25 @@ export const BuildingsPanel: React.FC = () => {
                               </span>
                             </div>
                           </div>
-                          <div className="text-right shrink-0">
-                            <div className="text-[9px] text-sect-jade/60">修为</div>
-                            <div className="text-[11px] text-sect-jade leading-none">
-                              {Math.floor(disciple.realmProgress)}%
+                          <div className="text-right shrink-0 flex items-center gap-1">
+                            {!RESIDENCE_TYPES_FOR_VACANT.includes(selectedBuilding.type) && (
+                              <Tooltip content={`将${disciple.name}移出此堂口`}>
+                                <button
+                                  className="text-sect-jade/30 hover:text-red-300 transition-colors"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    assignDiscipleToBuilding(disciple.id, null);
+                                  }}
+                                >
+                                  <X size={12} />
+                                </button>
+                              </Tooltip>
+                            )}
+                            <div>
+                              <div className="text-[9px] text-sect-jade/60">修为</div>
+                              <div className="text-[11px] text-sect-jade leading-none">
+                                {Math.floor(disciple.realmProgress)}%
+                              </div>
                             </div>
                           </div>
                         </div>

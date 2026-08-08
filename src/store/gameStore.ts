@@ -13,7 +13,7 @@ import type { ArtifactInventory, ArtifactType } from '@/types/artifact';
 import type { TalismanInventory, TalismanType } from '@/types/talisman';
 import type { BeastInventory } from '@/types/beast';
 import type { BeastType } from '@/types/beast';
-import type { SectLevel, MonthlyReport, Notification, OtherSect, DiplomaticStatus } from '@/types/game';
+import type { SectLevel, MonthlyReport, Notification, OtherSect, DiplomaticStatus, SectAlignment } from '@/types/game';
 import {
   SectLevelNames, SectLevelRequirementsMap, SectLevelOrder,
   SectLevelDiscipleCap, SectLevelReputationCap, ReputationGrowthConfig,
@@ -21,9 +21,10 @@ import {
 import type { Trial, ContributionLog, ContributionLogType } from '@/types/game';
 import {
   createInitialDisciple, createInitialBuildings, getDefaultPromotionRules, autoAssignBuilding,
-  autoAssignResidence, getResidenceUpgradeCost, getResidenceCapacityByLevel, monthlyReassign,
+  autoAssignResidence, getResidenceUpgradeCost, getResidenceCapacityByLevel, getCaveMansionUpgradeCost,
+  monthlyReassign,
   autoAssignManagers, autoLearnTechniqueOnBreakthrough, pickUpgradeBook,
-  getMaintenanceCostByLevel, calculateLectureBonus,
+  getMaintenanceCostByLevel, calculateLectureBonus, SKYSCRAPER_TOWER_COMBAT_POWER,
 } from '@/utils/gameLogic';
 import {
   calculateBuildingMaintenance,
@@ -62,6 +63,7 @@ interface GameState {
   sectName: string;
   sectLevel: SectLevel;
   reputation: number;
+  karma: number;  // 正邪度：-100（极恶）~ 100（极善），0=中立
   spiritStones: number;
   sectContribution: number;  // 宗门总贡献（用于宗门晋升等大宗门内部开销）
   disciples: Disciple[];
@@ -77,7 +79,14 @@ interface GameState {
   notifications: Notification[];
   monthlyReport: MonthlyReport | null;
   showReport: boolean;
+  // 游戏胜利（飞升）状态
+  gameWon: boolean;
+  victoryInfo: { discipleName: string; year: number; month: number } | null;
   herbInventory: number;
+  // 兑换码：一局使用一次
+  redeemCodeUsed: boolean;
+  // 广告灵石奖励：累计统计
+  adRewardTotal: number;
   ironInventory: number;    // 灵铁（炼器堂原料）
   paperInventory: number;   // 符纸（符堂原料）
   specialMaterials: Record<string, number>; // 特殊材料库存（材料名→数量），如 { '寿元花': 3, '灵晶': 2 }
@@ -103,7 +112,12 @@ interface GameState {
   clearRecruitCandidates: () => void;      // 清空候选
   nextMonth: () => void;
   dismissReport: () => void;
+  dismissVictory: () => void;
   startGame: () => void;
+  // 兑换码：输入"xiuxian"获得1000灵石，一局一次
+  useRedeemCode: (code: string) => { ok: boolean; reason?: string; reward?: number };
+  // 看完广告后调用：+500灵石
+  grantAdReward: () => { ok: boolean; amount: number };
   resetGame: () => void;
   newGame: (sectName?: string) => void;
   returnToMenu: () => void;
@@ -133,8 +147,8 @@ interface GameState {
   setAutoAppointElder: (enabled: boolean) => void; // 设置自动任命长老开关
   updateSectTournamentFreqConfig: (frequency: TournamentFrequency, config: Partial<FrequencyTournamentConfig>) => void;   // 更新山门大比指定频率配置
   updateInterSectTournamentFreqConfig: (frequency: TournamentFrequency, config: Partial<FrequencyTournamentConfig>) => void; // 更新宗门大比指定频率配置
-  triggerSectTournament: (frequency: TournamentFrequency) => void;       // 手动触发山门大比（指定频率）
-  triggerInterSectTournament: (frequency: TournamentFrequency) => void;  // 手动触发宗门大比（指定频率）
+  triggerSectTournament: (frequency: TournamentFrequency) => TournamentResult | null;       // 手动触发山门大比（指定频率），返回结果或 null（CD中）
+  triggerInterSectTournament: (frequency: TournamentFrequency) => TournamentResult | null;  // 手动触发宗门大比（指定频率），返回结果或 null（CD中）
   // 宗门互动系统
   changeSectFavorability: (sectId: string, delta: number) => void;       // 增减好感度
   setSectDiplomaticStatus: (sectId: string, status: DiplomaticStatus) => void;  // 设置外交状态（同盟/宿敌/附庸/中立）
@@ -186,6 +200,14 @@ interface GameState {
   canPromoteDisciple: (discipleId: string) => {
     canPromote: boolean; nextStatus: DiscipleStatus | null; reason: string;
     minContribution?: number; minRealm?: string; minRootBone?: number;
+  };
+  // 洞府挑战：挑战方（必须是长老，且未住在洞府）可以挑战洞府内任一居住长老，胜者保留洞府居住权
+  challengeCaveMansion: (challengerId: string, defenderId: string) => {
+    success: boolean; reason?: string; winnerId?: string; loserId?: string;
+  };
+  // 通天塔挑战：弟子战力达到 20 万方可挑战，胜利则飞升触发游戏胜利，失败则境界跌落一级
+  challengeSkyscraperTower: (discipleId: string) => {
+    success: boolean; reason?: string; ascended?: boolean;
   };
 }
 
@@ -366,6 +388,7 @@ const createInitialState = () => {
     sectName: '修仙宗门',
     sectLevel: 'founding' as SectLevel,
     reputation: 10,
+    karma: 0,
     spiritStones: 500,
     sectContribution: 0,
     disciples,
@@ -382,7 +405,11 @@ const createInitialState = () => {
     notifications: [],
     monthlyReport: null,
     showReport: false,
+    gameWon: false,
+    victoryInfo: null,
     herbInventory: 20,
+    redeemCodeUsed: false,
+    adRewardTotal: 0,
     ironInventory: 10,
     paperInventory: 10,
     specialMaterials: {},
@@ -525,7 +552,41 @@ export const useGameStore = create<GameState>()(
       returnToMenu: () => {
         set({ showMainMenu: true });
       },
-      
+
+      useRedeemCode: (code: string) => {
+        const state = get();
+        if (!state.gameStarted) return { ok: false, reason: '游戏未开始' };
+        if (state.redeemCodeUsed) return { ok: false, reason: '兑换码已使用过' };
+        if (code.trim().toLowerCase() !== 'xiuxian') return { ok: false, reason: '兑换码无效' };
+        const reward = 1000;
+        const currentDate = { year: state.year, month: state.month };
+        set({
+          spiritStones: state.spiritStones + reward,
+          redeemCodeUsed: true,
+          notifications: [
+            createNotification('success', '兑换成功', `输入兑换码获得 ${reward} 灵石`, currentDate),
+            ...state.notifications,
+          ].slice(0, 50),
+        });
+        return { ok: true, reward };
+      },
+
+      grantAdReward: () => {
+        const state = get();
+        if (!state.gameStarted) return { ok: false, amount: 0 };
+        const amount = 500;
+        const currentDate = { year: state.year, month: state.month };
+        set({
+          spiritStones: state.spiritStones + amount,
+          adRewardTotal: state.adRewardTotal + amount,
+          notifications: [
+            createNotification('success', '广告奖励', `观看激励视频广告获得 ${amount} 灵石`, currentDate),
+            ...state.notifications,
+          ].slice(0, 50),
+        });
+        return { ok: true, amount };
+      },
+
       nextMonth: () => {
         const state = get();
         let { year, month, spiritStones, reputation, herbInventory } = state;
@@ -741,6 +802,51 @@ export const useGameStore = create<GameState>()(
           }
         }
 
+        // 正邪度联合攻击：玩家正邪度过低（魔道）时，正道宗门联合讨伐
+        if (state.karma <= -50) {
+          // 概率随正邪度降低而提高：-50时10%，-100时30%
+          const jointAttackChance = Math.min(0.3, ((-state.karma) - 50) / 50 * 0.2 + 0.1);
+          if (Math.random() < jointAttackChance) {
+            // 召集正道且非同盟/附庸的宗门
+            const coalition = refreshedOtherSects.filter(s =>
+              s.alignment === 'righteous' &&
+              s.diplomaticStatus !== 'ally' &&
+              s.diplomaticStatus !== 'vassal'
+            );
+            if (coalition.length >= 2) {
+              const ourCombat = calculateSectCombatPower(disciples, buildings).totalPower;
+              // 联合战力 = 各宗门战力之和 * 协同系数（0.7，联合行动效率打折）
+              const coalitionPower = Math.floor(
+                coalition.reduce((sum, s) => sum + s.combatPower, 0) * 0.7
+              );
+              const coalitionLabel = coalition.slice(0, 3).map(s => `「${s.name}」`).join('、') +
+                (coalition.length > 3 ? `等${coalition.length}家` : '');
+
+              if (ourCombat >= coalitionPower) {
+                // 防守成功
+                const repGain = Math.floor(coalitionPower * 0.002) + 10;
+                rivalRepGain += repGain;
+                newNotifications.push(createNotification(
+                  'success', '击退正道联军',
+                  `${coalitionLabel}正道宗门联合讨伐，本宗成功击退！声望 +${repGain}。`,
+                  { year, month },
+                ));
+              } else {
+                // 防守失败：重大损失
+                const stoneLoss = Math.floor(coalitionPower * 0.08);
+                const repLoss = Math.floor(coalitionPower * 0.003) + 10;
+                rivalStoneLoss += stoneLoss;
+                rivalRepLoss += repLoss;
+                newNotifications.push(createNotification(
+                  'danger', '正道联军破山',
+                  `${coalitionLabel}正道宗门联合讨伐，本宗不敌！损失 ${stoneLoss} 灵石、${repLoss} 声望。`,
+                  { year, month },
+                ));
+              }
+            }
+          }
+        }
+
         const servantCount = disciples.filter(d => d.status === 'servant').length;
         const servantStipend = servantCount * 1;
         if (servantStipend > 0) {
@@ -778,22 +884,6 @@ export const useGameStore = create<GameState>()(
             }
           }
           
-          // 洞府加成
-          const caveMansion = buildings.find(b =>
-            b.type === 'cave_mansion' && b.assignedDisciples.includes(disciple.id)
-          );
-          if (caveMansion) {
-            bonusBuffs.push({
-              id: `cave_${caveMansion.id}`,
-              name: '洞府加成',
-              description: `洞府修炼加成 +50%`,
-              type: 'cultivation',
-              value: 50,
-              duration: 1,
-              remainingMonths: 1,
-            });
-          }
-
           // 讲经堂加成
           const lectureHall = buildings.find(b =>
             b.type === 'lecture_hall' && b.assignedDisciples.includes(disciple.id)
@@ -1027,9 +1117,9 @@ export const useGameStore = create<GameState>()(
             outer: 'outer_residence',
             inner: 'inner_residence',
             core: 'core_residence',
-            elder: 'core_residence',
+            elder: 'cave_mansion',
           };
-          const residenceTypeOrder = ['outer_residence', 'inner_residence', 'core_residence'];
+          const residenceTypeOrder = ['outer_residence', 'inner_residence', 'core_residence', 'cave_mansion'];
           const requiredType = requiredResidenceTypeMap[d2.status] || '';
           const requiredIndex = requiredType ? residenceTypeOrder.indexOf(requiredType) : -1;
           const actualType = currentResidence ? currentResidence.type : null;
@@ -1166,9 +1256,9 @@ export const useGameStore = create<GameState>()(
           d2.buffs = d2.buffs
             .map(buff => ({ ...buff, remainingMonths: buff.remainingMonths - 1 }))
             .filter(buff => buff.remainingMonths > 0);
-          
+
           d2 = { ...d2, age: d2.age + 1 / 12 };
-          
+
           return d2;
         });
         
@@ -1472,6 +1562,31 @@ export const useGameStore = create<GameState>()(
         // 刷新天下宗门关系（每月关系可能微调）
         refreshedOtherSects = refreshSectRelations(state.otherSects);
 
+        // 天下宗门自然发展：每月战力随时间增长
+        // 高等级宗门增长更快；附庸宗门因被压制增长缓慢
+        {
+          const levelGrowthMul: Record<SectLevel, number> = {
+            founding: 0.5,
+            known: 0.8,
+            famous: 1.2,
+            dominant: 1.8,
+            eternal: 2.5,
+          };
+          refreshedOtherSects = refreshedOtherSects.map(s => {
+            const baseMul = levelGrowthMul[s.level] ?? 1.0;
+            // 附庸宗门被压榨，增长效率仅 30%
+            const vassalMul = s.diplomaticStatus === 'vassal' ? 0.3 : 1.0;
+            // 同盟宗门交流密切，增长略快（+20%）
+            const allyMul = s.diplomaticStatus === 'ally' ? 1.2 : 1.0;
+            // 基础月增长：战力的 1.5% × 系数，下限 5
+            const growth = Math.max(
+              5,
+              Math.floor(s.combatPower * 0.015 * baseMul * vassalMul * allyMul),
+            );
+            return { ...s, combatPower: s.combatPower + growth };
+          });
+        }
+
         // 大比自动触发（仅在每年1月检查，三频率独立判断）
         const FREQUENCIES: TournamentFrequency[] = ['yearly', 'every5years', 'every10years'];
         const sectTournamentResults = { ...state.lastSectTournamentResults };
@@ -1759,6 +1874,10 @@ export const useGameStore = create<GameState>()(
       dismissReport: () => {
         set({ showReport: false });
       },
+
+      dismissVictory: () => {
+        set({ gameWon: false });
+      },
       
       markNotificationRead: (id: string) => {
         set(state => ({
@@ -1914,10 +2033,14 @@ export const useGameStore = create<GameState>()(
         if (!building) return false;
         if (building.level >= building.maxLevel) return false;
 
-        // 统一使用配置中的升级费用
+        // 统一使用配置中的升级费用。洞府(cave_mansion)单独走升级费用函数
         let upgradeCost;
+        const isCaveMansion = building.type === 'cave_mansion';
         const isResidence = RESIDENCE_TYPES.includes(building.type);
-        if (isResidence) {
+        if (isCaveMansion) {
+          upgradeCost = getCaveMansionUpgradeCost(building.level);
+          if (!upgradeCost) return false;
+        } else if (isResidence) {
           upgradeCost = getResidenceUpgradeCost(building);
           if (!upgradeCost) return false;
         } else {
@@ -1933,7 +2056,7 @@ export const useGameStore = create<GameState>()(
         // 计算升级后的新容量
         const newLevel = building.level + 1;
         let newCapacity = building.discipleCapacity;
-        if (isResidence) {
+        if (isCaveMansion || isResidence) {
           newCapacity = getResidenceCapacityByLevel(building.type, newLevel);
         } else if (building.discipleCapacity > 0) {
           // 非居所功能建筑升级也增加容量
@@ -1963,12 +2086,18 @@ export const useGameStore = create<GameState>()(
         if (!building) return { success: false, refundSpiritStones: 0, refundReputation: 0, reason: '建筑不存在' };
         if (building.level <= 1) return { success: false, refundSpiritStones: 0, refundReputation: 0, reason: '已是最低等级' };
 
+        const isCaveMansion = building.type === 'cave_mansion';
         const isResidence = RESIDENCE_TYPES.includes(building.type);
 
         // 计算返还资源：从 (level-1) 升级到 level 时花费的全部资源
         let refundSpiritStones = 0;
         let refundReputation = 0;
-        if (isResidence) {
+        if (isCaveMansion) {
+          const cost = getCaveMansionUpgradeCost(building.level - 1);
+          if (cost) {
+            refundSpiritStones = cost.spiritStones;
+          }
+        } else if (isResidence) {
           const prevLevelBuilding = { ...building, level: building.level - 1 };
           const cost = getResidenceUpgradeCost(prevLevelBuilding);
           if (cost) {
@@ -1985,7 +2114,7 @@ export const useGameStore = create<GameState>()(
 
         const newLevel = building.level - 1;
         let newCapacity = building.discipleCapacity;
-        if (isResidence) {
+        if (isCaveMansion || isResidence) {
           newCapacity = getResidenceCapacityByLevel(building.type, newLevel);
         } else if (building.discipleCapacity > 0) {
           newCapacity = Math.max(0, building.discipleCapacity - 10);
@@ -2037,6 +2166,7 @@ export const useGameStore = create<GameState>()(
         set({
           disciples: newDisciples,
           buildings: newBuildings,
+          karma: Math.max(-100, state.karma - 3),
           notifications: [kickNotif, ...state.notifications].slice(0, 50),
         });
         // 如果当前选中的是被驱逐的弟子，清空选择
@@ -2172,8 +2302,8 @@ export const useGameStore = create<GameState>()(
 
         if (state.spiritStones < buildCost.spiritStones) return false;
 
-        // 居所使用容量表
-        const isResidenceType = ['outer_residence', 'inner_residence', 'core_residence'].includes(type);
+        // 居所/洞府使用容量表
+        const isResidenceType = ['outer_residence', 'inner_residence', 'core_residence', 'cave_mansion'].includes(type);
         const initialCapacity = isResidenceType
           ? getResidenceCapacityByLevel(type, 1)
           : config.discipleCapacity;
@@ -2386,36 +2516,34 @@ export const useGameStore = create<GameState>()(
         const state = get();
         const elder = state.disciples.find(d => d.id === elderId);
         if (!elder || elder.status !== 'elder') return false;
-        
-        // 检查长老是否已有洞府
-        const hasCave = state.buildings.some(b => 
+
+        // 长老不能同时拥有多处洞府居住权
+        const alreadyInCave = state.buildings.some(b =>
           b.type === 'cave_mansion' && b.assignedDisciples.includes(elderId)
         );
-        if (hasCave) return false;
-        
-        const contributionCost = 1000;
-        if (elder.contributionPoints < contributionCost) return false;
-        
-        // 检查能否建造新洞府（先检查是否有空的洞府）
-        let caveBuilding = state.buildings.find(b => 
-          b.type === 'cave_mansion' && b.assignedDisciples.length === 0
+        if (alreadyInCave) return false;
+
+        // 查找活跃的洞府（每个宗门只有一处洞府建筑）
+        let caveBuilding = state.buildings.find(b =>
+          b.type === 'cave_mansion' && b.status === 'active'
         );
-        
+
         let newBuildings = state.buildings;
         let spiritStonesCost = 0;
-        
+
         if (!caveBuilding) {
-          // 建造新洞府
+          // 建造新洞府（首次）
           const caveConfig = BUILDING_CONFIGS['cave_mansion'];
           if (!caveConfig.buildCost) return false;
           if (state.spiritStones < caveConfig.buildCost.spiritStones) return false;
-          
+
           spiritStonesCost = caveConfig.buildCost.spiritStones;
-          
+
+          const capacity = getResidenceCapacityByLevel('cave_mansion', 1);
           const newCave: Building = {
             id: `cave_mansion_${Date.now()}`,
             type: 'cave_mansion',
-            name: `${elder.name}洞府`,
+            name: '洞府',
             level: 1,
             maxLevel: caveConfig.maxLevel,
             status: 'active',
@@ -2423,7 +2551,7 @@ export const useGameStore = create<GameState>()(
             baseMaintenanceCost: caveConfig.baseMaintenanceCost,
             upgradeCosts: caveConfig.upgradeCosts,
             elderBonus: 0,
-            discipleCapacity: caveConfig.discipleCapacity,
+            discipleCapacity: capacity,
             assignedDisciples: [elderId],
             managerId: elderId,
             description: caveConfig.description,
@@ -2432,33 +2560,40 @@ export const useGameStore = create<GameState>()(
             buildCost: caveConfig.buildCost,
             minDiscipleStatus: caveConfig.minDiscipleStatus,
           };
-          
+
           newBuildings = [...state.buildings, newCave];
         } else {
-          // 分配现有洞府
+          // 洞府已存在：检查容量
+          if (caveBuilding.assignedDisciples.length >= caveBuilding.discipleCapacity) {
+            // 洞府已满，不能直接入住，需通过挑战获取
+            return false;
+          }
+
+          // 有剩余容量，将长老加入洞府
           newBuildings = state.buildings.map(b => {
             if (b.id === caveBuilding!.id) {
               return {
                 ...b,
-                assignedDisciples: [elderId],
-                managerId: elderId,
-                name: `${elder.name}洞府`,
+                assignedDisciples: [...b.assignedDisciples, elderId],
+                // 洞府的 managerId 由第一位入住长老担任；若已有则保留
+                managerId: b.managerId ?? elderId,
               };
             }
             return b;
           });
         }
-        
-        // 扣除贡献点
-        const newBalance = elder.contributionPoints - contributionCost;
-        const newDisciples = state.disciples.map(d => {
-          if (d.id === elderId) {
-            return { ...d, contributionPoints: newBalance };
-          }
-          return d;
-        });
 
-        // 长老购买洞府扣贡献流水
+        // 长老购买洞府扣贡献流水（首次占用洞府贡献 1000，用于"获得洞府居住权"）
+        const contributionCost = 1000;
+        if (elder.contributionPoints < contributionCost && !caveBuilding) {
+          // 首次建造洞府时仍需贡献，用于"仪式费用"
+          return false;
+        }
+        const newBalance = Math.max(0, elder.contributionPoints - contributionCost);
+        const newDisciples = state.disciples.map(d =>
+          d.id === elderId ? { ...d, contributionPoints: newBalance } : d
+        );
+
         const currentDate = { year: state.year, month: state.month };
         const logEntry: ContributionLog = {
           id: generateId(),
@@ -2467,7 +2602,9 @@ export const useGameStore = create<GameState>()(
           type: 'deduct',
           amount: -contributionCost,
           balance: newBalance,
-          description: `长老购买洞府，扣除 ${contributionCost} 贡献`,
+          description: caveBuilding
+            ? `入住洞府，扣除 ${contributionCost} 贡献`
+            : `建造并入住洞府，扣除 ${contributionCost} 贡献`,
         };
 
         set({
@@ -2479,7 +2616,170 @@ export const useGameStore = create<GameState>()(
 
         return true;
       },
-      
+
+      // 洞府挑战：挑战方必须是长老且未住在洞府；被挑战方必须是洞府居住长老；胜者保留/获得洞府居住权
+      challengeCaveMansion: (challengerId: string, defenderId: string): {
+        success: boolean; reason?: string; winnerId?: string; loserId?: string;
+      } => {
+        const state = get();
+        const challenger = state.disciples.find(d => d.id === challengerId);
+        const defender = state.disciples.find(d => d.id === defenderId);
+        if (!challenger || !defender) return { success: false, reason: '弟子不存在' };
+        if (challenger.status !== 'elder') return { success: false, reason: '仅长老可挑战洞府' };
+        if (defender.status !== 'elder') return { success: false, reason: '被挑战者必须为长老' };
+
+        const cave = state.buildings.find(b => b.type === 'cave_mansion' && b.status === 'active');
+        if (!cave) return { success: false, reason: '当前无活跃洞府' };
+        if (!cave.assignedDisciples.includes(defenderId)) {
+          return { success: false, reason: '被挑战长老未居住在洞府' };
+        }
+        if (cave.assignedDisciples.includes(challengerId)) {
+          return { success: false, reason: '挑战方已居住在洞府' };
+        }
+
+        // 贡献门槛：1000 贡献
+        const contributionCost = 1000;
+        if (challenger.contributionPoints < contributionCost) {
+          return { success: false, reason: `挑战需消耗 ${contributionCost} 贡献，当前不足` };
+        }
+
+        // 计算双方战力
+        const cPower = calculateDiscipleCombatPower(challenger);
+        const dPower = calculateDiscipleCombatPower(defender);
+
+        // 胜率：战力越高胜率越高，但仍存在低战力翻盘的可能性（+/-20% 随机浮动）
+        const baseWinRate = cPower / (cPower + dPower);
+        const winRate = Math.min(0.95, Math.max(0.05, baseWinRate + (Math.random() - 0.5) * 0.4));
+        const challengerWins = Math.random() < winRate;
+
+        const winner = challengerWins ? challenger : defender;
+        const loser = challengerWins ? defender : challenger;
+
+        // 更新洞府内的居住者：胜者入住，败者移出
+        let newBuildings = state.buildings.map(b => {
+          if (b.id !== cave.id) return b;
+          const filtered = b.assignedDisciples.filter(id => id !== loser.id);
+          if (!filtered.includes(winner.id)) filtered.push(winner.id);
+          return {
+            ...b,
+            assignedDisciples: filtered,
+            managerId: b.managerId === loser.id ? winner.id : b.managerId,
+          };
+        });
+
+        // 败者被移出洞府后，若仍为长老，则尝试重新分配居所（可能被降到核心居所）
+        const loserObj = state.disciples.find(d => d.id === loser.id);
+        if (loserObj && loserObj.status === 'elder') {
+          const reassigned = autoAssignResidence({ ...loserObj, status: 'elder' }, newBuildings);
+          newBuildings = reassigned.newBuildings;
+        }
+
+        // 扣除挑战方贡献
+        const newChallengerBalance = challenger.contributionPoints - contributionCost;
+        const newDisciples = state.disciples.map(d => {
+          if (d.id === challengerId) return { ...d, contributionPoints: newChallengerBalance };
+          return d;
+        });
+
+        const currentDate = { year: state.year, month: state.month };
+        const challengerLog: ContributionLog = {
+          id: generateId(),
+          discipleId: challengerId,
+          date: currentDate,
+          type: 'deduct',
+          amount: -contributionCost,
+          balance: newChallengerBalance,
+          description: `挑战「${defender.name}」争夺洞府居住权`,
+        };
+
+        // 通知胜负
+        const title = challengerWins ? '洞府挑战胜利' : '洞府挑战失败';
+        const content = challengerWins
+          ? `长老「${challenger.name}」战胜「${defender.name}」，夺得了洞府居住权！`
+          : `长老「${challenger.name}」挑战「${defender.name}」失败，未能夺得洞府居住权。`;
+
+        set({
+          buildings: newBuildings,
+          disciples: newDisciples,
+          contributionLogs: [challengerLog, ...state.contributionLogs].slice(0, 5000),
+          notifications: [
+            createNotification('info', title, content, currentDate),
+            ...state.notifications,
+          ],
+        });
+
+        return { success: true, winnerId: winner.id, loserId: loser.id };
+      },
+
+      challengeSkyscraperTower: (discipleId: string): {
+        success: boolean; reason?: string; ascended?: boolean;
+      } => {
+        const state = get();
+        if (state.gameWon) return { success: false, reason: '已有人飞升，游戏胜利' };
+
+        const tower = state.buildings.find(b => b.type === 'skyscraper_tower' && b.status === 'active');
+        if (!tower) return { success: false, reason: '宗门内无通天塔' };
+
+        const disciple = state.disciples.find(d => d.id === discipleId);
+        if (!disciple) return { success: false, reason: '弟子不存在' };
+
+        const cPower = calculateDiscipleCombatPower(disciple);
+        if (cPower < SKYSCRAPER_TOWER_COMBAT_POWER) {
+          return { success: false, reason: `战力不足（${cPower}/${SKYSCRAPER_TOWER_COMBAT_POWER}）` };
+        }
+
+        // 胜率：弟子战力 vs 通天塔战力，±10% 随机浮动
+        const towerPower = SKYSCRAPER_TOWER_COMBAT_POWER;
+        const baseWinRate = cPower / (cPower + towerPower);
+        const winRate = Math.min(0.95, Math.max(0.05, baseWinRate + (Math.random() - 0.5) * 0.2));
+        const challengerWins = Math.random() < winRate;
+
+        const currentDate = { year: state.year, month: state.month };
+
+        if (challengerWins) {
+          // 飞升：弟子离开宗门，触发游戏胜利
+          const newBuildings = state.buildings.map(b =>
+            b.assignedDisciples.includes(discipleId)
+              ? {
+                  ...b,
+                  assignedDisciples: b.assignedDisciples.filter(id => id !== discipleId),
+                  managerId: b.managerId === discipleId ? null : b.managerId,
+                }
+              : b
+          );
+          const newDisciples = state.disciples.filter(d => d.id !== discipleId);
+
+          set({
+            buildings: newBuildings,
+            disciples: newDisciples,
+            gameWon: true,
+            victoryInfo: { discipleName: disciple.name, year: currentDate.year, month: currentDate.month },
+            notifications: [
+              createNotification('success', '飞升仙界', `${disciple.name} 战胜通天塔，白日飞升，踏足仙界！宗门基业大成！`, currentDate),
+              ...state.notifications,
+            ].slice(0, 50),
+          });
+          return { success: true, ascended: true };
+        } else {
+          // 渡劫失败：修为受损，境界跌落一级
+          const realmIdx = RealmOrder.indexOf(disciple.realm);
+          const newRealm = realmIdx > 0 ? RealmOrder[realmIdx - 1] : disciple.realm;
+          const newDisciples = state.disciples.map(d =>
+            d.id === discipleId
+              ? { ...d, realm: newRealm, realmStage: 'late' as const, realmProgress: 0 }
+              : d
+          );
+          set({
+            disciples: newDisciples,
+            notifications: [
+              createNotification('danger', '渡劫失败', `${disciple.name} 挑战通天塔失败，修为受损，境界跌落至${RealmNames[newRealm]}。`, currentDate),
+              ...state.notifications,
+            ].slice(0, 50),
+          });
+          return { success: true, ascended: false };
+        }
+      },
+
       canPromoteSect: () => {
         const state = get();
         const currentIndex = SectLevelOrder.indexOf(state.sectLevel);
@@ -2617,7 +2917,9 @@ export const useGameStore = create<GameState>()(
 
       refreshOtherSects: () => {
         const state = get();
-        const newSects = generateOtherSects(8, state.sectLevel);
+        const playerAlignment: SectAlignment =
+          state.karma >= 30 ? 'righteous' : state.karma <= -30 ? 'demonic' : 'neutral';
+        const newSects = generateOtherSects(8, state.sectLevel, playerAlignment);
         set({ otherSects: newSects });
       },
 
@@ -2709,6 +3011,10 @@ export const useGameStore = create<GameState>()(
       triggerSectTournament: (frequency) => {
         const state = get();
         const freqConfig = state.sectTournamentConfig[frequency];
+        // CD 检查：手动举办也受冷却限制
+        if (!shouldTournamentTrigger(frequency, freqConfig, state.year, state.month, state.lastSectTournamentYears[frequency])) {
+          return null;
+        }
         const result = runTournament({
           scope: 'sect',
           frequency,
@@ -2756,11 +3062,16 @@ export const useGameStore = create<GameState>()(
           notifications: [notif, ...state.notifications].slice(0, 50),
           contributionLogs: [...newLogs, ...state.contributionLogs].slice(0, 5000),
         });
+        return result;
       },
 
       triggerInterSectTournament: (frequency) => {
         const state = get();
         const freqConfig = state.interSectTournamentConfig[frequency];
+        // CD 检查：手动举办也受冷却限制
+        if (!shouldTournamentTrigger(frequency, freqConfig, state.year, state.month, state.lastInterSectTournamentYears[frequency])) {
+          return null;
+        }
         const result = runTournament({
           scope: 'inter-sect',
           frequency,
@@ -2808,6 +3119,7 @@ export const useGameStore = create<GameState>()(
           notifications: [notif, ...state.notifications].slice(0, 50),
           contributionLogs: [...newLogs, ...state.contributionLogs].slice(0, 5000),
         });
+        return result;
       },
       changeSectFavorability: (sectId, delta) => {
         const state = get();
@@ -2923,6 +3235,7 @@ export const useGameStore = create<GameState>()(
         );
         set({
           spiritStones: state.spiritStones - amount,
+          karma: Math.min(100, state.karma + 3),
           otherSects: state.otherSects.map(s =>
             s.id === sectId ? { ...s, favorability: newFav } : s,
           ),
@@ -2943,6 +3256,7 @@ export const useGameStore = create<GameState>()(
           { year: st.year, month: st.month },
         );
         set({
+          karma: Math.max(-100, state.karma - 5),
           otherSects: state.otherSects.map(s =>
             s.id === sectId ? { ...s, favorability: newFav, relation: newFav < 30 ? 'hostile' : s.relation } : s,
           ),
@@ -2968,6 +3282,7 @@ export const useGameStore = create<GameState>()(
           { year: st.year, month: st.month },
         );
         set({
+          karma: Math.min(100, state.karma + 5),
           otherSects: state.otherSects.map(s =>
             s.id === sectId ? { ...s, diplomaticStatus: 'ally' as const, relation: 'ally' as const } : s,
           ),
@@ -2989,6 +3304,7 @@ export const useGameStore = create<GameState>()(
           { year: st.year, month: st.month },
         );
         set({
+          karma: Math.max(-100, state.karma - 5),
           otherSects: state.otherSects.map(s =>
             s.id === sectId ? { ...s, diplomaticStatus: 'rival' as const, relation: 'hostile' as const } : s,
           ),
@@ -3018,6 +3334,7 @@ export const useGameStore = create<GameState>()(
             { year: st.year, month: st.month },
           );
           set({
+            karma: Math.max(-100, state.karma - 15),
             otherSects: state.otherSects.map(s =>
               s.id === sectId ? { ...s, diplomaticStatus: 'vassal' as const, favorability: Math.min(100, (s.favorability ?? 50) + 20) } : s,
             ),
@@ -3035,6 +3352,7 @@ export const useGameStore = create<GameState>()(
           set({
             spiritStones: Math.max(0, state.spiritStones - loss),
             reputation: Math.max(0, state.reputation - 5),
+            karma: Math.max(-100, state.karma - 10),
             otherSects: state.otherSects.map(s =>
               s.id === sectId ? { ...s, relation: 'hostile' as const, favorability: Math.max(0, (s.favorability ?? 50) - 20) } : s,
             ),

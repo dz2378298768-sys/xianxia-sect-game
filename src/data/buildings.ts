@@ -64,7 +64,7 @@ export const BUILDING_CONFIGS: Record<BuildingType, BuildingConfig> = {
   servant_hall: {
     type: 'servant_hall',
     name: '杂役堂',
-    maxLevel: 5,
+    maxLevel: 10,
     baseOutput: { spiritStones: 40, herbs: 6, iron: 2, paper: 2 },
     baseMaintenanceCost: 10,
     buildCost: { spiritStones: 0 },
@@ -74,6 +74,10 @@ export const BUILDING_CONFIGS: Record<BuildingType, BuildingConfig> = {
       { spiritStones: 1000 },
       { spiritStones: 2500 },
       { spiritStones: 5000 },
+      { spiritStones: 9000 },
+      { spiritStones: 15000 },
+      { spiritStones: 25000 },
+      { spiritStones: 40000 },
     ],
     discipleCapacity: 10,
     category: 'production',
@@ -238,27 +242,17 @@ export const BUILDING_CONFIGS: Record<BuildingType, BuildingConfig> = {
   skyscraper_tower: {
     type: 'skyscraper_tower',
     name: '通天塔',
-    maxLevel: 9,
+    maxLevel: 1,
     baseOutput: { spiritStones: 0 },
     baseMaintenanceCost: 0,
     buildCost: { spiritStones: 0 },
-    upgradeCosts: [
-      { spiritStones: 5000 },
-      { spiritStones: 8000 },
-      { spiritStones: 12000 },
-      { spiritStones: 18000 },
-      { spiritStones: 25000 },
-      { spiritStones: 35000 },
-      { spiritStones: 50000 },
-      { spiritStones: 70000 },
-      { spiritStones: 100000 },
-    ],
+    upgradeCosts: [],
     discipleCapacity: 0,
     category: 'special',
     primaryOutput: 'spiritStones',
     minDiscipleStatus: 'outer',
     unlockRequirement: { sectLevel: 'eternal' },
-    description: '通往仙界的通天塔；收集9枚碎片可飞升',
+    description: '通往仙界的通天塔；战力达 20 万的弟子可挑战通天塔，胜利则飞升仙界，游戏胜利',
     discipleEffect: {
       type: 'morale',
       description: '飞升道具',
@@ -337,20 +331,25 @@ export const BUILDING_CONFIGS: Record<BuildingType, BuildingConfig> = {
   cave_mansion: {
     type: 'cave_mansion',
     name: '洞府',
-    maxLevel: 1,
+    maxLevel: 5,
     baseOutput: { spiritStones: 0 },
-    baseMaintenanceCost: 20,
+    baseMaintenanceCost: 30,
     buildCost: { spiritStones: 500 },
-    upgradeCosts: [],
-    discipleCapacity: 1,
+    upgradeCosts: [
+      { spiritStones: 800 },    // Lv1→Lv2
+      { spiritStones: 1800 },   // Lv2→Lv3
+      { spiritStones: 3600 },   // Lv3→Lv4
+      { spiritStones: 6400 },   // Lv4→Lv5
+    ],
+    discipleCapacity: 1,  // Lv1=1，每级+2：Lv2=3, Lv3=5, Lv4=7, Lv5=9
     category: 'service',
     primaryOutput: 'spiritStones',
     minDiscipleStatus: 'elder',
-    description: '长老专属洞府；修炼速度+30%',
+    description: '长老专属居所；Lv1可住1人，每升级+2人，最高5级（9人）；洞府住满后，其他符合条件的长老可挑战现任长老以夺取洞府',
     discipleEffect: {
-      type: 'cultivation',
-      description: '长老修炼+30%',
-      value: '修炼+30%',
+      type: 'none',
+      description: '长老居所；等级决定可居住长老数量',
+      value: '居所',
     },
   },
 };
@@ -427,9 +426,10 @@ export const BOOK_TIER_BONUSES: Record<BookTier, { cultivation: number; combat: 
 //   根骨 80 → 1.00 （刚好 100%）
 //   根骨 100→ 1.25 （溢出，强天赋能「超额发挥」功法效果）
 export function getRootBoneEffectiveness(rootBone: number): number {
-  // 曲线：0.15 + ((rb-20)/80)^1.3 × 1.1
+  // 曲线：0.15 + ((rb-20)/80)^1.8 × 0.95
+  // 根骨 20→0.15, 40→0.23, 60→0.42, 80→0.70, 100→1.05
   const t = Math.max(0, (rootBone - 20) / 80);
-  return Math.round((0.15 + Math.pow(t, 1.3) * 1.1) * 100) / 100;
+  return Math.round((0.15 + Math.pow(t, 1.8) * 0.95) * 100) / 100;
 }
 
 // 初始通用功法/战技定义（每层1本通用功法 + 1本通用战技）

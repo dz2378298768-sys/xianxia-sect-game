@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useGameStore } from '@/store/gameStore';
 import { SectLevelNames, SectLevelOrder } from '@/types/game';
 import { useDevice } from '@/hooks/useDevice';
@@ -7,7 +7,7 @@ import { SectIcon } from '@/components/icons/SectIcons';
 import { getSlots, SAVE_SLOT_COUNT, type SaveSlotMeta } from '@/utils/saveSlots';
 
 export const TopBar: React.FC = () => {
-  const { year, month, sectName, sectLevel, reputation, spiritStones, disciples, herbInventory, ironInventory, paperInventory, returnToMenu, newGame, saveToSlot } = useGameStore();
+  const { year, month, sectName, sectLevel, reputation, karma, spiritStones, disciples, herbInventory, ironInventory, paperInventory, returnToMenu, newGame, saveToSlot, redeemCodeUsed, useRedeemCode, grantAdReward, adRewardTotal } = useGameStore();
   const { sectInfoOpen, toggleSectInfo } = useUIStore();
   const device = useDevice();
   const isCompact = device.isCompact;
@@ -15,6 +15,9 @@ export const TopBar: React.FC = () => {
   const [showSavePicker, setShowSavePicker] = useState(false);
   const [slots, setSlots] = useState<(SaveSlotMeta | null)[]>(new Array(SAVE_SLOT_COUNT).fill(null));
   const [saveToast, setSaveToast] = useState<string | null>(null);
+  const [showRedeemCode, setShowRedeemCode] = useState(false);
+  const [redeemInput, setRedeemInput] = useState('');
+  const [redeemResult, setRedeemResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
   const refreshSlots = () => setSlots(getSlots());
   useEffect(() => { refreshSlots(); }, [showSavePicker]);
@@ -55,6 +58,13 @@ export const TopBar: React.FC = () => {
               <span className="flex items-center gap-1">
                 <span className="text-[var(--gold-300)]">声望</span>
                 <span className="font-bold text-[var(--gold-100)]">{Math.floor(reputation)}</span>
+              </span>
+              {!isCompact && <span className="text-[var(--ink-500)]">|</span>}
+              <span className="flex items-center gap-1">
+                <span className="text-[var(--ink-300)]">正邪</span>
+                <span className={`font-bold ${karma >= 30 ? 'text-emerald-300' : karma <= -30 ? 'text-rose-300' : 'text-[var(--ink-300)]'}`}>
+                  {karma >= 30 ? `正道(${karma})` : karma <= -30 ? `魔道(${karma})` : `中立(${karma})`}
+                </span>
               </span>
               {!isCompact && <span className="text-[var(--ink-500)]">|</span>}
               <span>{year}年{month}月</span>
@@ -112,6 +122,48 @@ export const TopBar: React.FC = () => {
             {!isCompact && <span className="text-[var(--gold-300)] text-[11px]">交易</span>}
           </button>
 
+          {/* 广告入口：暂时关闭，隐藏按钮 */}
+          {false && (
+            <button
+              className="resource-chip cursor-pointer hover:border-[var(--gold-300)]/50 !border-emerald-500/40"
+              onClick={() => {
+                const w = window as any;
+                if (w.Capacitor?.Plugins?.DirichletAd?.showRewardedVideo) {
+                  w.Capacitor.Plugins.DirichletAd.showRewardedVideo()
+                    .then((res: any) => {
+                      if (res?.rewarded) {
+                        grantAdReward();
+                        setSaveToast('广告奖励：获得 500 灵石');
+                        setTimeout(() => setSaveToast(null), 2500);
+                      } else {
+                        const errMsg = res?.error || '未完整观看广告';
+                        if (errMsg === '暂无广告') {
+                          setSaveToast('暂无广告');
+                        } else {
+                          setSaveToast(`${errMsg}，奖励未发放`);
+                        }
+                        setTimeout(() => setSaveToast(null), 2500);
+                      }
+                    })
+                    .catch(() => {
+                      setSaveToast('暂无广告');
+                      setTimeout(() => setSaveToast(null), 2500);
+                    });
+                } else {
+                  setSaveToast('暂无广告');
+                  setTimeout(() => setSaveToast(null), 2500);
+                }
+              }}
+              title="观看激励视频广告 · 领取 500 灵石"
+            >
+              <SectIcon name="play" size={14} strokeWidth={2} />
+              {!isCompact && <span className="text-emerald-300 text-[11px]">广告</span>}
+              {adRewardTotal > 0 && (
+                <span className="text-[10px] text-[var(--gold-300)]">+{adRewardTotal}</span>
+              )}
+            </button>
+          )}
+
           {/* 设置菜单按钮 */}
           <div className="relative">
             <button
@@ -132,6 +184,44 @@ export const TopBar: React.FC = () => {
                   >
                     <SectIcon name="cultivate" size={14} strokeWidth={1.8} />
                     保存存档
+                  </button>
+                  <div className="h-px bg-[var(--gold-300)]/15" />
+                  <button
+                    className="w-full px-4 py-2.5 text-left text-sm text-[var(--gold-200)] hover:bg-[var(--gold-300)]/10 transition-colors flex items-center gap-2"
+                    onClick={() => { setMenuOpen(false); setShowRedeemCode(true); setRedeemInput(''); setRedeemResult(null); }}
+                  >
+                    <SectIcon name="gift" size={14} strokeWidth={1.8} />
+                    兑换码
+                    {redeemCodeUsed && <span className="text-[10px] text-emerald-400 ml-auto">已使用</span>}
+                  </button>
+                  <div className="h-px bg-[var(--gold-300)]/15" />
+                  <button
+                    className="w-full px-4 py-2.5 text-left text-sm text-[var(--gold-200)] hover:bg-[var(--gold-300)]/10 transition-colors flex items-center gap-2"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      const w = window as any;
+                      if (w.Capacitor?.Plugins?.TapUpdate?.checkForceUpdate) {
+                        w.Capacitor.Plugins.TapUpdate.checkForceUpdate()
+                          .then((res: any) => {
+                            if (res?.triggered) {
+                              setSaveToast('已发起更新检查，若有新版本将自动弹出 TapTap 更新页');
+                            } else {
+                              setSaveToast(res?.error || '已是最新版本');
+                            }
+                            setTimeout(() => setSaveToast(null), 2500);
+                          })
+                          .catch(() => {
+                            setSaveToast('检查更新失败，请稍后重试');
+                            setTimeout(() => setSaveToast(null), 2500);
+                          });
+                      } else {
+                        setSaveToast('当前环境不支持 TapTap 更新检查');
+                        setTimeout(() => setSaveToast(null), 2500);
+                      }
+                    }}
+                  >
+                    <SectIcon name="nextMonth" size={14} strokeWidth={1.8} />
+                    检查更新
                   </button>
                   <div className="h-px bg-[var(--gold-300)]/15" />
                   <button
@@ -245,6 +335,67 @@ export const TopBar: React.FC = () => {
       {saveToast && (
         <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[70] px-4 py-2 rounded-lg bg-green-600/90 text-white text-sm slide-in-up shadow-lg">
           {saveToast}
+        </div>
+      )}
+
+      {/* 兑换码弹窗 */}
+      {showRedeemCode && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] px-4">
+          <div className="max-w-sm w-full scroll-panel-dark p-5 slide-in-up">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-display text-base text-[var(--gold-200)] flex items-center gap-2">
+                <SectIcon name="gift" size={16} strokeWidth={1.8} />
+                兑换码
+              </h3>
+              <button
+                onClick={() => { setShowRedeemCode(false); setRedeemResult(null); }}
+                className="text-[var(--ink-400)] hover:text-[var(--gold-300)] p-1"
+              >
+                <SectIcon name="close" size={16} strokeWidth={2} />
+              </button>
+            </div>
+            <p className="text-[11px] text-[var(--ink-400)] mb-3">
+              输入兑换码获取奖励，每局游戏仅可使用一次。
+            </p>
+            <div className="flex items-center gap-2 mb-3">
+              <input
+                type="text"
+                value={redeemInput}
+                onChange={e => setRedeemInput(e.target.value)}
+                disabled={redeemCodeUsed}
+                placeholder="请输入兑换码"
+                className="flex-1 px-3 py-2 rounded bg-[var(--ink-500)]/40 border border-[var(--gold-300)]/20 text-sm text-[var(--gold-100)] placeholder-[var(--ink-400)] focus:outline-none focus:border-[var(--gold-300)]/60"
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !redeemCodeUsed) {
+                    const r = useRedeemCode(redeemInput);
+                    if (r.ok) setRedeemResult({ ok: true, msg: `兑换成功！获得 ${r.reward} 灵石` });
+                    else setRedeemResult({ ok: false, msg: r.reason || '兑换失败' });
+                  }
+                }}
+              />
+              <button
+                disabled={redeemCodeUsed}
+                onClick={() => {
+                  const r = useRedeemCode(redeemInput);
+                  if (r.ok) setRedeemResult({ ok: true, msg: `兑换成功！获得 ${r.reward} 灵石` });
+                  else setRedeemResult({ ok: false, msg: r.reason || '兑换失败' });
+                }}
+                className="px-4 py-2 rounded bg-[var(--gold-300)]/20 border border-[var(--gold-300)]/50 text-sm text-[var(--gold-200)] hover:bg-[var(--gold-300)]/30 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                兑换
+              </button>
+            </div>
+            {redeemResult && (
+              <div className={`px-3 py-2 rounded text-sm ${redeemResult.ok ? 'bg-emerald-600/20 border border-emerald-500/40 text-emerald-300' : 'bg-red-500/20 border border-red-500/40 text-red-300'}`}>
+                {redeemResult.msg}
+              </div>
+            )}
+            {redeemCodeUsed && !redeemResult && (
+              <div className="px-3 py-2 rounded text-sm bg-emerald-600/10 border border-emerald-500/30 text-emerald-300/90">
+                本局兑换码已使用完毕
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

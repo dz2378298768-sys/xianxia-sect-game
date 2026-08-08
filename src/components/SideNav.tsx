@@ -12,12 +12,14 @@ interface NavItem {
   label: string;
 }
 
-// 完整侧边导航列表：宗门 + 山门 + 所有面板 + 中央“下一月”按钮
+// 完整侧边导航列表：山门 + 所有面板 + 中央“下一月”按钮
 const NAV_ITEMS: NavItem[] = [
-  { key: 'sect',       icon: 'temple',     label: '宗门' },
+  { key: 'overview',   icon: 'chart',      label: '总览' },
   { key: null,         icon: 'mountain',   label: '山门' },
-  { key: 'buildings',  icon: 'building',   label: '建造' },
   { key: 'disciples',  icon: 'disciple',   label: '弟子' },
+  { key: 'allocation', icon: 'group',      label: '分配' },
+  { key: 'elders',     icon: 'balance',    label: '长老' },
+  { key: 'buildings',  icon: 'building',   label: '建造' },
   { key: 'rules',      icon: 'scroll',     label: '门规' },
   { key: 'warehouse',  icon: 'warehouse',  label: '库房' },
   { key: 'economy',    icon: 'gem',        label: '经济' },
@@ -62,21 +64,23 @@ export const SideNav: React.FC = () => {
   };
 
   return (
-    <div className="absolute top-0 left-0 bottom-0 z-30 side-nav-wrap flex flex-col items-center justify-between py-2">
-      {/* 上半部分：功能导航 */}
-      <div className="flex flex-col gap-1 w-full">
+    <div className="absolute top-0 left-0 bottom-0 z-30 side-nav-wrap flex flex-col items-center py-2 overflow-hidden">
+      {/* 上半部分：功能导航（高度不足时可滚动，避免挤出下一月按钮） */}
+      <div className="flex flex-col gap-1 w-full flex-1 min-h-0 overflow-y-auto overflow-x-hidden [scrollbar-width:thin]">
         {NAV_ITEMS.map(renderNavItem)}
       </div>
 
-      {/* 下半部分：推进下一回合（固定在底部） */}
-      <button
-        className="side-nav-item side-nav-next-turn"
-        onClick={nextMonth}
-        title="推进至下一月"
-      >
-        <SectIcon name="nextMonth" size={20} strokeWidth={2} />
-        <span className="side-nav-label">下一月</span>
-      </button>
+      {/* 下半部分：推进下一回合（固定在底部，不可压缩） */}
+      <div className="w-full flex-shrink-0">
+        <button
+          className="side-nav-item side-nav-next-turn"
+          onClick={nextMonth}
+          title="推进至下一月"
+        >
+          <SectIcon name="nextMonth" size={20} strokeWidth={2} />
+          <span className="side-nav-label">下一月</span>
+        </button>
+      </div>
     </div>
   );
 };

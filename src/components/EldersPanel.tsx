@@ -3,12 +3,14 @@ import { useGameStore } from '@/store/gameStore';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
-import { Crown, Users, Building2, Star, Award, X } from 'lucide-react';
+import { Crown, Users, Building2, Star, Award, X, Swords } from 'lucide-react';
 import { RESIDENCE_TYPES } from '@/types/building';
+import { calculateDiscipleCombatPower } from '@/utils/gameLogic';
 
 export const EldersPanel: React.FC = () => {
-  const { disciples, buildings } = useGameStore();
+  const { disciples, buildings, challengeCaveMansion } = useGameStore();
   const [showVacantModal, setShowVacantModal] = useState(false);
+  const [showChallengeModal, setShowChallengeModal] = useState(false);
   
   const elders = disciples.filter(d => d.status === 'elder');
   const elderCandidates = disciples.filter(d => 
@@ -95,6 +97,7 @@ export const EldersPanel: React.FC = () => {
           <div className="space-y-3">
             {elders.map(elder => {
               const building = buildings.find(b => b.managerId === elder.id);
+              const cave = buildings.find(b => b.type === 'cave_mansion' && b.assignedDisciples.includes(elder.id));
               return (
                 <div key={elder.id} className="flex items-center gap-4 p-3 rounded-lg bg-sect-ink-light/30">
                   <div className="w-12 h-12 rounded-full bg-sect-pill/20 flex items-center justify-center">
@@ -104,6 +107,7 @@ export const EldersPanel: React.FC = () => {
                     <div className="flex items-center gap-2">
                       <span className="font-display text-sect-jade">{elder.name}</span>
                       <Badge variant="pill">长老</Badge>
+                      {cave && <Badge variant="default">洞府</Badge>}
                     </div>
                     <div className="text-sm text-sect-jade/60 mt-0.5">
                       {building ? `管辖：${building.name}` : '暂未分配堂口'}
@@ -121,6 +125,74 @@ export const EldersPanel: React.FC = () => {
           </div>
         )}
       </Card>
+
+      {/* 洞府挑战区 */}
+      {(() => {
+        const cave = buildings.find(b => b.type === 'cave_mansion' && b.status === 'active');
+        if (!cave) return null;
+        const residents = disciples.filter(d => cave.assignedDisciples.includes(d.id));
+        const nonCaveElders = elders.filter(d => !cave.assignedDisciples.includes(d.id));
+        return (
+          <Card title={`洞府 (${residents.length}/${cave.discipleCapacity})`}>
+            <div className="space-y-3">
+              <div className="text-xs text-sect-jade/60">
+                洞府当前等级 Lv.{cave.level}，可居住 {cave.discipleCapacity} 位长老。住满后，长老可发起挑战争夺居住权。
+              </div>
+              {residents.length > 0 && (
+                <div>
+                  <div className="text-[11px] text-sect-gold mb-1">洞府内长老</div>
+                  <div className="space-y-1.5">
+                    {residents.map(r => {
+                      const power = calculateDiscipleCombatPower(r);
+                      return (
+                        <div key={r.id} className="flex items-center justify-between p-2 rounded bg-sect-ink-light/30 border border-sect-gold/10">
+                          <div className="flex items-center gap-2">
+                            <Crown size={16} className="text-sect-pill" />
+                            <span className="text-sm text-sect-jade">{r.name}</span>
+                          </div>
+                          <span className="text-xs text-sect-herb-light font-mono">战力 {power}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {nonCaveElders.length > 0 && (
+                <div>
+                  <div className="text-[11px] text-sect-jade/60 mb-1">洞府外长老（可挑战）</div>
+                  <div className="space-y-1.5">
+                    {nonCaveElders.map(r => (
+                      <div key={r.id} className="flex items-center justify-between p-2 rounded bg-sect-ink-light/20 border border-sect-gold/5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-sect-jade">{r.name}</span>
+                          <span className="text-[10px] text-sect-jade/50">战力 {calculateDiscipleCombatPower(r)}</span>
+                        </div>
+                        <button
+                          className="text-xs text-red-300 hover:text-red-200 flex items-center gap-1"
+                          onClick={() => {
+                            // 直接对洞府内第一人发起挑战（简化逻辑）
+                            const target = cave.assignedDisciples[0];
+                            if (!target) return;
+                            const res = challengeCaveMansion(r.id, target);
+                            if (!res.success && res.reason) {
+                              alert(res.reason);
+                            }
+                          }}
+                          title={`挑战洞府第一位长老（消耗 1000 贡献）`}
+                        >
+                          <Swords size={12} />
+                          挑战
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="text-[10px] text-sect-jade/40">点击「挑战」以 1000 贡献挑战洞府内第一位长老；胜则入住洞府，败则失去 1000 贡献</div>
+                </div>
+              )}
+            </div>
+          </Card>
+        );
+      })()}
       
       <Card title="长老加成">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">

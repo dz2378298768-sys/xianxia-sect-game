@@ -10,10 +10,13 @@ import { DiscipleAvatar, SimpleAvatar } from '@/components/ui/Avatar';
 import {
   DiscipleStatus, DiscipleStatusNames, RealmNames, RealmOrder, SpiritRootNames, getRealmDisplay
 } from '@/types/disciple';
-import { 
-  User, Heart, Sparkles, BookOpen, Calendar, Star, 
-  UserPlus, X, Building2, Sword, Shield, 
-  Zap, Target, Activity, Smile, Frown, Wind, Swords, Flame
+import type { Realm } from '@/types/disciple';
+import type { ContributionLogType } from '@/types/game';
+import {
+  User, Heart, Sparkles, BookOpen, Calendar, Star,
+  UserPlus, X, Building2, Sword, Shield,
+  Zap, Target, Activity, Smile, Frown, Wind, Swords, Flame, ChevronUp, LogOut,
+  History, ArrowDownUp
 } from 'lucide-react';
 import { calculateDiscipleCombatPower, getStageBreakthroughRequired } from '@/utils/gameLogic';
 import { CONSTITUTIONS, RARITY_COLORS, RARITY_NAMES } from '@/data/constitutions';
@@ -87,12 +90,17 @@ export const DisciplesPanel: React.FC = () => {
   const {
     disciples, recruitDisciple, recruitCandidates, recruitCostPerDisciple, recruitConfirmDisciple,
     clearRecruitCandidates, spiritStones, getBuildingById, followedDiscipleIds, toggleFollowDisciple,
+    canPromoteDisciple, promoteDisciple, kickDisciple, contributionLogs,
   } = useGameStore();
   const { selectedDiscipleId, setSelectedDiscipleId } = useUIStore();
   const [statusFilter, setStatusFilter] = useState<DiscipleStatus | 'all'>('all');
+  const [realmFilter, setRealmFilter] = useState<Realm | 'all'>('all');
+  const [sortBy, setSortBy] = useState<'default' | 'combat' | 'joinDate'>('default');
   const [detailTab, setDetailTab] = useState<'basic' | 'combat' | 'experience'>('basic');
   const [showRecruitModal, setShowRecruitModal] = useState(false);
   const [recruitResultMsg, setRecruitResultMsg] = useState<string | null>(null);
+  const [kickConfirm, setKickConfirm] = useState(false);
+  const [showContributionLog, setShowContributionLog] = useState(false);
 
   // 左侧等级分布导航：按 status 分组
   const statusNavItems: { value: DiscipleStatus | 'all'; label: string; count: number }[] = [
@@ -104,9 +112,32 @@ export const DisciplesPanel: React.FC = () => {
     { value: 'elder',   label: '长老', count: disciples.filter(d => d.status === 'elder').length },
   ];
 
-  const filteredDisciples = statusFilter === 'all'
-    ? disciples
-    : disciples.filter(d => d.status === statusFilter);
+  // 境界筛选导航：按 realm 分组
+  const realmNavItems: { value: Realm | 'all'; label: string; count: number }[] = [
+    { value: 'all',         label: '全部', count: disciples.length },
+    ...RealmOrder.map(r => ({
+      value: r as Realm,
+      label: RealmNames[r as Realm],
+      count: disciples.filter(d => d.realm === r).length,
+    })).filter(item => item.count > 0),
+  ];
+
+  // 筛选 + 排序
+  const filteredDisciples = React.useMemo(() => {
+    let list = disciples;
+    if (statusFilter !== 'all') list = list.filter(d => d.status === statusFilter);
+    if (realmFilter !== 'all') list = list.filter(d => d.realm === realmFilter);
+    if (sortBy === 'combat') {
+      list = [...list].sort((a, b) => calculateDiscipleCombatPower(b) - calculateDiscipleCombatPower(a));
+    } else if (sortBy === 'joinDate') {
+      list = [...list].sort((a, b) => {
+        const aTime = a.joinDate.year * 12 + a.joinDate.month;
+        const bTime = b.joinDate.year * 12 + b.joinDate.month;
+        return aTime - bTime; // 最早入宗的排前面
+      });
+    }
+    return list;
+  }, [disciples, statusFilter, realmFilter, sortBy]);
 
   const selectedDisciple = disciples.find(d => d.id === selectedDiscipleId);
 
@@ -153,8 +184,10 @@ export const DisciplesPanel: React.FC = () => {
 
       {/* 主区域：左侧等级导航 + 右侧弟子列表（长方形卡片） */}
       <div className="disciple-panel-layout flex-1 min-h-0">
-        {/* 左侧：等级分布导航（像导航栏一样） */}
+        {/* 左侧：等级导航 + 境界筛选 + 排序 */}
         <div className="disciple-level-nav">
+          {/* 身份筛选 */}
+          <div className="text-[10px] text-sect-gold/50 px-1 pt-1 pb-0.5">身份</div>
           {statusNavItems.map(item => (
             <button
               key={item.value}
@@ -166,6 +199,47 @@ export const DisciplesPanel: React.FC = () => {
               <span className="disciple-level-nav-label">{item.label}</span>
             </button>
           ))}
+
+          {/* 境界筛选 */}
+          <div className="text-[10px] text-sect-gold/50 px-1 pt-2 pb-0.5">境界</div>
+          {realmNavItems.map(item => (
+            <button
+              key={item.value}
+              className={`disciple-level-nav-item ${realmFilter === item.value ? 'disciple-level-nav-item-active' : ''}`}
+              onClick={() => setRealmFilter(item.value)}
+              title={`${item.label} ${item.count}人`}
+            >
+              <span className="disciple-level-nav-count">{item.count}</span>
+              <span className="disciple-level-nav-label">{item.label}</span>
+            </button>
+          ))}
+
+          {/* 排序 */}
+          <div className="text-[10px] text-sect-gold/50 px-1 pt-2 pb-0.5">排序</div>
+          <button
+            className={`disciple-level-nav-item ${sortBy === 'default' ? 'disciple-level-nav-item-active' : ''}`}
+            onClick={() => setSortBy('default')}
+            title="默认顺序"
+          >
+            <ArrowDownUp size={12} className="opacity-50" />
+            <span className="disciple-level-nav-label">默认</span>
+          </button>
+          <button
+            className={`disciple-level-nav-item ${sortBy === 'combat' ? 'disciple-level-nav-item-active' : ''}`}
+            onClick={() => setSortBy('combat')}
+            title="按战力降序"
+          >
+            <Sword size={12} className="opacity-50" />
+            <span className="disciple-level-nav-label">战力</span>
+          </button>
+          <button
+            className={`disciple-level-nav-item ${sortBy === 'joinDate' ? 'disciple-level-nav-item-active' : ''}`}
+            onClick={() => setSortBy('joinDate')}
+            title="按入宗时间排序"
+          >
+            <Calendar size={12} className="opacity-50" />
+            <span className="disciple-level-nav-label">入宗</span>
+          </button>
         </div>
 
         {/* 右侧：弟子列表（长方形卡片，可滚动） */}
@@ -275,19 +349,21 @@ export const DisciplesPanel: React.FC = () => {
 
       <Modal
         isOpen={!!selectedDisciple}
-        onClose={() => setSelectedDiscipleId(null)}
+        onClose={() => { setSelectedDiscipleId(null); setKickConfirm(false); }}
         title="弟子详情"
         size="lg"
       >
-        {selectedDisciple && (
-          <div className="space-y-4">
+        {selectedDisciple && (() => {
+          const promoteInfo = canPromoteDisciple(selectedDisciple.id);
+          return (
+            <div className="space-y-4">
             <div className="flex items-center gap-4">
               <DiscipleAvatar seed={selectedDisciple.avatarSeed} size={64} status={selectedDisciple.status} realm={selectedDisciple.realm} name={selectedDisciple.name} />
-              <div>
+              <div className="flex-1 min-w-0">
                 <h2 className="font-display text-xl text-sect-gold">
                   {selectedDisciple.name}
                 </h2>
-                <div className="flex items-center gap-2 mt-1">
+                <div className="flex items-center gap-2 mt-1 flex-wrap">
                   <Badge variant={getStatusVariant(selectedDisciple.status)}>
                     {DiscipleStatusNames[selectedDisciple.status]}
                   </Badge>
@@ -298,6 +374,63 @@ export const DisciplesPanel: React.FC = () => {
                 <div className="text-sm text-sect-jade/60 mt-1">
                   「{selectedDisciple.talentDisplay.nickname}」
                 </div>
+              </div>
+              {/* 操作按钮：晋升、驱逐 */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                {promoteInfo.canPromote && promoteInfo.nextStatus && (
+                  <Tooltip content={`晋升为${DiscipleStatusNames[promoteInfo.nextStatus]}${promoteInfo.minContribution ? `（需要${promoteInfo.minContribution}贡献）` : ''}`}>
+                    <Button
+                      variant="gold"
+                      size="sm"
+                      onClick={() => {
+                        const res = promoteDisciple(selectedDisciple.id);
+                        if (!res.ok && res.reason) {
+                          alert(res.reason);
+                        }
+                      }}
+                    >
+                      <ChevronUp size={14} />
+                      晋升
+                    </Button>
+                  </Tooltip>
+                )}
+                {!promoteInfo.canPromote && promoteInfo.reason && (
+                  <Tooltip content={promoteInfo.reason}>
+                    <Button variant="ghost" size="sm" disabled>
+                      <ChevronUp size={14} />
+                      晋升
+                    </Button>
+                  </Tooltip>
+                )}
+                {kickConfirm ? (
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-red-300">确认驱逐？</span>
+                    <Button
+                      size="sm" variant="outline"
+                      className="!border-red-500/60 !text-red-300 hover:!bg-red-500/10"
+                      onClick={() => {
+                        kickDisciple(selectedDisciple.id);
+                        setKickConfirm(false);
+                        setSelectedDiscipleId(null);
+                      }}
+                    >确认</Button>
+                    <Button
+                      size="sm" variant="ghost"
+                      onClick={() => setKickConfirm(false)}
+                    >取消</Button>
+                  </div>
+                ) : (
+                  <Tooltip content={`将${selectedDisciple.name}逐出宗门`}>
+                    <Button
+                      size="sm" variant="outline"
+                      className="!border-red-500/40 !text-red-300 hover:!bg-red-500/10"
+                      onClick={() => setKickConfirm(true)}
+                    >
+                      <LogOut size={14} />
+                      驱逐
+                    </Button>
+                  </Tooltip>
+                )}
               </div>
             </div>
             
@@ -364,9 +497,14 @@ export const DisciplesPanel: React.FC = () => {
                   </div>
                   <div className="flex items-center gap-2">
                     <Star size={16} className="text-sect-jade/50" />
-                    <span className="text-sect-jade/80 text-sm">
+                    <button
+                      className="text-sect-jade/80 text-sm hover:text-sect-gold transition-colors flex items-center gap-1"
+                      onClick={() => setShowContributionLog(true)}
+                      title="点击查看贡献度流水"
+                    >
                       贡献点 {Math.floor(selectedDisciple.contributionPoints)}
-                    </span>
+                      <History size={12} className="opacity-50" />
+                    </button>
                   </div>
                 </div>
                 
@@ -995,36 +1133,101 @@ export const DisciplesPanel: React.FC = () => {
                   </div>
                 </div>
 
-                {/* 大比经历 */}
+                {/* 人物事件：弟子在宗门内的活动记录 */}
                 <div className="p-3 rounded-lg bg-sect-ink-light/30 border border-sect-gold/20">
                   <h3 className="font-display text-sect-gold mb-2 flex items-center gap-2 text-sm">
-                    <Swords size={16} />
-                    大比经历
+                    <History size={16} />
+                    人物事件
                   </h3>
-                  {selectedDisciple.tournamentHistory && selectedDisciple.tournamentHistory.length > 0 ? (
-                    <div className="space-y-2">
-                      {selectedDisciple.tournamentHistory.map((record, idx) => (
-                        <div key={idx} className="flex items-start gap-2 text-xs p-2 rounded bg-sect-ink-light/40">
-                          <span className="text-sect-jade/50 shrink-0">第{record.year}年</span>
-                          <div className="flex-1">
-                            <span className="text-sect-jade/80">
-                              {record.scope === 'sect' ? '山门' : '宗门'}{record.frequency}大比
-                            </span>
-                            <span className={`ml-2 font-medium ${record.rank === 1 ? 'text-yellow-400' : record.rank === 2 ? 'text-gray-300' : record.rank === 3 ? 'text-orange-400' : 'text-sect-jade/50'}`}>
-                              {record.rank === 1 ? '冠军' : record.rank === 2 ? '亚军' : record.rank === 3 ? '季军' : '第' + record.rank + '名'}
-                            </span>
-                            {record.rewards.length > 0 && (
-                              <div className="text-green-400/80 mt-0.5">
-                                奖励：{record.rewards.join('、')}
-                              </div>
-                            )}
+                  {(() => {
+                    // 合并贡献流水 + 大比历史，按时间排序构建事件时间线
+                    const myLogs = contributionLogs.filter(l => l.discipleId === selectedDisciple.id).slice(0, 100);
+                    const tournaments = selectedDisciple.tournamentHistory || [];
+
+                    // 事件类型 → 图标颜色 + 标签
+                    const eventMeta: Record<string, { icon: string; color: string }> = {
+                      work:          { icon: '🔨', color: 'text-amber-300' },
+                      deduct:        { icon: '📦', color: 'text-rose-300' },
+                      library:       { icon: '📖', color: 'text-cyan-300' },
+                      learn_secret:  { icon: '📜', color: 'text-violet-300' },
+                      trial_reward:  { icon: '⚔️', color: 'text-emerald-300' },
+                      tournament:    { icon: '🏆', color: 'text-yellow-300' },
+                      promotion:     { icon: '⬆️', color: 'text-orange-300' },
+                      manual_adjust: { icon: '✋', color: 'text-fuchsia-300' },
+                      other:         { icon: '•',  color: 'text-sect-jade/70' },
+                    };
+
+                    type EventItem = { year: number; month: number; sortKey: number; content: React.ReactNode };
+                    const events: EventItem[] = [];
+
+                    // 贡献流水 → 事件
+                    myLogs.forEach(log => {
+                      const meta = eventMeta[log.type] || eventMeta.other;
+                      const positive = log.amount >= 0;
+                      events.push({
+                        year: log.date.year,
+                        month: log.date.month,
+                        sortKey: log.date.year * 12 + log.date.month,
+                        content: (
+                          <div className="flex items-start gap-2 text-xs p-2 rounded bg-sect-ink-light/40">
+                            <span className="shrink-0">{meta.icon}</span>
+                            <div className="flex-1">
+                              <span className={`font-medium ${meta.color}`}>{meta.icon === '•' ? '事件' : ''}</span>
+                              <span className="text-sect-jade/80 ml-1">{log.description}</span>
+                              <span className={`ml-2 tabular-nums ${positive ? 'text-emerald-300' : 'text-rose-300'}`}>
+                                {positive ? '+' : ''}{log.amount}贡献
+                              </span>
+                            </div>
                           </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-sect-jade/40 text-xs italic">尚未参加过大比</div>
-                  )}
+                        ),
+                      });
+                    });
+
+                    // 大比历史 → 事件
+                    tournaments.forEach(record => {
+                      const rankText = record.rank === 1 ? '冠军' : record.rank === 2 ? '亚军' : record.rank === 3 ? '季军' : '第' + record.rank + '名';
+                      const rankColor = record.rank === 1 ? 'text-yellow-400' : record.rank === 2 ? 'text-gray-300' : record.rank === 3 ? 'text-orange-400' : 'text-sect-jade/50';
+                      events.push({
+                        year: record.year,
+                        month: 12, // 大比通常在年底，排在该年后部
+                        sortKey: record.year * 12 + 12,
+                        content: (
+                          <div className="flex items-start gap-2 text-xs p-2 rounded bg-sect-ink-light/40">
+                            <span className="shrink-0">🏆</span>
+                            <div className="flex-1">
+                              <span className="text-sect-jade/80">
+                                参加{record.scope === 'sect' ? '山门' : '宗门'}{record.frequency}大比
+                              </span>
+                              <span className={`ml-2 font-medium ${rankColor}`}>{rankText}</span>
+                              {record.rewards.length > 0 && (
+                                <div className="text-green-400/80 mt-0.5">奖励：{record.rewards.join('、')}</div>
+                              )}
+                            </div>
+                          </div>
+                        ),
+                      });
+                    });
+
+                    // 按时间倒序排列（最近的在前）
+                    events.sort((a, b) => b.sortKey - a.sortKey);
+
+                    if (events.length === 0) {
+                      return <div className="text-sect-jade/40 text-xs italic">暂无人物事件记录</div>;
+                    }
+
+                    return (
+                      <div className="space-y-2 max-h-64 overflow-y-auto scrollbar-thin">
+                        {events.map((evt, idx) => (
+                          <div key={idx}>
+                            <div className="text-[10px] text-sect-jade/40 mb-0.5">
+                              第{evt.year}年{evt.month > 12 ? '' : `${evt.month}月`}
+                            </div>
+                            {evt.content}
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* 资质总评 */}
@@ -1064,12 +1267,13 @@ export const DisciplesPanel: React.FC = () => {
             )}
 
             <div className="flex justify-end pt-2">
-              <Button variant="ghost" onClick={() => setSelectedDiscipleId(null)}>
+              <Button variant="ghost" onClick={() => { setSelectedDiscipleId(null); setKickConfirm(false); }}>
                 关闭
               </Button>
             </div>
           </div>
-        )}
+          );
+        })()}
       </Modal>
 
       {/* 招收候选弹窗 */}
@@ -1180,6 +1384,95 @@ export const DisciplesPanel: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* 贡献度流水弹窗 */}
+      {showContributionLog && selectedDisciple && (() => {
+        const myLogs = contributionLogs.filter(l => l.discipleId === selectedDisciple.id).slice(0, 100);
+        const LogTypeMeta: Record<ContributionLogType, { name: string; color: string }> = {
+          work:          { name: '工作产出', color: 'text-amber-300' },
+          deduct:        { name: '消耗扣除', color: 'text-rose-300' },
+          library:       { name: '藏经推演', color: 'text-cyan-300' },
+          learn_secret:  { name: '学习秘籍', color: 'text-violet-300' },
+          trial_reward:  { name: '试炼奖励', color: 'text-emerald-300' },
+          tournament:    { name: '大比奖励', color: 'text-yellow-300' },
+          promotion:     { name: '晋升扣除', color: 'text-orange-300' },
+          manual_adjust: { name: '手动调整', color: 'text-fuchsia-300' },
+          other:         { name: '其他',     color: 'text-sect-jade/70' },
+        };
+        return (
+          <div
+            className="fixed inset-0 z-[60] flex items-center justify-center modal-overlay"
+            style={{ background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(3px)' }}
+            onClick={() => setShowContributionLog(false)}
+          >
+            <div
+              className="relative overflow-hidden modal-body animate-modal-fade-in scroll-panel-dark"
+              style={{
+                maxWidth: '560px', width: '90vw', maxHeight: '70vh',
+                background: 'linear-gradient(180deg, rgba(18,24,36,0.98) 0%, rgba(12,16,24,0.98) 100%)',
+                border: '1px solid rgba(212,168,87,0.3)', borderRadius: '12px',
+              }}
+              onClick={e => e.stopPropagation()}
+            >
+              {/* 头部 */}
+              <div className="flex items-center justify-between p-3 border-b border-sect-gold/20">
+                <div className="flex items-center gap-2">
+                  <History size={16} className="text-sect-gold" />
+                  <span className="font-display text-sect-gold text-sm">
+                    {selectedDisciple.name} · 贡献度流水
+                  </span>
+                  <span className="text-[10px] text-sect-jade/40">
+                    （最近 {myLogs.length} 条）
+                  </span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] text-sect-jade/60">
+                    余额：<span className="text-sect-gold">{Math.floor(selectedDisciple.contributionPoints)}</span>
+                  </span>
+                  <button onClick={() => setShowContributionLog(false)} className="text-sect-jade/50 hover:text-sect-gold">
+                    <X size={16} />
+                  </button>
+                </div>
+              </div>
+
+              {/* 流水列表 */}
+              <div className="p-3 overflow-y-auto" style={{ maxHeight: 'calc(70vh - 60px)' }}>
+                {myLogs.length === 0 ? (
+                  <div className="text-center text-sect-jade/40 text-xs py-8">
+                    暂无贡献度流水记录
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    {myLogs.map(log => {
+                      const meta = LogTypeMeta[log.type] || LogTypeMeta.other;
+                      const positive = log.amount >= 0;
+                      return (
+                        <div key={log.id} className="flex items-center gap-2 px-2 py-1.5 rounded bg-sect-ink/30 border border-sect-gold/5">
+                          <span className="text-[10px] text-sect-jade/50 shrink-0 w-16 tabular-nums">
+                            {log.date.year}年{String(log.date.month).padStart(2, '0')}月
+                          </span>
+                          <span className={`shrink-0 w-16 text-[10px] font-medium ${meta.color}`}>
+                            {meta.name}
+                          </span>
+                          <span className={`shrink-0 w-16 text-right text-xs tabular-nums ${positive ? 'text-emerald-300' : 'text-rose-300'}`}>
+                            {positive ? '+' : ''}{log.amount}
+                          </span>
+                          <span className="shrink-0 w-14 text-right text-[10px] text-sect-jade/50 tabular-nums">
+                            余 {log.balance}
+                          </span>
+                          <span className="flex-1 text-xs text-sect-jade/80 truncate">
+                            {log.description}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

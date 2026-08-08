@@ -100,7 +100,9 @@ export function computeBuildingOutput(
     return { spiritStones: 0, herbs: 0, iron: 0, paper: 0, reputation: 0, pills: 0, artifacts: 0, talismans: 0, beasts: 0, breakdown: ZERO_BREAKDOWN };
   }
 
-  const levelMultiplier = 1 + (building.level - 1) * 0.5;
+  const levelMultiplier = 1 + (building.level - 1) * 0.5
+    // 杂役堂 Lv6+ 额外加成：使满级(Lv10)产出倍率 = 6.0 = 2× Lv5(3.0)；Lv1-5 保持不变
+    + (building.type === 'servant_hall' && building.level > 5 ? (building.level - 5) * 0.1 : 0);
 
   // 管理者加成
   let managerName: string | undefined;
@@ -208,9 +210,10 @@ export function recomputeCultivationSpeed(disciple: Disciple): number {
   const realmIndex = RealmOrder.indexOf(disciple.realm);
   const baseSpeed = REALM_BASE_CULTIVATION_SPEED[Math.min(Math.max(realmIndex, 0), REALM_BASE_CULTIVATION_SPEED.length - 1)];
 
-  // 根骨：非线性强化差异（20→0.25，40→0.55，60→0.85，80→1.15，100→1.45）
+  // 根骨：非线性强化差异
+  // 低根骨（20→0.25，40→0.50，60→0.80，80→1.05，100→1.30）
   const rootBone = disciple.hiddenTalents.rootBone;
-  const rootBoneMultiplier = 0.25 + Math.pow(rootBone / 100, 1.6) * 1.2;
+  const rootBoneMultiplier = 0.25 + Math.pow(rootBone / 100, 2.2) * 1.05;
 
   // 灵根加成（计算函数本身已在 calculations.ts 中强化：countBonus ×2, qualityBonus ×2）
   const spiritRootBonus = calculateSpiritRootBonus(disciple.hiddenTalents.spiritRoots);

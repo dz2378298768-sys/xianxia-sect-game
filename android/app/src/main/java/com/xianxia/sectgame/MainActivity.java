@@ -1,6 +1,7 @@
 package com.xianxia.sectgame;
 
 import android.annotation.SuppressLint;
+import android.app.Activity;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
@@ -32,6 +33,10 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         // 1. 在 super.onCreate 之前请求无标题 feature（配合主题使用）
         supportRequestWindowFeature(Window.FEATURE_NO_TITLE);
+        // 注册原生广告插件（激励视频）
+        registerPlugin(DirichletAd.class);
+        // 注册 TapTap 更新唤起插件
+        registerPlugin(TapUpdate.class);
         super.onCreate(savedInstanceState);
 
         // 2. Window 层面：关闭 decorFitsSystemWindows，让内容延伸到系统栏后面
@@ -50,6 +55,48 @@ public class MainActivity extends BridgeActivity {
 
         // 5. 启用沉浸式
         applyImmersiveSticky();
+
+        // 6. 自动触发 TapTap 强更检测（开发者中心配置模式）
+        //    延迟 1.5 秒执行：避免 onCreate 动画期间叠加系统更新弹窗造成卡顿；
+        //    TapTap SDK 如果检测到有强更版本，会自动弹出 UI 并跳转 TapTap 商店更新页。
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(this::autoCheckForceUpdate, 1500);
+    }
+
+    /**
+     * 调用 TapUpdate 插件执行强更检测（开发者中心配置模式）。
+     * 通过反射调用插件内部 checkForceUpdate 逻辑，不依赖 Capacitor bridge。
+     */
+    private void autoCheckForceUpdate() {
+        try {
+            if (!SectApp.tapUpdateSdkReady) {
+                android.util.Log.d("MainActivity", "autoCheckForceUpdate: SDK 未就绪，跳过");
+                return;
+            }
+            if (SectApp.TAP_CLIENT_ID.contains("PLACEHOLDER") || SectApp.TAP_CLIENT_TOKEN.contains("PLACEHOLDER")) {
+                android.util.Log.d("MainActivity", "autoCheckForceUpdate: 占位符未替换，跳过");
+                return;
+            }
+            // 直接复用 TapUpdate 的静态逻辑？我们在插件里封装好了，也可以 new 一个临时对象反射调 checkForceUpdate
+            // 更直接：用反射调用 static 的 find+invoke 逻辑，省得 new Plugin 实例
+            try {
+                Class<?> updateCls = Class.forName("com.taptap.sdk.update.TapTapUpdate");
+                for (String n : new String[]{"CheckForceUpdate","checkForceUpdate","checkUpdate","CheckUpdate"}) {
+                    try {
+                        java.lang.reflect.Method m = updateCls.getMethod(n, Activity.class);
+                        m.invoke(null, this);
+                        android.util.Log.i("MainActivity", "autoCheckForceUpdate: 已调用 SDK." + n);
+                        return;
+                    } catch (NoSuchMethodException ignored) { }
+                }
+                android.util.Log.w("MainActivity", "autoCheckForceUpdate: 未找到匹配的方法签名");
+            } catch (ClassNotFoundException ignored) {
+                android.util.Log.w("MainActivity", "autoCheckForceUpdate: TapTapUpdate 类不存在（SDK 未引入）");
+            } catch (Throwable t) {
+                android.util.Log.w("MainActivity", "autoCheckForceUpdate 异常: " + t.getMessage());
+            }
+        } catch (Throwable ignore) {
+            // 任意异常忽略，不影响游戏启动流程
+        }
     }
 
     @Override

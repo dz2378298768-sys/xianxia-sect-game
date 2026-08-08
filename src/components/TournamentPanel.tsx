@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { Modal } from '@/components/ui/Modal';
 import { SectIcon } from '@/components/icons/SectIcons';
 import { useGameStore } from '@/store/gameStore';
 import type {
@@ -58,11 +59,13 @@ export const TournamentPanel: React.FC<TournamentPanelProps> = ({ scope }) => {
   const config = isSect ? store.sectTournamentConfig : store.interSectTournamentConfig;
   const results = isSect ? store.lastSectTournamentResults : store.lastInterSectTournamentResults;
   const lastYears = isSect ? store.lastSectTournamentYears : store.lastInterSectTournamentYears;
-  const { disciples, otherSects, year } = store;
+  const { disciples, otherSects, year, month } = store;
 
   const [rewardEditorsOpen, setRewardEditorsOpen] = useState<Record<TournamentFrequency, boolean>>({
     yearly: false, every5years: false, every10years: false,
   });
+  // 手动举办后展示的弹窗结果
+  const [popupResult, setPopupResult] = useState<TournamentResult | null>(null);
 
   const toggleEditor = (f: TournamentFrequency) => setRewardEditorsOpen(prev => ({
     ...prev, [f]: !prev[f],
@@ -96,6 +99,9 @@ export const TournamentPanel: React.FC<TournamentPanelProps> = ({ scope }) => {
           const lastYear = lastYears[freq];
           const participantCount = getParticipantCount(freqConfig.division);
           const editorOpen = rewardEditorsOpen[freq];
+          // CD 判断：与 shouldTournamentTrigger 逻辑一致
+          const interval = TournamentFrequencyIntervals[freq];
+          const inCooldown = freqConfig.enabled && lastYear > 0 && (year - lastYear < interval);
 
           const handleToggleEnabled = () => {
             updateFreqConfig(freq, { enabled: !freqConfig.enabled });
@@ -270,7 +276,7 @@ export const TournamentPanel: React.FC<TournamentPanelProps> = ({ scope }) => {
                                     <select
                                       value="contribution"
                                       onChange={e => handleRewardChange(rank, 'type', e.target.value)}
-                                      className="bg-sect-ink text-sect-jade text-[11px] rounded px-1.5 py-0.5 border border-sect-gold/30"
+                                      className="bg-sect-ink text-sect-jade text-[10px] rounded px-1 py-0 border border-sect-gold/30"
                                     >
                                       {REWARD_TYPES.map(t => (
                                         <option key={t} value={t}>{TournamentRewardTypeNames[t]}</option>
@@ -282,7 +288,7 @@ export const TournamentPanel: React.FC<TournamentPanelProps> = ({ scope }) => {
                                       value={0}
                                       onChange={e => handleRewardChange(rank, 'amount', e.target.value)}
                                       placeholder="数量"
-                                      className="bg-sect-ink text-sect-jade text-[11px] rounded px-1.5 py-0.5 border border-sect-gold/30 w-16"
+                                      className="bg-sect-ink text-sect-jade text-[10px] rounded px-1 py-0 border border-sect-gold/30 w-12"
                                     />
                                   </div>
                                 );
@@ -293,7 +299,7 @@ export const TournamentPanel: React.FC<TournamentPanelProps> = ({ scope }) => {
                                   <select
                                     value={reward.type}
                                     onChange={e => handleRewardChange(rank, 'type', e.target.value)}
-                                    className="bg-sect-ink text-sect-jade text-[11px] rounded px-1.5 py-0.5 border border-sect-gold/30"
+                                    className="bg-sect-ink text-sect-jade text-[10px] rounded px-1 py-0 border border-sect-gold/30"
                                   >
                                     {REWARD_TYPES.map(t => (
                                       <option key={t} value={t}>{TournamentRewardTypeNames[t]}</option>
@@ -303,7 +309,7 @@ export const TournamentPanel: React.FC<TournamentPanelProps> = ({ scope }) => {
                                     <select
                                       value={reward.pillType ?? 'foundation_pill'}
                                       onChange={e => handleRewardChange(rank, 'pillType', e.target.value)}
-                                      className="bg-sect-ink text-sect-jade text-[11px] rounded px-1.5 py-0.5 border border-sect-gold/30"
+                                      className="bg-sect-ink text-sect-jade text-[10px] rounded px-1 py-0 border border-sect-gold/30"
                                     >
                                       {PILL_OPTIONS.map(p => (
                                         <option key={p} value={p}>{PillTypeNames[p]}</option>
@@ -315,7 +321,7 @@ export const TournamentPanel: React.FC<TournamentPanelProps> = ({ scope }) => {
                                     min={0}
                                     value={reward.amount}
                                     onChange={e => handleRewardChange(rank, 'amount', e.target.value)}
-                                    className="bg-sect-ink text-sect-jade text-[11px] rounded px-1.5 py-0.5 border border-sect-gold/30 w-16"
+                                    className="bg-sect-ink text-sect-jade text-[10px] rounded px-1 py-0 border border-sect-gold/30 w-12"
                                   />
                                 </div>
                               );
@@ -331,16 +337,27 @@ export const TournamentPanel: React.FC<TournamentPanelProps> = ({ scope }) => {
                 <div className="flex items-center justify-between pt-2 border-t border-sect-gold/10">
                   <div className="text-[10px] text-sect-jade/40 leading-tight">
                     <div>{lastYear > 0 ? `上次：第${lastYear}年` : '尚未举办过'}</div>
-                    {freqConfig.enabled && <div>下次自动：第{nextTriggerYear(freq, lastYear, year)}年正月</div>}
+                    {freqConfig.enabled && (
+                      <div>
+                        {inCooldown
+                          ? `冷却中：第${nextTriggerYear(freq, lastYear, year)}年正月可再次举办`
+                          : `下次自动：第${nextTriggerYear(freq, lastYear, year)}年正月`}
+                      </div>
+                    )}
                   </div>
                   <Button
                     variant="gold"
                     size="sm"
-                    onClick={() => trigger(freq)}
-                    disabled={participantCount === 0 || !freqConfig.enabled}
+                    onClick={() => {
+                      const result = trigger(freq);
+                      if (result) {
+                        setPopupResult(result);
+                      }
+                    }}
+                    disabled={participantCount === 0 || !freqConfig.enabled || inCooldown}
                   >
                     <SectIcon name="sword" size={12} strokeWidth={2} />
-                    <span className="ml-1">立即举办</span>
+                    <span className="ml-1">{inCooldown ? '冷却中' : '立即举办'}</span>
                   </Button>
                 </div>
 
@@ -353,22 +370,33 @@ export const TournamentPanel: React.FC<TournamentPanelProps> = ({ scope }) => {
           );
         })}
       </div>
+
+      {/* 手动举办后展示本届大比细节弹窗 */}
+      <Modal
+        isOpen={popupResult !== null}
+        onClose={() => setPopupResult(null)}
+        title="本届大比战报"
+        size="md"
+      >
+        {popupResult && <TournamentResultView result={popupResult} current />}
+      </Modal>
     </Card>
   );
 };
 
-const TournamentResultView: React.FC<{ result: TournamentResult }> = ({ result }) => {
+const TournamentResultView: React.FC<{ result: TournamentResult; current?: boolean }> = ({ result, current = false }) => {
   const rankText = result.ourRank === 0 ? '未入三甲' : `第${result.ourRank}名`;
   const rankColor = result.ourRank === 1 ? 'text-yellow-400' : result.ourRank === 2 ? 'text-gray-300' : result.ourRank === 3 ? 'text-orange-400' : 'text-sect-jade/50';
   const scopeText = result.scope === 'sect' ? '山门' : '宗门';
   const freqText = result.frequency === 'yearly' ? '年度' : result.frequency === 'every5years' ? '五年' : '十年';
+  const sessionLabel = current ? '本届' : '上届';
 
   return (
-    <div className="mt-3 p-2.5 rounded-lg bg-sect-ink-light/30 border border-sect-gold/20">
+    <div className={`p-2.5 rounded-lg bg-sect-ink-light/30 border border-sect-gold/20 ${current ? '' : 'mt-3'}`}>
       <div className="flex items-center justify-between mb-2">
         <div className="font-display text-xs text-sect-gold flex items-center gap-1.5">
           <SectIcon name="trophy" size={13} strokeWidth={1.8} />
-          上届{scopeText}{freqText}战报
+          {sessionLabel}{scopeText}{freqText}战报
         </div>
         <span className="text-[10px] text-sect-jade/50">第{result.date.year}年{result.date.month}月</span>
       </div>
