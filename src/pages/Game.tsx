@@ -4,7 +4,6 @@ import { useUIStore } from '@/store/uiStore';
 import { MountainScene } from '@/components/MountainScene';
 import { TopBar } from '@/components/TopBar';
 import { SideNav } from '@/components/SideNav';
-import { BottomNav } from '@/components/BottomNav';
 import { MainMenu } from '@/components/MainMenu';
 import { MonthlyReportModal } from '@/components/MonthlyReportModal';
 import { VictoryModal } from '@/components/VictoryModal';
@@ -61,7 +60,7 @@ const GameLayout: React.FC = () => {
 
   if (!gameStarted) return null;
 
-  // 统一使用手机端布局：左侧 SideNav + 底部 BottomNav + 全屏面板，去除桌面双浮层内容
+  // 统一使用手机端布局：左侧 SideNav + 全屏面板；底部导航已合并到 SideNav，去除重复入口
   return (
     <div className="h-full w-full sect-bg flex flex-col overflow-hidden overflow-x-hidden">
       <OrientationOverlay />
@@ -93,9 +92,6 @@ const GameLayout: React.FC = () => {
           </div>
         )}
       </div>
-
-      {/* 底部导航：洞府/弟子/门规 + 下一月 + 库房/经济/世界 */}
-      <BottomNav />
 
       {/* 模态框 */}
       {showReport && <MonthlyReportModal />}
