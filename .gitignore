@@ -41,3 +41,6 @@ android/**/*.iml
 
 # Electron (if not needed)
 electron/
+
+# Release 包体（已发布到 GitHub Release，不进 git）
+release/
