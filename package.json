@@ -2,10 +2,10 @@
   "name": "xianxia-sect-game",
   "productName": "修仙宗门管理",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.8.1",
   "description": "修仙宗门管理游戏",
   "type": "module",
-  "main": "electron/main.js",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
@@ -20,6 +20,7 @@
   "build": {
     "appId": "com.xianxia.sectgame",
     "productName": "修仙宗门管理",
+    "artifactName": "修仙宗门管理-${version}-win-${arch}.${ext}",
     "directories": {
       "output": "release"
     },

@@ -12,7 +12,7 @@ function createWindow() {
       contextIsolation: true,
     },
     title: '修仙宗门管理',
-    icon: path.join(__dirname, 'public/favicon.svg'),
+    icon: path.join(__dirname, '../public/favicon.svg'),
   });
 
   // Load the app
@@ -20,7 +20,7 @@ function createWindow() {
     win.loadURL('http://localhost:5173');
     win.webContents.openDevTools();
   } else {
-    win.loadFile(path.join(__dirname, 'dist/index.html'));
+    win.loadFile(path.join(__dirname, '../dist/index.html'));
   }
 }
 

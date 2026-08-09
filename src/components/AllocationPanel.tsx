@@ -207,6 +207,28 @@ export const AllocationPanel: React.FC = () => {
                   </div>
                 </div>
                 
+                {/* 已分配弟子列表 + 取消分配（需求2） */}
+                {buildingDisciples.length > 0 && (
+                  <div className="space-y-1.5 mt-3 pt-3 border-t border-sect-gold/10">
+                    <div className="text-xs text-sect-jade/50 flex items-center gap-1">
+                      <Users size={12} /> 已分配弟子（点击取消分配）
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto pr-1">
+                      {buildingDisciples.map(d => (
+                        <button
+                          key={d.id}
+                          onClick={() => assignDiscipleToBuilding(d.id, '')}
+                          title="点击取消该弟子在此建筑的分配"
+                          className="group flex items-center gap-1 px-2 py-1 rounded bg-sect-gold/10 border border-sect-gold/20 hover:border-rose-500/50 hover:bg-rose-500/10 transition-colors"
+                        >
+                          <span className="text-xs text-sect-jade truncate max-w-[80px]">{d.name}</span>
+                          <X size={12} className="text-sect-jade/40 group-hover:text-rose-300 shrink-0" />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex gap-2">
                   <Button
                     variant="outline"

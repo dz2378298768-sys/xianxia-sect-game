@@ -1,13 +1,10 @@
 import React from 'react';
 import { useGameStore } from '@/store/gameStore';
 import { useUIStore } from '@/store/uiStore';
-import { useDevice } from '@/hooks/useDevice';
 import { MountainScene } from '@/components/MountainScene';
 import { TopBar } from '@/components/TopBar';
-import { SectStatsPanel } from '@/components/SectStatsPanel';
-import { TasksPanel } from '@/components/TasksPanel';
-
 import { SideNav } from '@/components/SideNav';
+import { BottomNav } from '@/components/BottomNav';
 import { MainMenu } from '@/components/MainMenu';
 import { MonthlyReportModal } from '@/components/MonthlyReportModal';
 import { VictoryModal } from '@/components/VictoryModal';
@@ -25,12 +22,11 @@ import { ActivitiesPanel } from '@/components/ActivitiesPanel';
 import { OrientationOverlay } from '@/components/OrientationOverlay';
 import { EventFeed } from '@/components/EventFeed';
 import { ShopPanel } from '@/components/ShopPanel';
+import { OpeningGuideModal } from '@/components/OpeningGuideModal';
 
 const GameLayout: React.FC = () => {
   const { buildings, gameStarted, showMainMenu, startGame, newGame, showReport, loadFromSlot } = useGameStore();
   const { activePanel, setActivePanel, selectedBuildingId, setSelectedBuildingId } = useUIStore();
-  const device = useDevice();
-  const isCompact = device.isCompact;
 
   const renderPanel = () => {
     switch (activePanel) {
@@ -65,6 +61,7 @@ const GameLayout: React.FC = () => {
 
   if (!gameStarted) return null;
 
+  // 统一使用手机端布局：左侧 SideNav + 底部 BottomNav + 全屏面板，去除桌面双浮层内容
   return (
     <div className="h-full w-full sect-bg flex flex-col overflow-hidden overflow-x-hidden">
       <OrientationOverlay />
@@ -83,39 +80,22 @@ const GameLayout: React.FC = () => {
         {/* 山门右下角：宗门事件 feed */}
         <EventFeed />
 
-        {/* PC端：左右浮层面板 + 中央大面板 */}
-        {!isCompact && (
-          <>
-            <SectStatsPanel />
-            <TasksPanel />
-            {activePanel !== null && (
-              <div className="absolute top-36 left-72 right-72 bottom-4 overflow-y-auto scroll-panel-dark p-4 slide-in-up"
-                style={{ zIndex: 15 }}
-              >
-                {renderPanel()}
-              </div>
-            )}
-          </>
-        )}
+        {/* 左侧侧边栏导航（手机端导航） */}
+        <SideNav />
 
-        {/* 移动端/紧凑端：左侧侧边栏 + 中央全屏面板 */}
-        {isCompact && (
-          <>
-            {/* 左侧侧边栏导航（全新 SideNav 组件） */}
-            <SideNav />
-
-            {/* 中央全屏面板：仅在有面板时渲染，避免遮挡山门主界面 */}
-            {activePanel !== null && (
-              <div
-                className="absolute scroll-panel-dark compact-fullscreen-panel slide-in-up overflow-y-auto overflow-x-hidden"
-                style={{ left: 'var(--side-nav-width)', right: 0, top: '44px', bottom: '0', zIndex: 20 }}
-              >
-                {renderPanel()}
-              </div>
-            )}
-          </>
+        {/* 中央全屏面板：仅在有面板时渲染，避免遮挡山门主界面 */}
+        {activePanel !== null && (
+          <div
+            className="absolute scroll-panel-dark compact-fullscreen-panel slide-in-up overflow-y-auto overflow-x-hidden"
+            style={{ left: 'var(--side-nav-width)', right: 0, top: '44px', bottom: '0', zIndex: 20 }}
+          >
+            {renderPanel()}
+          </div>
         )}
       </div>
+
+      {/* 底部导航：洞府/弟子/门规 + 下一月 + 库房/经济/世界 */}
+      <BottomNav />
 
       {/* 模态框 */}
       {showReport && <MonthlyReportModal />}
@@ -125,6 +105,9 @@ const GameLayout: React.FC = () => {
 
       {/* 坊市商店 */}
       <ShopPanel />
+
+      {/* 开局提醒：灵石获取途径（需求3） */}
+      <OpeningGuideModal />
     </div>
   );
 };

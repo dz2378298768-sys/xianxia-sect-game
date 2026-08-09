@@ -1,6 +1,5 @@
 import React from 'react';
 import { useUIStore } from '@/store/uiStore';
-import { useDevice } from '@/hooks/useDevice';
 import { useGameStore } from '@/store/gameStore';
 import { calculateSectCombatPower, calculateBuildingMaintenance, calculateBuildingOutput } from '@/utils/gameLogic';
 import {
@@ -43,8 +42,6 @@ const RequirementRow: React.FC<{
  */
 export const SectInfoDrawer: React.FC = () => {
   const { sectInfoOpen, setSectInfoOpen } = useUIStore();
-  const device = useDevice();
-  const isCompact = device.isCompact;
 
   const {
     year, month, sectLevel, reputation, spiritStones,
@@ -80,10 +77,8 @@ export const SectInfoDrawer: React.FC = () => {
 
   const netIncome = totalOutput - totalMaintenance;
 
-  // 紧凑模式：全屏；PC 模式：覆盖左侧 SectStatsPanel 位置
-  const containerClass = isCompact
-    ? 'absolute top-[44px] left-[var(--side-nav-width)] right-0 bottom-0 z-[35] scroll-panel-dark flex flex-col slide-in-left'
-    : 'absolute top-[60px] left-3 z-[35] w-[420px] max-h-[calc(100vh-80px)] scroll-panel-dark flex flex-col slide-in-left';
+  // 统一手机端：全屏覆盖（左侧留出 SideNav 宽度）
+  const containerClass = 'absolute top-[44px] left-[var(--side-nav-width)] right-0 bottom-0 z-[35] scroll-panel-dark flex flex-col slide-in-left';
 
   return (
     <>

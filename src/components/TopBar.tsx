@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useGameStore } from '@/store/gameStore';
 import { SectLevelNames, SectLevelOrder } from '@/types/game';
-import { useDevice } from '@/hooks/useDevice';
 import { useUIStore } from '@/store/uiStore';
 import { SectIcon } from '@/components/icons/SectIcons';
 import { getSlots, SAVE_SLOT_COUNT, type SaveSlotMeta } from '@/utils/saveSlots';
@@ -9,8 +8,8 @@ import { getSlots, SAVE_SLOT_COUNT, type SaveSlotMeta } from '@/utils/saveSlots'
 export const TopBar: React.FC = () => {
   const { year, month, sectName, sectLevel, reputation, karma, spiritStones, disciples, herbInventory, ironInventory, paperInventory, returnToMenu, newGame, saveToSlot, redeemCodeUsed, useRedeemCode, grantAdReward, adRewardTotal } = useGameStore();
   const { sectInfoOpen, toggleSectInfo } = useUIStore();
-  const device = useDevice();
-  const isCompact = device.isCompact;
+  // 统一手机端：始终按紧凑布局渲染，去除桌面专属内容
+  const isCompact = true;
   const [menuOpen, setMenuOpen] = useState(false);
   const [showSavePicker, setShowSavePicker] = useState(false);
   const [slots, setSlots] = useState<(SaveSlotMeta | null)[]>(new Array(SAVE_SLOT_COUNT).fill(null));

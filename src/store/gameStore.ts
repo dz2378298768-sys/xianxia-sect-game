@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { useUIStore } from '@/store/uiStore';
 import type { Disciple, PromotionRules } from '@/types/disciple';
 import { DiscipleStatusNames, RealmNames, RealmOrder, getRealmDisplay } from '@/types/disciple';
 import type { Building, BuildingType } from '@/types/building';
@@ -547,6 +548,8 @@ export const useGameStore = create<GameState>()(
           // 彩蛋：宗门名设定为 6666 时，初始灵石 10000、声望 1000
           ...(trimmedName === '6666' ? { spiritStones: 10000, reputation: 1000 } : {}),
         });
+        // 需求3：新游戏开局展示灵石获取途径弹窗
+        try { useUIStore.getState().setShowOpeningGuide(true); } catch { /* noop */ }
       },
       
       returnToMenu: () => {
@@ -803,13 +806,17 @@ export const useGameStore = create<GameState>()(
         }
 
         // 正邪度联合攻击：玩家正邪度过低（魔道）时，正道宗门联合讨伐
-        if (state.karma <= -50) {
-          // 概率随正邪度降低而提高：-50时10%，-100时30%
-          const jointAttackChance = Math.min(0.3, ((-state.karma) - 50) / 50 * 0.2 + 0.1);
+        // 需求4增强：门槛从 -50 下调到 -30，使轻度魔道也会招致注意；-100 时必被讨伐。
+        if (state.karma <= -30) {
+          // 概率随正邪度降低而提高：-30≈6%，-50≈14%，-100=100%（必触发）
+          const jointAttackChance = Math.min(
+            1,
+            ((-state.karma) - 30) / 70 * 0.94 + 0.06,
+          );
           if (Math.random() < jointAttackChance) {
-            // 召集正道且非同盟/附庸的宗门
+            // 召集正道且非同盟/附庸的宗门；极度邪恶（-100）时扩大至所有非魔道宗门，确保总能形成联军
             const coalition = refreshedOtherSects.filter(s =>
-              s.alignment === 'righteous' &&
+              (s.alignment === 'righteous' || (state.karma <= -100 && s.alignment === 'neutral')) &&
               s.diplomaticStatus !== 'ally' &&
               s.diplomaticStatus !== 'vassal'
             );
@@ -848,11 +855,8 @@ export const useGameStore = create<GameState>()(
         }
 
         const servantCount = disciples.filter(d => d.status === 'servant').length;
-        const servantStipend = servantCount * 1;
-        if (servantStipend > 0) {
-          spiritStoneExpense.push({ source: '杂役零花钱', amount: servantStipend });
-          totalMaintenance += servantStipend;
-        }
+        void servantCount;
+        // 注：杂役零花钱已并入"弟子维护费"（按身份等级统一扣除），此处不再单独计费
         
         const updatedDisciples = disciples.map(disciple => {
           // 计算居所和洞府的修炼加成
@@ -1453,51 +1457,26 @@ export const useGameStore = create<GameState>()(
 
         const totalInnerCount = finalDisciples.filter(d => d.status === 'inner').length;
         const maxCoreCount = Math.floor(finalDisciples.filter(d => d.status === 'outer').length * 0.3);
-        
-        // 每月随机弟子拜师
-        // 基础概率：声望越高，概率越大，弟子数量越多
-        const baseProbability = Math.min(0.7, 0.3 + reputation / 1000); // 30%~70%概率有弟子来
-        const maxNewDisciples = Math.min(5, 1 + Math.floor(reputation / 200)); // 每月最多1~5个
-        
-        // 弟子上限检查
-        const discipleCap = SectLevelDiscipleCap[state.sectLevel];
-        
-        if (Math.random() < baseProbability && (discipleCap === null || finalDisciples.length < discipleCap)) {
-          const remainingSlots = discipleCap === null ? maxNewDisciples : discipleCap - finalDisciples.length;
-          const actualNew = Math.min(randomInt(1, maxNewDisciples), remainingSlots);
-          
-          for (let i = 0; i < actualNew; i++) {
-            const newDisciple = createInitialDisciple('mortal', 'mortal');
-            newDisciple.joinDate = { year, month };
 
-            // 根据声望影响弟子资质
-            const bonusChance = Math.min(0.3, reputation / 1000);
-            if (Math.random() < bonusChance) {
-              // 高声望有概率获得更好的弟子
-              newDisciple.hiddenTalents.rootBone = Math.min(100, newDisciple.hiddenTalents.rootBone + randomInt(10, 30));
-            }
+        // ⚠️ 需求1：取消"每月自动招收弟子"。弟子仅由玩家在「弟子管理」面板手动招募，
+        // 不再由系统随机拜师进入宗门。
 
-            // 新拜师弟子一律从杂役做起，积累贡献后晋升为外门
-            newDisciple.status = 'servant';
-            newDisciple.realm = 'qi';
-            newDisciple.realmProgress = randomInt(10, 40);
-            const servantHall = currentBuildings.find(b => b.type === 'servant_hall');
-            if (servantHall && servantHall.assignedDisciples.length < servantHall.discipleCapacity) {
-              currentBuildings = currentBuildings.map(b =>
-                b.id === servantHall.id
-                  ? { ...b, assignedDisciples: [...b.assignedDisciples, newDisciple.id] }
-                  : b
-              );
-              newDisciple.assignedBuilding = servantHall.id;
-            }
-
-            // 自动分配居所（不影响工作建筑）
-            const residenceResult = autoAssignResidence(newDisciple, currentBuildings);
-            currentBuildings = residenceResult.newBuildings;
-
-            finalDisciples.push(newDisciple);
-            newDisciples.push({ id: newDisciple.id, name: newDisciple.name, status: DiscipleStatusNames[newDisciple.status] });
-          }
+        // 弟子每月维护费：按身份等级消耗灵石（凡人0、杂役1、外门2、内门4、核心6、长老10）
+        const DISCIPLE_MAINTENANCE_COST: Record<string, number> = {
+          mortal: 0,
+          servant: 1,
+          outer: 2,
+          inner: 4,
+          core: 6,
+          elder: 10,
+        };
+        const discipleMaintenance = finalDisciples.reduce(
+          (sum, d) => sum + (DISCIPLE_MAINTENANCE_COST[d.status] || 0),
+          0,
+        );
+        if (discipleMaintenance > 0) {
+          spiritStoneExpense.push({ source: '弟子维护费', amount: discipleMaintenance });
+          totalMaintenance += discipleMaintenance;
         }
 
         // 每月重新分配：确保无工作弟子被分配到有空缺的建筑，居所不匹配的弟子重新匹配
@@ -1525,11 +1504,20 @@ export const useGameStore = create<GameState>()(
           );
         }
         
+        // 正邪度每年自然回归中立 +1（需求：正邪度可每年1点回复）
+        let karmaYearlyRecover = 0;
         month += 1;
         if (month > 12) {
           month = 1;
           year += 1;
-        }
+          karmaYearlyRecover = 1;  // 跨年恢复 1 点正邪度
+          if (state.karma < 100) {
+            newNotifications.push(createNotification(
+              'info', '正邪自然回归',
+              `新的一年到來，宗门正邪度悄然回归中立 +1（当前 ${Math.min(100, state.karma + 1)}）。`,
+              { year, month },
+            ));
+          }        }
         
         const report = generateMonthlyReport(
           { year, month },
@@ -1868,6 +1856,8 @@ export const useGameStore = create<GameState>()(
           lastInterSectTournamentYears: interSectYears,
           spiritStoneHistory: newSpiritStoneHistory,
           contributionLogs: mergedContributionLogs,
+          // 正邪度年度自然回复（每年+1，封顶+100）
+          karma: Math.min(100, state.karma + karmaYearlyRecover),
         });
       },
       
@@ -3230,7 +3220,7 @@ export const useGameStore = create<GameState>()(
         const st = get();
         const notif = createNotification(
           'info', '赠送灵石',
-          `向「${sect.name}」赠送 ${amount} 灵石，好感度 +${favGain}。`,
+          `向「${sect.name}」赠送 ${amount} 灵石，好感度 +${favGain}，正邪度 +3（示好天下）。`,
           { year: st.year, month: st.month },
         );
         set({
