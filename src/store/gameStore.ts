@@ -4,9 +4,10 @@ import { useUIStore } from '@/store/uiStore';
 import type { Disciple, PromotionRules } from '@/types/disciple';
 import { DiscipleStatusNames, RealmNames, RealmOrder, getRealmDisplay } from '@/types/disciple';
 import type { Building, BuildingType } from '@/types/building';
+import { BuildingTypeNames } from '@/types/building';
 import { RESIDENCE_TYPES } from '@/types/building';
-import { BUILDING_CONFIGS } from '@/data/buildings';
-import type { BookConfig, BookTier } from '@/data/buildings';
+import { BUILDING_CONFIGS, BookTierNames } from '@/data/buildings';
+import type { BookConfig, BookTier, BookType } from '@/data/buildings';
 import { generateInitialLibraryBooks, generateRandomBook, getBookPrice, canLearnBook } from '@/utils/bookGenerator';
 import type { DiscipleStatus } from '@/types/disciple';
 import type { PillInventory, PillType } from '@/types/pill';
@@ -19,7 +20,7 @@ import {
   SectLevelNames, SectLevelRequirementsMap, SectLevelOrder,
   SectLevelDiscipleCap, SectLevelReputationCap, ReputationGrowthConfig,
 } from '@/types/game';
-import type { Trial, ContributionLog, ContributionLogType } from '@/types/game';
+import type { Trial, ContributionLog, ContributionLogType, SectHistoryEntry } from '@/types/game';
 import {
   createInitialDisciple, createInitialBuildings, getDefaultPromotionRules, autoAssignBuilding,
   autoAssignResidence, getResidenceUpgradeCost, getResidenceCapacityByLevel, getCaveMansionUpgradeCost,
@@ -39,6 +40,10 @@ import {
   attemptBreakthrough,
   generateMonthlyReport,
   createNotification,
+  createDeducingBook,
+  finalizeDeducingBook,
+  calculateMonthlyDeductionProgress,
+  getMaxDeduceTier,
 } from '@/utils/gameLogic';
 import { randomInt, generateId } from '@/utils/random';
 import { recomputeCultivationSpeed, applySatisfactionPenalty, recomputeLifespan, computeMonthlyContribution } from '@/domain/balance';
@@ -93,6 +98,7 @@ interface GameState {
   paperInventory: number;   // 符纸（符堂原料）
   specialMaterials: Record<string, number>; // 特殊材料库存（材料名→数量），如 { '寿元花': 3, '灵晶': 2 }
   contributionLogs: ContributionLog[]; // 贡献值流水（所有弟子，新记录在前）
+  sectHistory: SectHistoryEntry[]; // 宗门历史事件（建筑升级/宗门晋升/宗门战争，新记录在前）
   gameStarted: boolean;
   showMainMenu: boolean;
   libraryBooks: BookConfig[]; // 藏经阁拥有的书籍
@@ -140,6 +146,9 @@ interface GameState {
   forgetBook: (discipleId: string, bookType: 'technique' | 'battle', bookId: string) => boolean;
   buyRandomBook: (tier: BookTier) => BookConfig | null; // 购买随机书
   setLibraryCost: (tier: BookTier, cost: number) => void; // 设置藏经阁学习消耗
+  // 藏经阁推演功法：手动安排/取消推演任务
+  startDeducingBook: (discipleId: string, type: BookType, tierOverride?: BookTier) => { success: boolean; reason?: string };
+  cancelDeducingBook: (discipleId: string) => boolean;
   buyCaveMansion: (elderId: string) => boolean; // 长老购买洞府
   canPromoteSect: () => { canPromote: boolean; nextLevel: SectLevel | null; reasons: string[] }; // 检查是否可以晋升
   promoteSect: () => boolean; // 晋升宗门
@@ -416,6 +425,7 @@ const createInitialState = () => {
     paperInventory: 10,
     specialMaterials: {},
     contributionLogs: [],
+    sectHistory: [],
     gameStarted: false,
     showMainMenu: true,
     libraryBooks,
@@ -592,6 +602,9 @@ export const useGameStore = create<GameState>()(
       },
 
       nextMonth: () => {
+        const tierZh = (t: BookTier) => BookTierNames[t] + (BookTierNames[t].endsWith('阶') ? '' : '阶');
+        const qualityZh = (q: number) =>
+          q >= 90 ? '仙品' : q >= 80 ? '极品' : q >= 60 ? '上品' : q >= 40 ? '中品' : '下品';
         const state = get();
         let { year, month, spiritStones, reputation, herbInventory } = state;
         const { disciples, buildings, promotionRules, pillInventory, libraryBooks, libraryCosts } = state;
@@ -602,7 +615,9 @@ export const useGameStore = create<GameState>()(
         const promotionEvents: { discipleId: string; discipleName: string; from: string; to: string }[] = [];
         const newDisciples: { id: string; name: string; status: string }[] = [];
         const newNotifications: Notification[] = [];
-        
+        // 藏经阁推演本月新增的秘籍（在循环外汇总，避免每次 set 全量复制）
+        let libraryBooksAfter = libraryBooks;
+
         const currentDate = { year, month };
         
         let totalSpiritStoneIncome = 0;
@@ -777,17 +792,25 @@ export const useGameStore = create<GameState>()(
         let rivalRepLoss = 0;
         let rivalRepGain = 0;
         let pendingSiegeReport: SiegeReportData | null = null;
+        const pendingSectHistory: SectHistoryEntry[] = [];
         const rivalSects = refreshedOtherSects.filter(
           s => s.diplomaticStatus === 'rival' && (!s.truceUntilYear || s.truceUntilYear <= year),
         );
         if (rivalSects.length > 0) {
           // 单月仅抽 1 个 rival 进行判定（其他 rival 视为"未进攻"）
           const rival = rivalSects[Math.floor(Math.random() * rivalSects.length)];
-          // 每月 10% 概率进攻
-          if (Math.random() < 0.10) {
-            const ourCombat = calculateSectCombatPower(finalDisciples, currentBuildings).totalPower;
+          const ourCombat = calculateSectCombatPower(disciples, buildings).totalPower;
+          // 宿敌只会在战力高于本宗时才发起进攻；每月 10% 概率
+          if (rival.combatPower > ourCombat && Math.random() < 0.10) {
             const rivalCombat = rival.combatPower;
-            if (ourCombat >= rivalCombat) {
+            // 同盟协防：被攻击时同盟宗门提供 50% 战力援助
+            const allySects = refreshedOtherSects.filter(s => s.diplomaticStatus === 'ally');
+            const allyDefense = Math.floor(allySects.reduce((sum, s) => sum + s.combatPower, 0) * 0.5);
+            const totalDefense = ourCombat + allyDefense;
+            const allyLabel = allySects.length > 0
+              ? allySects.slice(0, 3).map(s => `「${s.name}」`).join('、') + (allySects.length > 3 ? `等${allySects.length}家` : '')
+              : '';
+            if (totalDefense >= rivalCombat) {
               const repGain = Math.floor(rival.combatPower * 0.001) + 1;
               rivalRepGain += repGain;
               newNotifications.push(createNotification(
@@ -797,18 +820,26 @@ export const useGameStore = create<GameState>()(
               ));
               pendingSiegeReport = {
                 title: '击退来犯',
-                description: `「${rival.name}」趁本月来袭，战力 ${rivalCombat} vs 本宗战力 ${ourCombat}。本宗成功击退，声望 +${repGain}，双方进入 5 年停战期。`,
+                description: `「${rival.name}」趁本月来袭，战力 ${rivalCombat} vs 本宗战力 ${ourCombat}${allyDefense > 0 ? ` + 同盟协防 ${allyDefense}（${allyLabel}提供 50% 战力）` : ''} = ${totalDefense}。本宗成功击退，声望 +${repGain}，双方进入 5 年停战期。`,
                 attackers: [rival.name],
                 isPlayerVictory: true,
                 stoneLoss: 0,
-                repLoss: -repGain,  // 用负数表示获得声望（弹窗统一展示为变化值）
+                repLoss: -repGain,
                 deadDisciples: 0,
                 date: { year, month },
                 source: 'rival',
               };
+              pendingSectHistory.push({
+                id: generateId(),
+                date: { year, month },
+                type: 'war_victory',
+                title: '击退来犯',
+                description: `「${rival.name}」来袭（战力 ${rivalCombat}），本宗成功击退（防御 ${totalDefense}），声望 +${repGain}。`,
+              });
             } else {
-              const stoneLoss = Math.floor(rival.combatPower * 0.05);
-              const repLoss = Math.floor(rival.combatPower * 0.002) + 3;
+              // 战败损失：声望固定 50，灵石为当前月收入的 10 倍
+              const repLoss = 50;
+              const stoneLoss = Math.max(100, totalSpiritStoneIncome * 10);
               rivalStoneLoss += stoneLoss;
               rivalRepLoss += repLoss;
               newNotifications.push(createNotification(
@@ -818,7 +849,7 @@ export const useGameStore = create<GameState>()(
               ));
               pendingSiegeReport = {
                 title: '宗门被攻',
-                description: `「${rival.name}」趁本月来袭，战力 ${rivalCombat} vs 本宗战力 ${ourCombat}。本宗不敌，损失 ${stoneLoss} 灵石、${repLoss} 声望，双方进入 5 年停战期。`,
+                description: `「${rival.name}」趁本月来袭，战力 ${rivalCombat} vs 本宗战力 ${ourCombat}${allyDefense > 0 ? ` + 同盟协防 ${allyDefense}（${allyLabel}提供 50% 战力）` : ''} = ${totalDefense}。本宗不敌，损失 ${stoneLoss} 灵石、${repLoss} 声望，双方进入 5 年停战期。`,
                 attackers: [rival.name],
                 isPlayerVictory: false,
                 stoneLoss,
@@ -827,6 +858,13 @@ export const useGameStore = create<GameState>()(
                 date: { year, month },
                 source: 'rival',
               };
+              pendingSectHistory.push({
+                id: generateId(),
+                date: { year, month },
+                type: 'war_defeat',
+                title: '宗门被攻',
+                description: `「${rival.name}」来袭（战力 ${rivalCombat}），本宗不敌（防御 ${totalDefense}），损失 ${stoneLoss} 灵石、${repLoss} 声望。`,
+              });
             }
             // 写入 5 年停战
             const truceYear = year + 5;
@@ -853,7 +891,14 @@ export const useGameStore = create<GameState>()(
               (!s.truceUntilYear || s.truceUntilYear <= year)
             );
             if (coalition.length >= 2) {
-              const ourCombat = calculateSectCombatPower(finalDisciples, currentBuildings).totalPower;
+              const ourCombat = calculateSectCombatPower(disciples, buildings).totalPower;
+              // 同盟协防：被联军攻击时同盟宗门提供 50% 战力援助
+              const allySects = refreshedOtherSects.filter(s => s.diplomaticStatus === 'ally');
+              const allyDefense = Math.floor(allySects.reduce((sum, s) => sum + s.combatPower, 0) * 0.5);
+              const totalDefense = ourCombat + allyDefense;
+              const allyLabel = allySects.length > 0
+                ? allySects.slice(0, 3).map(s => `「${s.name}」`).join('、') + (allySects.length > 3 ? `等${allySects.length}家` : '')
+                : '';
               // 联合战力 = 各宗门战力之和 * 协同系数（0.7）
               const coalitionPower = Math.floor(
                 coalition.reduce((sum, s) => sum + s.combatPower, 0) * 0.7
@@ -863,38 +908,42 @@ export const useGameStore = create<GameState>()(
 
               const truceYear = year + 5;
 
-              if (ourCombat >= coalitionPower) {
-                const repGain = Math.floor(coalitionPower * 0.002) + 10;
-                rivalRepGain += repGain;
-                newNotifications.push(createNotification(
-                  'success', '击退正道联军',
-                  `${coalitionLabel}正道宗门联合讨伐，本宗成功击退！声望 +${repGain}。联军 5 年内不得再启战端。`,
-                  { year, month },
-                ));
-                pendingSiegeReport = {
-                  title: '击退正道联军',
-                  description: `${coalitionLabel}正道宗门联合讨伐，联军战力 ${coalitionPower} vs 本宗战力 ${ourCombat}。本宗成功击退，声望 +${repGain}，联军 5 年内不得再启战端。`,
-                  attackers: coalition.map(s => s.name),
-                  isPlayerVictory: true,
-                  stoneLoss: 0,
-                  repLoss: -repGain,
-                  deadDisciples: 0,
-                  date: { year, month },
-                  source: 'coalition',
-                };
-              } else {
-                const stoneLoss = Math.floor(coalitionPower * 0.08);
-                const repLoss = Math.floor(coalitionPower * 0.003) + 10;
+              // 联军只确认能战胜才进攻：战力不足则放弃
+              if (coalitionPower > totalDefense) {
+                // 战败损失：声望固定 50，灵石为当前月收入的 10 倍
+                const repLoss = 50;
+                const stoneLoss = Math.max(100, totalSpiritStoneIncome * 10);
                 rivalStoneLoss += stoneLoss;
                 rivalRepLoss += repLoss;
+                // 联军战败后释放所有附庸（宗门威信扫地，附庸趁机独立）
+                const vassalNames = refreshedOtherSects
+                  .filter(s => s.diplomaticStatus === 'vassal')
+                  .map(s => s.name);
+                if (vassalNames.length > 0) {
+                  refreshedOtherSects = refreshedOtherSects.map(s =>
+                    s.diplomaticStatus === 'vassal'
+                      ? { ...s, diplomaticStatus: 'neutral' as const, favorability: Math.max(0, (s.favorability ?? 50) - 30) }
+                      : s,
+                  );
+                  const vassalLabel = vassalNames.slice(0, 3).map(n => `「${n}」`).join('、') +
+                    (vassalNames.length > 3 ? `等${vassalNames.length}家` : '');
+                  newNotifications.push(createNotification(
+                    'danger', '附庸脱离',
+                    `${vassalLabel}附庸宗门趁联军破山之际宣布独立，脱离本宗掌控！`,
+                    { year, month },
+                  ));
+                }
+                const vassalNote = vassalNames.length > 0
+                  ? `，${vassalNames.length} 个附庸宗门宣布独立`
+                  : '';
                 newNotifications.push(createNotification(
                   'danger', '正道联军破山',
-                  `${coalitionLabel}正道宗门联合讨伐，本宗不敌！损失 ${stoneLoss} 灵石、${repLoss} 声望。联军 5 年内不得再启战端。`,
+                  `${coalitionLabel}正道宗门联合讨伐，本宗不敌！损失 ${stoneLoss} 灵石、${repLoss} 声望${vassalNote}。联军 5 年内不得再启战端。`,
                   { year, month },
                 ));
                 pendingSiegeReport = {
                   title: '正道联军破山',
-                  description: `${coalitionLabel}正道宗门联合讨伐，联军战力 ${coalitionPower} vs 本宗战力 ${ourCombat}。本宗不敌，损失 ${stoneLoss} 灵石、${repLoss} 声望，联军 5 年内不得再启战端。`,
+                  description: `${coalitionLabel}正道宗门联合讨伐，联军战力 ${coalitionPower} vs 本宗战力 ${ourCombat}${allyDefense > 0 ? ` + 同盟协防 ${allyDefense}（${allyLabel}提供 50% 战力）` : ''} = ${totalDefense}。本宗不敌，损失 ${stoneLoss} 灵石、${repLoss} 声望${vassalNote}，联军 5 年内不得再启战端。`,
                   attackers: coalition.map(s => s.name),
                   isPlayerVictory: false,
                   stoneLoss,
@@ -903,12 +952,19 @@ export const useGameStore = create<GameState>()(
                   date: { year, month },
                   source: 'coalition',
                 };
+                pendingSectHistory.push({
+                  id: generateId(),
+                  date: { year, month },
+                  type: 'war_defeat',
+                  title: '正道联军破山',
+                  description: `${coalitionLabel}联合讨伐（联军战力 ${coalitionPower}），本宗不敌（防御 ${totalDefense}），损失 ${stoneLoss} 灵石、${repLoss} 声望${vassalNote}。`,
+                });
+                // 联军全体进入 5 年停战
+                const attackerIds = new Set(coalition.map(s => s.id));
+                refreshedOtherSects = refreshedOtherSects.map(s =>
+                  attackerIds.has(s.id) ? { ...s, truceUntilYear: truceYear } : s,
+                );
               }
-              // 联军全体进入 5 年停战
-              const attackerIds = new Set(coalition.map(s => s.id));
-              refreshedOtherSects = refreshedOtherSects.map(s =>
-                attackerIds.has(s.id) ? { ...s, truceUntilYear: truceYear } : s,
-              );
             }
           }
         }
@@ -1160,6 +1216,59 @@ export const useGameStore = create<GameState>()(
                 d2.id, 'library', totalDeduction, d2.contributionPoints,
                 `藏经阁推演功法 +${totalDeduction} 贡献（基础${deductionBase}${levelBonus ? `+等级${levelBonus}` : ''}）`,
               );
+            }
+
+            // ===== 推演任务进度推进 =====
+            if (d2.deducingBook) {
+              const step = calculateMonthlyDeductionProgress(d2, d2.deducingBook.totalMonths, building.level);
+              const newProgress = d2.deducingBook.progress + step;
+              if (newProgress >= 100) {
+                // 推演完成，正式入库藏经阁
+                const finishedBook = finalizeDeducingBook(d2.deducingBook, d2.name);
+                libraryBooksAfter = [...libraryBooksAfter, finishedBook];
+                // 额外贡献奖励：推演成功的激励
+                const bonus = d2.deducingBook.tier === 'nascent' ? 80 : d2.deducingBook.tier === 'golden' ? 50 : d2.deducingBook.tier === 'foundation' ? 30 : 15;
+                d2 = {
+                  ...d2,
+                  deducingBook: null,
+                  contributionPoints: d2.contributionPoints + bonus,
+                };
+                pushContributionLog(
+                  d2.id, 'library', bonus, d2.contributionPoints,
+                  `推演《${finishedBook.name}》完成入库 +${bonus} 贡献奖励`,
+                );
+                newNotifications.push(createNotification(
+                  'success', '推演大成',
+                  `「${d2.name}」在藏经阁推演出${tierZh(finishedBook.tier)}《${finishedBook.name}》（${qualityZh(finishedBook.quality)}），已收入藏经阁！`,
+                  { year, month },
+                ));
+              } else {
+                d2 = {
+                  ...d2,
+                  deducingBook: { ...d2.deducingBook, progress: newProgress },
+                };
+              }
+            } else if (!d2.learningBook && realmIdx >= 2) {
+              // ===== 自动推演：筑基以上（含筑基）、当前没在学习/推演时，每月按概率自动开启
+              // 按道缘和藏经阁等级权重：基础 8% + 道缘/100 × 15% + 每级藏经阁 3%，上限 35%
+              const daoFate = d2.hiddenTalents.daoFate || 50;
+              const autoProb = Math.min(0.35, 0.08 + (daoFate / 100) * 0.15 + (building.level - 1) * 0.03);
+              if (realmIdx >= 2 && Math.random() < autoProb) {
+                const tier = getMaxDeduceTier(d2.realm, building.level);
+                // 自动倾向：已学过功法的偏战技，否则 50/50
+                const type: BookType =
+                  d2.learnedTechnique && d2.learnedBattles.length < 2 && Math.random() < 0.7
+                    ? 'battle'
+                    : d2.learnedBattles.length >= 2
+                      ? 'technique'
+                      : Math.random() < 0.5 ? 'technique' : 'battle';
+                const deducing = createDeducingBook(d2, type, tier, building.level);
+                d2 = { ...d2, deducingBook: deducing };
+                pushContributionLog(
+                  d2.id, 'library', 0, d2.contributionPoints,
+                  `开始自动推演 ${tierZh(tier)}${type === 'technique' ? '功法' : '战技'}《${deducing.name}》（${qualityZh(deducing.quality)}）`,
+                );
+              }
             }
           }
 
@@ -1607,7 +1716,49 @@ export const useGameStore = create<GameState>()(
         });
         
         // 刷新天下宗门关系（每月关系可能微调）
-        refreshedOtherSects = refreshSectRelations(state.otherSects);
+        // 注意：必须基于 refreshedOtherSects（已包含本月围攻写入的 truceUntilYear）刷新，
+        // 否则会从 state.otherSects 重新计算，把刚写入的停战期丢掉，导致停战期下月失效。
+        refreshedOtherSects = refreshSectRelations(refreshedOtherSects);
+
+        // 正邪度影响好感度：低正邪度（karma<0）每月对所有非敌对宗门扣好感
+        // 规则：每 10 点负 karma 扣 5 好感度（floor 计算），即 karma=-30 → 扣 15 好感
+        // 正 karma 不额外加好感（避免正道玩家好感度滚雪球），karma>=0 时无影响
+        if (state.karma < 0) {
+          // 每 10 点负 karma 扣 5 好感（向下取整，如 -25 → floor(-25/10)*5 = -3*5 = -15）
+          const favDelta = Math.floor(state.karma / 10) * 5; // 负数
+          refreshedOtherSects = refreshedOtherSects.map(s => {
+            // 敌对/附庸宗门不受正邪度好感影响（已是对立面）
+            if (s.diplomaticStatus === 'rival' || s.diplomaticStatus === 'vassal') return s;
+            const newFav = Math.max(0, Math.min(100, (s.favorability ?? 50) + favDelta));
+            return { ...s, favorability: newFav };
+          });
+        }
+
+        // 同盟断盟校验：好感度低于阈值（50）的同盟宗门自动断盟
+        // 正邪度降低导致好感度跌破阈值时，触发断盟并弹窗通知
+        {
+          const ALLIANCE_FAV_THRESHOLD = 50;
+          const brokenAlliances: string[] = [];
+          refreshedOtherSects = refreshedOtherSects.map(s => {
+            if (s.diplomaticStatus === 'ally' && (s.favorability ?? 50) < ALLIANCE_FAV_THRESHOLD) {
+              brokenAlliances.push(s.name);
+              return {
+                ...s,
+                diplomaticStatus: 'neutral' as const,
+                relation: 'neutral' as const,
+              };
+            }
+            return s;
+          });
+          if (brokenAlliances.length > 0) {
+            const label = brokenAlliances.map(n => `「${n}」`).join('、');
+            newNotifications.push(createNotification(
+              'warning', '同盟破裂',
+              `由于好感度低于 ${ALLIANCE_FAV_THRESHOLD}，与 ${label} 的同盟自动解除。`,
+              { year, month },
+            ));
+          }
+        }
 
         // 天下宗门自然发展：每月战力随时间增长
         // 高等级宗门增长更快；附庸宗门因被压制增长缓慢
@@ -1904,6 +2055,7 @@ export const useGameStore = create<GameState>()(
           artifactInventory: accArtifactInventory,
           talismanInventory: accTalismanInventory,
           beastInventory: newBeastInventory,
+          libraryBooks: libraryBooksAfter,
           monthlyReport: report,
           showReport: true,
           notifications: [...trialNotifs, ...tournamentNotifs, ...newNotifications, ...state.notifications].slice(0, 50),
@@ -1915,6 +2067,7 @@ export const useGameStore = create<GameState>()(
           lastInterSectTournamentYears: interSectYears,
           spiritStoneHistory: newSpiritStoneHistory,
           contributionLogs: mergedContributionLogs,
+          sectHistory: [...pendingSectHistory, ...state.sectHistory].slice(0, 200),
           // 正邪度年度自然回复（每年+1，封顶+100）
           karma: Math.min(100, state.karma + karmaYearlyRecover),
         });
@@ -2119,6 +2272,14 @@ export const useGameStore = create<GameState>()(
         // 计算升级后的新维护费
         const newMaintenanceCost = getMaintenanceCostByLevel(building.type, newLevel);
 
+        const historyEntry: SectHistoryEntry = {
+          id: generateId(),
+          date: { year: state.year, month: state.month },
+          type: 'building_upgrade',
+          title: '建筑升级',
+          description: `${BuildingTypeNames[building.type]} Lv.${building.level} → Lv.${newLevel}，消耗 ${upgradeCost.spiritStones} 灵石${needReputation > 0 ? `、${needReputation} 声望` : ''}。`,
+        };
+
         set(state => ({
           spiritStones: state.spiritStones - upgradeCost.spiritStones,
           reputation: state.reputation - needReputation,
@@ -2127,6 +2288,7 @@ export const useGameStore = create<GameState>()(
               ? { ...b, level: newLevel, discipleCapacity: newCapacity, baseMaintenanceCost: newMaintenanceCost }
               : b
           ),
+          sectHistory: [historyEntry, ...state.sectHistory].slice(0, 200),
         }));
 
         return true;
@@ -2564,6 +2726,51 @@ export const useGameStore = create<GameState>()(
           },
         });
       },
+
+      // ===== 藏经阁推演：手动开始/取消推演 =====
+      startDeducingBook: (discipleId: string, type: BookType, tierOverride?: BookTier) => {
+        const state = get();
+        const disciple = state.disciples.find(d => d.id === discipleId);
+        if (!disciple) return { success: false, reason: '弟子不存在' };
+        // 必须是藏经阁分配弟子（或长老/核心在藏经阁）
+        const assigned = state.buildings.find(
+          b => b.type === 'secret_library' && b.status === 'active' && b.assignedDisciples.includes(discipleId),
+        );
+        const library = assigned ?? state.buildings.find(b => b.type === 'secret_library' && b.status === 'active');
+        if (!library) return { success: false, reason: '藏经阁尚未启用' };
+        if (!assigned && disciple.status !== 'elder' && disciple.status !== 'core') {
+          return { success: false, reason: '弟子未分配至藏经阁，无法进行推演' };
+        }
+        if (disciple.learningBook) return { success: false, reason: '正在学习秘籍，请等学成后再推演' };
+        if (disciple.deducingBook) return { success: false, reason: `当前正在推演《${disciple.deducingBook.name}》` };
+        const realmIdx = RealmOrder.indexOf(disciple.realm);
+        if (realmIdx < RealmOrder.indexOf('qi')) return { success: false, reason: '凡人无法推演秘籍' };
+        const tier = tierOverride ?? getMaxDeduceTier(disciple.realm, library.level);
+        const tiers: BookTier[] = ['qi', 'foundation', 'golden', 'nascent'];
+        const libraryMaxTier = tiers[Math.min(Math.max(1, library.level) - 1, 3)];
+        if (tiers.indexOf(tier) > tiers.indexOf(libraryMaxTier)) {
+          return { success: false, reason: `藏经阁仅 Lv.${library.level}，最高可推演 ${BookTierNames[libraryMaxTier]}` };
+        }
+        const deducing = createDeducingBook(disciple, type, tier, library.level);
+        set({
+          disciples: state.disciples.map(d =>
+            d.id === discipleId ? { ...d, deducingBook: deducing } : d,
+          ),
+        });
+        return { success: true, reason: `已开启推演《${deducing.name}》` };
+      },
+
+      cancelDeducingBook: (discipleId: string): boolean => {
+        const state = get();
+        const disciple = state.disciples.find(d => d.id === discipleId);
+        if (!disciple || !disciple.deducingBook) return false;
+        set({
+          disciples: state.disciples.map(d =>
+            d.id === discipleId ? { ...d, deducingBook: null } : d,
+          ),
+        });
+        return true;
+      },
       
       buyCaveMansion: (elderId: string): boolean => {
         const state = get();
@@ -2957,12 +3164,21 @@ export const useGameStore = create<GameState>()(
           `恭喜！宗门已晋升为「${SectLevelNames[nextLevel]}」，解锁了更多内容！`,
           currentDate
         );
-        
+
+        const historyEntry: SectHistoryEntry = {
+          id: generateId(),
+          date: currentDate,
+          type: 'sect_promote',
+          title: '宗门晋升',
+          description: `宗门由「${SectLevelNames[state.sectLevel]}」晋升为「${SectLevelNames[nextLevel]}」，消耗 ${req.promotionCost} 灵石${req.promotionContribution ? `、${req.promotionContribution} 贡献` : ''}。`,
+        };
+
         set({
           sectLevel: nextLevel,
           spiritStones: newSpiritStones,
           sectContribution: Math.max(0, newContribution),
           notifications: [promotionNotification, ...state.notifications].slice(0, 50),
+          sectHistory: [historyEntry, ...state.sectHistory].slice(0, 200),
         });
         
         return true;
@@ -3288,12 +3504,18 @@ export const useGameStore = create<GameState>()(
       },
 
       // ===== 外交系统优化 =====
+      // 注：所有主动互动（赠送/侮辱/同盟/宿敌/讨伐）每宗门每年只能执行一次，
+      // 由 checkSectInteraction 统一校验，并在成功后写入 lastInteractionYear。
       giftSpiritStonesToSect: (sectId, amount) => {
         const state = get();
         if (amount <= 0) return { ok: false, reason: '赠送数量必须大于0' };
         if (state.spiritStones < amount) return { ok: false, reason: '灵石不足' };
         const sect = state.otherSects.find(s => s.id === sectId);
         if (!sect) return { ok: false, reason: '宗门不存在' };
+        // 年度互动校验
+        if (sect.lastInteractionYear === state.year) {
+          return { ok: false, reason: `今年已与「${sect.name}」互动过，每年仅可互动一次` };
+        }
         // 每 50 灵石 +5 好感，上限 +20
         const favGain = Math.min(20, Math.floor(amount / 50) * 5);
         const newFav = Math.min(100, (sect.favorability ?? 50) + favGain);
@@ -3307,7 +3529,7 @@ export const useGameStore = create<GameState>()(
           spiritStones: state.spiritStones - amount,
           karma: Math.min(100, state.karma + 3),
           otherSects: state.otherSects.map(s =>
-            s.id === sectId ? { ...s, favorability: newFav } : s,
+            s.id === sectId ? { ...s, favorability: newFav, lastInteractionYear: st.year } : s,
           ),
           notifications: [notif, ...state.notifications].slice(0, 50),
         });
@@ -3318,6 +3540,17 @@ export const useGameStore = create<GameState>()(
         const state = get();
         const sect = state.otherSects.find(s => s.id === sectId);
         if (!sect) return;
+        // 年度互动校验
+        if (sect.lastInteractionYear === state.year) {
+          const st = get();
+          const notif = createNotification(
+            'warning', '互动受限',
+            `今年已与「${sect.name}」互动过，每年仅可互动一次。`,
+            { year: st.year, month: st.month },
+          );
+          set({ notifications: [notif, ...state.notifications].slice(0, 50) });
+          return;
+        }
         const newFav = Math.max(0, (sect.favorability ?? 50) - 15);
         const st = get();
         const notif = createNotification(
@@ -3328,7 +3561,7 @@ export const useGameStore = create<GameState>()(
         set({
           karma: Math.max(-100, state.karma - 5),
           otherSects: state.otherSects.map(s =>
-            s.id === sectId ? { ...s, favorability: newFav, relation: newFav < 30 ? 'hostile' : s.relation } : s,
+            s.id === sectId ? { ...s, favorability: newFav, relation: newFav < 30 ? 'hostile' : s.relation, lastInteractionYear: st.year } : s,
           ),
           notifications: [notif, ...state.notifications].slice(0, 50),
         });
@@ -3338,6 +3571,10 @@ export const useGameStore = create<GameState>()(
         const state = get();
         const sect = state.otherSects.find(s => s.id === sectId);
         if (!sect) return { ok: false, reason: '宗门不存在' };
+        // 年度互动校验
+        if (sect.lastInteractionYear === state.year) {
+          return { ok: false, reason: `今年已与「${sect.name}」互动过，每年仅可互动一次` };
+        }
         const fav = sect.favorability ?? 50;
         if (fav < 70) return { ok: false, reason: `好感度不足（需≥70，当前${fav}）` };
         // 战力校验：本宗战力不低于对方 50%
@@ -3354,7 +3591,7 @@ export const useGameStore = create<GameState>()(
         set({
           karma: Math.min(100, state.karma + 5),
           otherSects: state.otherSects.map(s =>
-            s.id === sectId ? { ...s, diplomaticStatus: 'ally' as const, relation: 'ally' as const } : s,
+            s.id === sectId ? { ...s, diplomaticStatus: 'ally' as const, relation: 'ally' as const, lastInteractionYear: st.year } : s,
           ),
           notifications: [notif, ...state.notifications].slice(0, 50),
         });
@@ -3365,6 +3602,10 @@ export const useGameStore = create<GameState>()(
         const state = get();
         const sect = state.otherSects.find(s => s.id === sectId);
         if (!sect) return { ok: false, reason: '宗门不存在' };
+        // 年度互动校验
+        if (sect.lastInteractionYear === state.year) {
+          return { ok: false, reason: `今年已与「${sect.name}」互动过，每年仅可互动一次` };
+        }
         // 停战校验
         if (sect.truceUntilYear && sect.truceUntilYear > state.year) {
           return { ok: false, reason: `与「${sect.name}」尚在停战期（还有 ${sect.truceUntilYear - state.year} 年）` };
@@ -3380,7 +3621,7 @@ export const useGameStore = create<GameState>()(
         set({
           karma: Math.max(-100, state.karma - 5),
           otherSects: state.otherSects.map(s =>
-            s.id === sectId ? { ...s, diplomaticStatus: 'rival' as const, relation: 'hostile' as const } : s,
+            s.id === sectId ? { ...s, diplomaticStatus: 'rival' as const, relation: 'hostile' as const, lastInteractionYear: st.year } : s,
           ),
           notifications: [notif, ...state.notifications].slice(0, 50),
         });
@@ -3392,6 +3633,10 @@ export const useGameStore = create<GameState>()(
         const sect = state.otherSects.find(s => s.id === sectId);
         if (!sect) return { ok: false, reason: '宗门不存在' };
         if (sect.diplomaticStatus === 'vassal') return { ok: false, reason: '对方已是附庸' };
+        // 年度互动校验
+        if (sect.lastInteractionYear === state.year) {
+          return { ok: false, reason: `今年已与「${sect.name}」互动过，每年仅可互动一次` };
+        }
         // 停战校验：仍在停战期则禁止讨伐
         if (sect.truceUntilYear && sect.truceUntilYear > state.year) {
           return { ok: false, reason: `与「${sect.name}」尚在停战期（还有 ${sect.truceUntilYear - state.year} 年）` };
@@ -3408,15 +3653,25 @@ export const useGameStore = create<GameState>()(
         if (isWin) {
           const notif = createNotification(
             'success', '讨伐成功',
-            `本宗击败「${sect.name}」，对方俯首称臣成为附庸！`,
+            `本宗击败「${sect.name}」，对方俯首称臣成为附庸！获得 100 灵石、10 声望。`,
             { year: st.year, month: st.month },
           );
+          const historyEntry: SectHistoryEntry = {
+            id: generateId(),
+            date: { year: st.year, month: st.month },
+            type: 'war_victory',
+            title: '讨伐附庸',
+            description: `击败「${sect.name}」并将其收为附庸，获得 100 灵石、10 声望。`,
+          };
           set({
             karma: Math.max(-100, state.karma - 15),
+            spiritStones: state.spiritStones + 100,
+            reputation: state.reputation + 10,
             otherSects: state.otherSects.map(s =>
-              s.id === sectId ? { ...s, diplomaticStatus: 'vassal' as const, favorability: Math.min(100, (s.favorability ?? 50) + 20) } : s,
+              s.id === sectId ? { ...s, diplomaticStatus: 'vassal' as const, favorability: Math.min(100, (s.favorability ?? 50) + 20), lastInteractionYear: st.year } : s,
             ),
             notifications: [notif, ...state.notifications].slice(0, 50),
+            sectHistory: [historyEntry, ...state.sectHistory].slice(0, 200),
           });
           return { ok: true };
         } else {
@@ -3432,7 +3687,7 @@ export const useGameStore = create<GameState>()(
             reputation: Math.max(0, state.reputation - 5),
             karma: Math.max(-100, state.karma - 10),
             otherSects: state.otherSects.map(s =>
-              s.id === sectId ? { ...s, relation: 'hostile' as const, favorability: Math.max(0, (s.favorability ?? 50) - 20) } : s,
+              s.id === sectId ? { ...s, relation: 'hostile' as const, favorability: Math.max(0, (s.favorability ?? 50) - 20), lastInteractionYear: st.year } : s,
             ),
             notifications: [notif, ...state.notifications].slice(0, 50),
           });
@@ -4117,6 +4372,7 @@ export const useGameStore = create<GameState>()(
         if (state.paperInventory === undefined) state.paperInventory = 10;
         if (!state.specialMaterials) state.specialMaterials = {};
         if (!state.contributionLogs) state.contributionLogs = [];
+        if (!state.sectHistory) state.sectHistory = [];
         if (state.buildings) {
           // 有效建筑类型（杂役居所已移除，旧存档中的杂役居所会被过滤）
           const validTypes = new Set([
@@ -4243,6 +4499,12 @@ export const useGameStore = create<GameState>()(
             tournamentHistory: d.tournamentHistory ?? [],
             // v8: 境界拆分前/中/后期，旧存档弟子默认前期；realmProgress 保留原值
             realmStage: d.realmStage ?? 'early',
+            // v9+：藏经阁推演任务与学习字段兜底
+            learningBook: d.learningBook ?? null,
+            deducingBook: d.deducingBook ?? null,
+            learnedTechnique: d.learnedTechnique ?? null,
+            learnedBattles: d.learnedBattles ?? [],
+            learnedSecrets: d.learnedSecrets ?? [],
           }));
         }
         if (state.otherSects) {
@@ -4252,6 +4514,7 @@ export const useGameStore = create<GameState>()(
             diplomaticStatus: s.diplomaticStatus ?? 'neutral',
             tradeActive: s.tradeActive ?? false,
             truceUntilYear: s.truceUntilYear ?? null,
+            lastInteractionYear: s.lastInteractionYear ?? null,
           }));
         }
         // v8: 新增灵石收支历史与自动任命长老开关

@@ -44,3 +44,6 @@ electron/
 
 # Release 包体（已发布到 GitHub Release，不进 git）
 release/
+# APK 构建临时归档目录（按需手动发布）
+release-apk/
+apk-output/

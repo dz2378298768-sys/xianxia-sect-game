@@ -139,6 +139,20 @@ export type LearningBook = {
   isLearned: boolean;  // 是否学成
 };
 
+// 藏经阁推演中任务：完成后会生成一本新 BookConfig 加入藏经阁 libraryBooks
+export type DeducingBook = {
+  name: string;              // 推演中的书名（完成后正式使用）
+  type: 'technique' | 'battle';
+  tier: 'qi' | 'foundation' | 'golden' | 'nascent';
+  attribute: string;         // 属性（匹配弟子灵根）
+  progress: number;          // 推演进度 0-100
+  totalMonths: number;       // 总需要月数（根据品阶）
+  // 预设的成品属性（推演一开始就 roll 好，进度走完直接入库）
+  cultivationBonus: number;  // 修炼加成
+  combatBonus: number;       // 战力加成
+  quality: number;           // 品质 0-100（仙品 ≥90 极品 ≥80 上品 ≥60 中品 ≥40 下品 <40）
+};
+
 // 弟子大比历史记录
 export interface DiscipleTournamentRecord {
   year: number;
@@ -174,6 +188,7 @@ export interface Disciple {
   learnedTechnique: LearningBook | null;  // 已学功法（1本）
   learnedBattles: LearningBook[];  // 已学战技（最多2本）
   learningBook: LearningBook | null;  // 当前正在学习的书
+  deducingBook: DeducingBook | null;  // 当前正在推演的书（藏经阁），完成后会作为新秘籍加入藏经阁
   buffs: Buff[];
   avatarSeed: number;
   constitutionId: string;  // 体质ID

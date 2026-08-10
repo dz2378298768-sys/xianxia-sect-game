@@ -173,6 +173,7 @@ export function generateOtherSect(playerLevel: SectLevel, playerAlignment: SectA
     diplomaticStatus: 'neutral',
     tradeActive: false,
     truceUntilYear: null,
+    lastInteractionYear: null,
   };
 }
 

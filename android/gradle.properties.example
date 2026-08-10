@@ -1,0 +1,40 @@
+# === Android APK 打包所需的本地配置示例 ===
+# 使用方式：复制本文件为 gradle.properties，根据本机环境修改以下路径。
+# 注意：gradle.properties 已在仓库中提交了通用设置（阿里云镜像、超时、Jetifier 等），
+# 本地差异只需覆盖下面几个属性即可（或追加到 gradle.properties 末尾）。
+
+# ---------- 1. JDK 路径 ----------
+# Capacitor 8 / capacitor-android 模块要求 sourceCompatibility 21，
+# 因此必须使用 JDK 21 或更高版本（推荐 21 / 25）。
+# 常见位置示例：
+#   mise:     /root/.local/share/mise/installs/java/25.0.2
+#   sdkman:   $HOME/.sdkman/candidates/java/25-tem
+#   asdf:     $HOME/.asdf/installs/java/openjdk-25
+#   Windows:  C:/Program Files/Java/jdk-25
+# 留空则使用系统 PATH 中默认的 java（但请先确认 java -version >= 21）。
+# org.gradle.java.home=/root/.local/share/mise/installs/java/25.0.2
+
+# ---------- 2. Android SDK 路径 ----------
+# 方法 A（推荐）：在 android/local.properties 中写：
+#   sdk.dir=/opt/android-sdk
+# 方法 B：写环境变量 ANDROID_HOME 或 ANDROID_SDK_ROOT。
+# SDK 组件要求（打包必会用到）：
+#   sdkmanager "platform-tools" "build-tools;36.0.0" "build-tools;35.0.0" "platforms;android-36"
+
+# ---------- 3. HTTP 代理（国内沙箱/受限网络需要） ----------
+# 留空则不启用代理；如果所在环境需要代理才能访问 Maven 仓库，取消下面注释并改端口：
+# systemProp.http.proxyHost=127.0.0.1
+# systemProp.http.proxyPort=18080
+# systemProp.https.proxyHost=127.0.0.1
+# systemProp.https.proxyPort=18080
+# systemProp.http.nonProxyHosts=localhost|127.0.0.1|*.local|*.svc|*.cluster.local
+
+# ---------- 4. JVM 内存（4G 以上机器建议加大） ----------
+# org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=512m
+
+# ---------- 5. 签名密码（可选覆盖） ----------
+# build.gradle 里已默认内置一套密码；若需替换，取消注释并修改：
+# XIANXIA_STORE_PASSWORD=你的密钥库密码
+# XIANXIA_KEY_ALIAS=你的别名
+# XIANXIA_KEY_PASSWORD=你的别名密码
+# （推荐放在 ~/.gradle/gradle.properties 里，避免提交泄露）

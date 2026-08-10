@@ -174,6 +174,7 @@ export interface OtherSect {
   diplomaticStatus: DiplomaticStatus;  // 外交状态
   tradeActive: boolean;      // 是否正在交易
   truceUntilYear: number | null; // 停战至哪一年（null 表示无停战）
+  lastInteractionYear: number | null; // 上次与本宗互动的年份（null 表示未互动过）；每宗门每年只能互动一次
 }
 
 export const SectAlignmentNames: Record<SectAlignment, string> = {
@@ -273,4 +274,19 @@ export interface ContributionLog {
   amount: number;         // 变动值（正数=增加，负数=减少）
   balance: number;        // 变动后余额
   description: string;    // 描述文本
+}
+
+/** 宗门历史事件类型 */
+export type SectHistoryType =
+  | 'building_upgrade'  // 建筑升级
+  | 'sect_promote'      // 宗门晋升
+  | 'war_victory'       // 战争胜利
+  | 'war_defeat';       // 战争战败
+
+export interface SectHistoryEntry {
+  id: string;
+  date: { year: number; month: number };
+  type: SectHistoryType;
+  title: string;
+  description: string;
 }

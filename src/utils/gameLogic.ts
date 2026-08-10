@@ -1,13 +1,13 @@
-import type { Disciple, HiddenTalents, Realm, DiscipleStatus, PromotionRules, RealmStage } from '@/types/disciple';
+import type { Disciple, HiddenTalents, Realm, DiscipleStatus, PromotionRules, RealmStage, DeducingBook } from '@/types/disciple';
 import { RealmOrder, RealmStageOrder, DiscipleStatusNames, BreakthroughData } from '@/types/disciple';
 import type { Building, BuildingType } from '@/types/building';
 import { RESIDENCE_TYPES_WITH_CAVE } from '@/types/building';
-import { BUILDING_CONFIGS, INITIAL_BUILDING_TYPES, getRootBoneEffectiveness } from '@/data/buildings';
-import type { BookConfig, BookTier } from '@/data/buildings';
+import { BUILDING_CONFIGS, INITIAL_BUILDING_TYPES, getRootBoneEffectiveness, BookTierNames, BOOK_TIER_BONUSES } from '@/data/buildings';
+import type { BookConfig, BookTier, BookType, BookAttribute } from '@/data/buildings';
 import { getRandomConstitution } from '@/data/constitutions';
 import { generateId, generateDiscipleName, randomInt, randomFloat, clamp } from '@/utils/random';
 import { generateTalentDisplay, calculateLifespan, calculateCultivationSpeed, generateSpiritRoots, calculateSpiritRootBonus } from '@/utils/calculations';
-import { canLearnBook } from '@/utils/bookGenerator';
+import { canLearnBook, generateRandomBook } from '@/utils/bookGenerator';
 import type { MonthlyReport, GameDate, Notification } from '@/types/game';
 import { computeBuildingOutput, computeMaintenance, recomputeCultivationSpeed, computeMonthlyContribution } from '@/domain/balance';
 import { ARTIFACT_CONFIGS } from '@/data/artifacts';
@@ -533,6 +533,7 @@ export function createInitialDisciple(status: DiscipleStatus = 'servant', realm:
     learnedTechnique: null,
     learnedBattles: [],
     learningBook: null,
+    deducingBook: null,
     buffs: [],
     avatarSeed: randomInt(1, 1000),
     constitutionId: constitution.id,
@@ -1024,7 +1025,9 @@ export function pickUpgradeBook(
       return {
         pickType: 'technique',
         pickBook: bestTech,
-        forgetTechnique: !!curTech && curTech.cultivationBonus < bestTech.cultivationBonus,
+        // 旧功法暂留：学成时由 processMonthlyLearning 用新功法覆盖 learnedTechnique，
+        // 避免开始学习的瞬间清空旧功法，造成突破后几天的功法加成空窗期。
+        forgetTechnique: false,
         learningBook: {
           bookId: bestTech.id, name: bestTech.name, type: 'technique', tier: bestTech.tier,
           attribute: bestTech.attribute, cultivationBonus: bestTech.cultivationBonus,
@@ -1229,3 +1232,136 @@ export function calculateSectCombatPower(disciples: Disciple[], buildings: Build
     bonuses,
   };
 }
+
+// ===== 藏经阁推演功法系统 =====
+
+// 弟子境界可推演的最高品阶（藏经阁 4 层封顶元婴）
+// 炼气→qi 筑基→foundation 金丹→golden 元婴→nascent 化神→nascent
+const REALM_TO_DEDUCE_TIER: Record<Realm, BookTier> = {
+  mortal: 'qi',
+  qi: 'qi',
+  foundation: 'foundation',
+  golden: 'golden',
+  nascent: 'nascent',
+  spirit: 'nascent',
+};
+
+// 推演时长（月数）：炼气2 筑基3 金丹4 元婴5
+const TIER_DEDUCE_MONTHS: Record<BookTier, number> = {
+  qi: 2,
+  foundation: 3,
+  golden: 4,
+  nascent: 5,
+};
+
+/**
+ * 取得弟子在给定藏经阁等级下能推演的最高品阶
+ * 受藏经阁等级上限限制（level 1→qi, 2→foundation, 3→golden, 4→nascent）
+ */
+export function getMaxDeduceTier(realm: Realm, libraryLevel: number): BookTier {
+  const realmTier = REALM_TO_DEDUCE_TIER[realm];
+  const tiers: BookTier[] = ['qi', 'foundation', 'golden', 'nascent'];
+  const libraryMaxTier = tiers[Math.min(Math.max(1, libraryLevel) - 1, 3)];
+  const rIdx = tiers.indexOf(realmTier);
+  const lIdx = tiers.indexOf(libraryMaxTier);
+  return tiers[Math.min(rIdx, lIdx)];
+}
+
+/**
+ * 从弟子灵根中挑出最强属性（或 universal），作为推演书籍的属性倾向
+ */
+export function pickDiscipleStrongestAttribute(disciple: Disciple): BookAttribute {
+  const roots = disciple.hiddenTalents.spiritRoots || [];
+  if (roots.length === 0) return 'universal';
+  // 按灵根纯度 quality 降序取最强；无灵根返回通用
+  const best = [...roots].sort((a, b) => (b.quality || 0) - (a.quality || 0))[0];
+  if (!best || !best.type) return 'universal';
+  // SpiritRootType 比 BookAttribute 多 light/dark，这里做兜底
+  const attrSet: readonly BookAttribute[] = ['gold', 'wood', 'water', 'fire', 'earth', 'thunder', 'wind', 'ice', 'universal'] as const;
+  return (attrSet.includes(best.type as any) ? best.type : 'universal') as BookAttribute;
+}
+
+/**
+ * 创建一个推演任务（startDeducingBook 的底层纯函数）
+ * @param disciple 弟子（决定属性偏好与品质基础）
+ * @param type 'technique' | 'battle'
+ * @param tier 推演品阶（由 getMaxDeduceTier 决定）
+ * @param libraryLevel 藏经阁等级（影响品质加成）
+ */
+export function createDeducingBook(
+  disciple: Disciple,
+  type: BookType,
+  tier: BookTier,
+  libraryLevel: number,
+): DeducingBook {
+  const daoFate = disciple.hiddenTalents.daoFate || 50;        // 道缘决定品质
+  const wisdom = disciple.hiddenTalents.spiritRhythm || 50;    // 灵韵作为悟性代理（spiritRhythm≈慧根/灵性）
+  // 品质基础值 = 道缘 60% + 灵韵 40%，再叠加藏经阁等级 +5/级
+  const baseQuality = daoFate * 0.6 + wisdom * 0.4;
+  let quality = Math.round(baseQuality + (libraryLevel - 1) * 5 + randomInt(-8, 10));
+  quality = clamp(quality, 5, 100);
+
+  const base = BOOK_TIER_BONUSES[tier];
+  // 品质系数 <40 → 0.7  40-60 → 1.0  60-80 → 1.3  ≥80 → 1.7  ≥90 → 2.1
+  const qMul = quality >= 90 ? 2.1 : quality >= 80 ? 1.7 : quality >= 60 ? 1.3 : quality >= 40 ? 1.0 : 0.7;
+  const cultivationBonus = Math.max(1, Math.round((type === 'technique' ? base.cultivation : base.cultivation * 0.3) * qMul));
+  const combatBonus = Math.max(1, Math.round((type === 'battle' ? base.combat : base.combat * 0.3) * qMul));
+
+  const attribute: BookAttribute = pickDiscipleStrongestAttribute(disciple);
+  const totalMonths = TIER_DEDUCE_MONTHS[tier];
+
+  // 先 roll 一本正式 BookConfig 拿到最终的 name/description；然后用数值填 DeducingBook
+  const prototype = generateRandomBook(tier, type, attribute);
+  return {
+    name: prototype.name,
+    type,
+    tier,
+    attribute,
+    progress: 0,
+    totalMonths,
+    cultivationBonus,
+    combatBonus,
+    quality,
+  };
+}
+
+/**
+ * 推演完成：把 DeducingBook 变成正式入库的 BookConfig（放入 libraryBooks）
+ * 注意：属性/数值已经在 createDeducingBook 时roll 好，这里只是组装成入库结构。
+ *       也可直接复用 generateRandomBook(tier, type, attr) 做默认，再覆盖关键数值，
+ *       这里选择用原型 + 覆盖，保留推演时 roll 好的品质与加成。
+ */
+export function finalizeDeducingBook(done: DeducingBook, authorName: string): BookConfig {
+  const attr = done.attribute as BookAttribute;
+  const prototype = generateRandomBook(done.tier, done.type, attr);
+  return {
+    ...prototype,
+    id: `deduced_${generateId()}`,
+    name: done.name,
+    type: done.type,
+    tier: done.tier,
+    attribute: attr,
+    cultivationBonus: done.cultivationBonus,
+    combatBonus: done.combatBonus,
+    quality: done.quality,
+    description: `${prototype.description.replace(/[。！？]?\s*$/, '')}；由「${authorName}」于藏经阁推演所得。`,
+  };
+}
+
+/**
+ * 计算推演每月进度增加值（>100 即完成）
+ * 基础 = 100 / totalMonths；受悟性×0.6 + 道缘×0.4 归一化加成（最大 +50%）、藏经阁等级 +10%/级
+ */
+export function calculateMonthlyDeductionProgress(
+  disciple: Disciple,
+  totalMonths: number,
+  libraryLevel: number,
+): number {
+  const base = 100 / totalMonths;
+  const wisdom = disciple.hiddenTalents.spiritRhythm || 50;   // 灵韵 ≈ 悟性代理
+  const daoFate = disciple.hiddenTalents.daoFate || 50;
+  const talentFactor = 1 + (0.6 * (wisdom - 50) + 0.4 * (daoFate - 50)) / 100; // 0.5 ~ 1.5
+  const levelFactor = 1 + (libraryLevel - 1) * 0.1; // 1.0 ~ 1.3
+  return base * talentFactor * levelFactor;
+}
+

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useGameStore } from '@/store/gameStore';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -8,10 +8,13 @@ import {
   BookTierNames, BookAttributeNames,
   type BookConfig, type BookTier, type BookType
 } from '@/data/buildings';
-import { RealmOrder, RealmNames, DiscipleStatusNames, getRealmDisplay } from '@/types/disciple';
+import { RealmOrder, RealmNames, DiscipleStatusNames, getRealmDisplay, type Disciple } from '@/types/disciple';
 import {
-  BookOpen, Sword, Sparkles, Lock, Trash2, Clock, User, ShoppingCart, Settings
+  BookOpen, Sword, Sparkles, Lock, Trash2, Clock, User, ShoppingCart, Settings,
+  ScrollText, X, Wand2, Feather
 } from 'lucide-react';
+import { getMaxDeduceTier } from '@/utils/gameLogic';
+import { useDevice } from '@/hooks/useDevice';
 import { cn } from '@/lib/utils';
 import { canLearnBook as checkRootMatch, getBookPrice } from '@/utils/bookGenerator';
 import { SectIcon } from '@/components/icons/SectIcons';
@@ -77,7 +80,8 @@ const TIER_THEME: Record<BookTier, {
 export const LibraryPanel: React.FC<LibraryPanelProps> = ({ buildingId }) => {
   const {
     disciples, buildings, learnBook, forgetBook, getDiscipleById,
-    libraryBooks, libraryCosts, buyRandomBook, setLibraryCost, spiritStones
+    libraryBooks, libraryCosts, buyRandomBook, setLibraryCost, spiritStones,
+    startDeducingBook, cancelDeducingBook,
   } = useGameStore();
 
   const [selectedTier, setSelectedTier] = useState<BookTier>('qi');
@@ -300,7 +304,8 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({ buildingId }) => {
               >
                 <MiniAvatar seed={disciple.avatarSeed} size={20} status={disciple.status} realm={disciple.realm} name={disciple.name} />
                 {disciple.name}
-                {disciple.learningBook && <span className="w-1.5 h-1.5 rounded-full bg-spirit-400 animate-pulse" />}
+                {disciple.learningBook && <span className="w-1.5 h-1.5 rounded-full bg-spirit-400 animate-pulse" title="学习中" />}
+                {disciple.deducingBook && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" title="推演中" />}
               </button>
             ))}
           </div>
@@ -447,8 +452,14 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({ buildingId }) => {
               </span>
             ))}
           </div>
+
+          {/* ===== 推演区块 ===== */}
+          <DeduceSection disciple={selectedDisciple} buildingLevel={building?.level || 1} unlockedTier={unlockedTier} />
         </div>
       )}
+
+      {/* ===== 藏经阁推演列表：所有弟子的推演概况 ===== */}
+      <DeduceRosterPanel disciples={assignedDisciples} />
 
       {/* ===== 双栏：功法 | 战技 ===== */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -495,6 +506,209 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({ buildingId }) => {
             </div>
           )}
         </div>
+      </div>
+    </div>
+  );
+};
+
+// ===================== 推演子组件 =====================
+
+const qualityLabel = (q: number) => q >= 90 ? '仙品' : q >= 80 ? '极品' : q >= 60 ? '上品' : q >= 40 ? '中品' : '下品';
+const qualityColor = (q: number) =>
+  q >= 90 ? 'text-pink-300 border-pink-500/40 bg-pink-500/10'
+  : q >= 80 ? 'text-amber-300 border-amber-500/40 bg-amber-500/10'
+  : q >= 60 ? 'text-purple-300 border-purple-500/30 bg-purple-500/10'
+  : q >= 40 ? 'text-blue-300 border-blue-500/30 bg-blue-500/10'
+  : 'text-sect-jade/70 border-sect-gold/20 bg-sect-gold/5';
+
+/**
+ * 单个选中弟子的推演区：
+ * - 推演中：进度条 + 取消
+ * - 未推演：选类型 + 选品阶 + 开始推演
+ */
+const DeduceSection: React.FC<{
+  disciple: Disciple;
+  buildingLevel: number;
+  unlockedTier: BookTier;
+}> = ({ disciple, buildingLevel, unlockedTier }) => {
+  const { startDeducingBook, cancelDeducingBook } = useGameStore();
+  const { isMobile } = useDevice();
+  const [type, setType] = useState<BookType>('technique');
+  const [toast, setToast] = useState<string>('');
+
+  const realmIdx = RealmOrder.indexOf(disciple.realm);
+  const maxTierForRealm = useMemo(
+    () => getMaxDeduceTier(disciple.realm, buildingLevel),
+    [disciple.realm, buildingLevel],
+  );
+  const tiers: BookTier[] = ['qi', 'foundation', 'golden', 'nascent'];
+  const maxTierIdx = tiers.indexOf(maxTierForRealm);
+  const [tierIdx, setTierIdx] = useState<number>(Math.max(0, maxTierIdx));
+
+  const availableTiers = tiers.slice(0, maxTierIdx + 1);
+  const canDeduce = realmIdx >= RealmOrder.indexOf('qi') && !disciple.learningBook;
+
+  const handleStart = () => {
+    const r = startDeducingBook(disciple.id, type, availableTiers[tierIdx]);
+    setToast(r.reason || (r.success ? '开始推演' : '失败'));
+    setTimeout(() => setToast(''), 1800);
+  };
+  const handleCancel = () => {
+    if (!disciple.deducingBook) return;
+    cancelDeducingBook(disciple.id);
+    setToast('已取消推演');
+    setTimeout(() => setToast(''), 1200);
+  };
+
+  return (
+    <div className="mt-3 pt-3 border-t border-sect-gold/15">
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-xs font-display text-amber-300/90 flex items-center gap-1.5">
+          <ScrollText size={12} /> 推演功法战技
+        </div>
+        <div className="text-[10px] text-sect-jade/40">
+          境界最高 {BookTierNames[maxTierForRealm]} · 藏经阁限 Lv.{buildingLevel}
+        </div>
+      </div>
+
+      {disciple.deducingBook ? (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded p-2">
+          <div className="flex items-start justify-between mb-1.5 gap-2">
+            <div className="min-w-0">
+              <div className="text-xs text-amber-200 flex items-center gap-1.5 flex-wrap">
+                <Wand2 size={12} />
+                推演中：<span className="font-display">{disciple.deducingBook.name}</span>
+              </div>
+              <div className="flex flex-wrap gap-1 mt-1">
+                <Badge variant="spirit" size="sm">{BookTierNames[disciple.deducingBook.tier]}</Badge>
+                <span className={cn(
+                  'text-[10px] px-2 py-0.5 rounded border font-medium',
+                  qualityColor(disciple.deducingBook.quality),
+                )}>
+                  {qualityLabel(disciple.deducingBook.quality)}
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded border border-sect-gold/20 text-sect-jade/60">
+                  {disciple.deducingBook.type === 'technique' ? '功法' : '战技'}·{BookAttributeNames[disciple.deducingBook.attribute]}
+                </span>
+              </div>
+              <div className="text-[10px] text-sect-jade/50 mt-1">
+                修+{disciple.deducingBook.cultivationBonus} · 战+{disciple.deducingBook.combatBonus} · 共 {disciple.deducingBook.totalMonths} 月
+              </div>
+            </div>
+            <Button variant="ghost" size="sm" onClick={handleCancel} className="shrink-0 !px-2">
+              <X size={12} />
+            </Button>
+          </div>
+          <div className="flex items-center justify-between text-[10px] text-amber-300/80 mb-1">
+            <span>进度</span>
+            <span>{disciple.deducingBook.progress.toFixed(0)} / 100</span>
+          </div>
+          <ProgressBar value={disciple.deducingBook.progress} max={100} color="gold" />
+        </div>
+      ) : canDeduce ? (
+        <div className="space-y-2">
+          {/* 类型选择 */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[10px] text-sect-jade/50 w-10">类型</span>
+            <div className="flex gap-1.5">
+              {(['technique', 'battle'] as BookType[]).map(t => (
+                <button
+                  key={t}
+                  onClick={() => setType(t)}
+                  className={cn(
+                    'px-2.5 py-1 rounded text-xs border transition-all flex items-center gap-1',
+                    type === t
+                      ? t === 'technique'
+                        ? 'bg-violet-500/20 border-violet-500/50 text-violet-200'
+                        : 'bg-red-500/20 border-red-500/50 text-red-200'
+                      : 'border-sect-gold/20 text-sect-jade/60 hover:border-sect-gold/40'
+                  )}
+                >
+                  {t === 'technique' ? <BookOpen size={11} /> : <Sword size={11} />}
+                  {t === 'technique' ? '功法' : '战技'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 品阶选择（弟子境界 & 藏经阁等级限制） */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[10px] text-sect-jade/50 w-10">品阶</span>
+            <div className="flex gap-1.5">
+              {availableTiers.map((t, idx) => {
+                const th = TIER_THEME[t];
+                const active = tierIdx === idx;
+                return (
+                  <button
+                    key={t}
+                    onClick={() => setTierIdx(idx)}
+                    className={cn(
+                      'px-2 py-0.5 rounded text-[11px] border transition-all',
+                      active
+                        ? cn(th.accentBg, th.border, th.accent)
+                        : 'border-sect-gold/20 text-sect-jade/50 hover:border-sect-gold/40'
+                    )}
+                  >
+                    {th.label}
+                  </button>
+                );
+              })}
+              {availableTiers.length === 0 && (
+                <span className="text-[10px] text-sect-jade/30">藏经阁等级不足</span>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-2 pt-1">
+            <span className="text-[10px] text-sect-jade/40 flex items-center gap-1">
+              <Feather size={10} />
+              品阶越高耗时越久，品质受道缘 + 悟性 + 藏经阁等级影响
+            </span>
+            <Button variant="gold" size="sm" onClick={handleStart}>
+              开始推演
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="text-[10px] text-sect-jade/40">
+          {disciple.learningBook ? '正在学习秘籍，学成后可推演' : '弟子境界不足，无法推演'}
+        </div>
+      )}
+
+      {toast && (
+        <div className="mt-2 text-[11px] text-center text-amber-300/90 animate-pulse">{toast}</div>
+      )}
+    </div>
+  );
+};
+
+/**
+ * 藏经阁所有弟子推演概况：一张横向小表
+ */
+const DeduceRosterPanel: React.FC<{ disciples: Disciple[] }> = ({ disciples }) => {
+  const deducing = disciples.filter(d => !!d.deducingBook);
+  if (deducing.length === 0) return null;
+  return (
+    <div className="bg-sect-ink/40 border border-amber-500/20 rounded-xl p-3">
+      <div className="text-xs text-amber-300/80 mb-2 flex items-center gap-1.5">
+        <Wand2 size={12} /> 推演进行中 <span className="text-sect-jade/40 text-[10px]">（{deducing.length}人）</span>
+      </div>
+      <div className="space-y-2">
+        {deducing.map(d => {
+          const db = d.deducingBook!;
+          return (
+            <div key={d.id} className="flex items-center gap-2 text-[11px]">
+              <MiniAvatar seed={d.avatarSeed} size={18} status={d.status} realm={d.realm} name={d.name} />
+              <span className="w-14 truncate text-sect-jade/80">{d.name}</span>
+              <Badge variant="spirit" size="sm">{BookTierNames[db.tier]}</Badge>
+              <span className="flex-1 min-w-0 truncate text-amber-200/90">{db.name}</span>
+              <div className="w-20 md:w-28">
+                <ProgressBar value={db.progress} max={100} color="gold" />
+              </div>
+              <span className="w-10 text-right text-sect-jade/50">{db.progress.toFixed(0)}%</span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

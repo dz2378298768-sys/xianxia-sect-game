@@ -3,13 +3,11 @@
 buildscript {
 
     repositories {
-        // 优先官方仓库（TapTap SDK、AGP 等非阿里云镜像全量覆盖的组件走官方源）
-        google()
-        mavenCentral()
-        // 阿里云作为加速镜像兜底（大部分通用依赖）
+        // 国内环境仅使用阿里云镜像（避免 Maven Central 429 限流）
         maven { url 'https://maven.aliyun.com/repository/google' }
         maven { url 'https://maven.aliyun.com/repository/public' }
         maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
+        maven { url 'https://maven.aliyun.com/repository/central' }
     }
     dependencies {
         classpath 'com.android.tools.build:gradle:8.13.0'
@@ -24,14 +22,11 @@ apply from: "variables.gradle"
 
 allprojects {
     repositories {
-        // 优先官方仓库：TapTap SDK (com.taptap.sdk:tap-core / tap-update 4.x)
-        // 只发布在 mavenCentral，阿里云镜像不全，必须放在前面。
-        google()
-        mavenCentral()
-        // 阿里云镜像兜底（大部分开源依赖更快）
+        // 国内环境仅使用阿里云镜像（避免 Maven Central 429 限流）
         maven { url 'https://maven.aliyun.com/repository/google' }
         maven { url 'https://maven.aliyun.com/repository/public' }
         maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
+        maven { url 'https://maven.aliyun.com/repository/central' }
         // 穿山甲（Pangle）广告 SDK Maven 仓库（Dirichlet 聚合 SDK 依赖）
         maven { url 'https://artifact.bytedance.com/repository/pangle' }
     }

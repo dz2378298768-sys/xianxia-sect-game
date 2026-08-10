@@ -5,13 +5,22 @@ import {
   SectLevelNames, SectLevelDescriptions, SectLevelOrder,
   SectLevelRequirementsMap,
 } from '@/types/game';
+import type { SectHistoryEntry } from '@/types/game';
 import { BuildingTypeNames } from '@/types/building';
+
+const HISTORY_TYPE_STYLES: Record<SectHistoryEntry['type'], { icon: string; color: string }> = {
+  building_upgrade: { icon: '▲', color: 'text-blue-400' },
+  sect_promote: { icon: '★', color: 'text-amber-400' },
+  war_victory: { icon: '✦', color: 'text-green-400' },
+  war_defeat: { icon: '✖', color: 'text-red-400' },
+};
 
 export const OverviewPanel: React.FC = () => {
   const {
     year, month, sectLevel, reputation, spiritStones,
     disciples, buildings, nextMonth,
     canPromoteSect, promoteSect,
+    sectHistory,
   } = useGameStore();
 
   const { canPromote, nextLevel, reasons } = canPromoteSect();
@@ -278,6 +287,43 @@ export const OverviewPanel: React.FC = () => {
             <div className="text-xs text-[var(--ink-400)]">总战力</div>
           </div>
         </div>
+      </div>
+
+      {/* 宗门历史 */}
+      <div className="scroll-title">
+        <span className="text-lg">史</span>
+        <span>宗门历史</span>
+      </div>
+      <div className="p-3">
+        {sectHistory.length === 0 ? (
+          <div className="scroll-panel-dark p-4 text-center text-sm text-[var(--ink-400)]">
+            暂无历史记录
+          </div>
+        ) : (
+          <div className="space-y-2 max-h-80 overflow-y-auto">
+            {sectHistory.slice(0, 50).map(entry => {
+              const style = HISTORY_TYPE_STYLES[entry.type];
+              return (
+                <div key={entry.id} className="scroll-panel-dark p-2.5 flex gap-2.5">
+                  <div className={`flex-shrink-0 text-sm ${style.color} mt-0.5`}>
+                    {style.icon}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-medium text-[var(--ink-200)]">{entry.title}</span>
+                      <span className="text-[10px] text-[var(--ink-400)] flex-shrink-0">
+                        第{entry.date.year}年{entry.date.month}月
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-[var(--ink-300)] mt-1 leading-relaxed">
+                      {entry.description}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

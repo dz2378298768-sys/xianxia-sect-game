@@ -1,0 +1,4 @@
+# Android SDK 路径示例
+# 使用方式：复制本文件为 local.properties 并修改以下路径。
+# 本文件默认被 .gitignore 忽略，不会提交到仓库。
+sdk.dir=/opt/android-sdk

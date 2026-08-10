@@ -167,6 +167,13 @@ const WorldSectCard: React.FC<{ sect: OtherSect; ourCombatPower: number }> = ({ 
         {showActions ? '收起互动' : '宗门互动'}
       </button>
 
+      {/* 年度互动状态提示：每宗门每年只能互动一次 */}
+      {sect.lastInteractionYear === store.year && (
+        <div className="mt-1 text-[9px] text-center text-[var(--ink-500)]">
+          今年已互动（每年仅一次）
+        </div>
+      )}
+
       {actionMsg && (
         <div className="mt-1.5 text-[10px] text-center text-[var(--gold-300)] bg-[var(--gold-300)]/10 rounded py-1">
           {actionMsg}
