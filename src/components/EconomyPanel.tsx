@@ -153,12 +153,12 @@ export const EconomyPanel: React.FC = () => {
               </div>
             );
           }
-          const W = 600;
-          const H = 240;
-          const padL = 56;
-          const padR = 16;
-          const padT = 16;
-          const padB = 32;
+          const W = 720;
+          const H = 340;
+          const padL = 64;
+          const padR = 18;
+          const padT = 22;
+          const padB = 42;
           const innerW = W - padL - padR;
           const innerH = H - padT - padB;
 
@@ -179,12 +179,12 @@ export const EconomyPanel: React.FC = () => {
 
           return (
             <div className="w-full overflow-x-auto">
-              <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ minWidth: 320 }} preserveAspectRatio="xMidYMid meet">
+              <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ minWidth: 480, height: 340 }} preserveAspectRatio="xMidYMid meet">
                 {/* 网格线 + Y 轴刻度 */}
                 {ticks.map((t, i) => (
                   <g key={i}>
                     <line x1={padL} y1={yOf(t)} x2={W - padR} y2={yOf(t)} stroke="rgba(212,175,55,0.1)" strokeWidth={1} />
-                    <text x={padL - 8} y={yOf(t) + 4} textAnchor="end" fontSize={11} fill="rgba(212,210,180,0.55)">
+                    <text x={padL - 8} y={yOf(t) + 4} textAnchor="end" fontSize={12} fill="rgba(212,210,180,0.55)">
                       {Math.round(t)}
                     </text>
                   </g>
@@ -195,19 +195,19 @@ export const EconomyPanel: React.FC = () => {
                 )}
                 {/* X 轴月份标签 */}
                 {data.map((d, i) => (
-                  <text key={i} x={xOf(i)} y={H - padB + 18} textAnchor="middle" fontSize={10} fill="rgba(212,210,180,0.55)">
+                  <text key={i} x={xOf(i)} y={H - padB + 22} textAnchor="middle" fontSize={11} fill="rgba(212,210,180,0.55)">
                     {d.year}.{d.month}
                   </text>
                 ))}
                 {/* 灵石余额折线（金） */}
-                <path d={balancePath} fill="none" stroke="#d4af37" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+                <path d={balancePath} fill="none" stroke="#d4af37" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
                 {data.map((d, i) => (
-                  <circle key={i} cx={xOf(i)} cy={yOf(d.spiritStones)} r={2.5} fill="#d4af37" />
+                  <circle key={i} cx={xOf(i)} cy={yOf(d.spiritStones)} r={3.5} fill="#d4af37" />
                 ))}
                 {/* 月净收益折线（绿） */}
-                <path d={incomePath} fill="none" stroke="#34d399" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" strokeDasharray="5 3" />
+                <path d={incomePath} fill="none" stroke="#34d399" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" strokeDasharray="6 4" />
                 {data.map((d, i) => (
-                  <circle key={`n${i}`} cx={xOf(i)} cy={yOf(d.netIncome)} r={2.5} fill="#34d399" />
+                  <circle key={`n${i}`} cx={xOf(i)} cy={yOf(d.netIncome)} r={3.5} fill="#34d399" />
                 ))}
               </svg>
               <div className="flex items-center justify-center gap-6 mt-2 text-xs text-sect-jade/70">

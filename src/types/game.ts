@@ -173,6 +173,7 @@ export interface OtherSect {
   favorability: number;      // 好感度 0-100
   diplomaticStatus: DiplomaticStatus;  // 外交状态
   tradeActive: boolean;      // 是否正在交易
+  truceUntilYear: number | null; // 停战至哪一年（null 表示无停战）
 }
 
 export const SectAlignmentNames: Record<SectAlignment, string> = {

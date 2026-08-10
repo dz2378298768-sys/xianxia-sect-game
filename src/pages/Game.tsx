@@ -22,6 +22,7 @@ import { OrientationOverlay } from '@/components/OrientationOverlay';
 import { EventFeed } from '@/components/EventFeed';
 import { ShopPanel } from '@/components/ShopPanel';
 import { OpeningGuideModal } from '@/components/OpeningGuideModal';
+import { SiegeReportModal } from '@/components/SiegeReportModal';
 
 const GameLayout: React.FC = () => {
   const { buildings, gameStarted, showMainMenu, startGame, newGame, showReport, loadFromSlot } = useGameStore();
@@ -104,6 +105,9 @@ const GameLayout: React.FC = () => {
 
       {/* 开局提醒：灵石获取途径（需求3） */}
       <OpeningGuideModal />
+
+      {/* 围攻战报：本宗被攻或击退来犯时弹出 */}
+      <SiegeReportModal />
     </div>
   );
 };

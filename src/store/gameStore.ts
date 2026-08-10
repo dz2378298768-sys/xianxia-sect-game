@@ -43,6 +43,7 @@ import {
 import { randomInt, generateId } from '@/utils/random';
 import { recomputeCultivationSpeed, applySatisfactionPenalty, recomputeLifespan, computeMonthlyContribution } from '@/domain/balance';
 import { generateOtherSects, refreshSectRelations, generateTrials } from '@/utils/worldGenerator';
+import type { SiegeReportData } from '@/store/siegeReport';
 import type { TournamentConfig, TournamentResult, TournamentFrequency, FrequencyTournamentConfig } from '@/types/tournament';
 import { TournamentRewardTypeNames } from '@/types/tournament';
 import {
@@ -770,86 +771,144 @@ export const useGameStore = create<GameState>()(
         }
 
         // 宿敌宗门进攻：每月有概率被宿敌攻击
+        // 单月最多 1 次（从停战外的 rival 中随机抽 1 个判定），避免叠加扣费造成「莫名扣灵石」；
+        // 触发后与该宗门进入 5 年停战。
         let rivalStoneLoss = 0;
         let rivalRepLoss = 0;
         let rivalRepGain = 0;
-        const rivalSects = refreshedOtherSects.filter(s => s.diplomaticStatus === 'rival');
+        let pendingSiegeReport: SiegeReportData | null = null;
+        const rivalSects = refreshedOtherSects.filter(
+          s => s.diplomaticStatus === 'rival' && (!s.truceUntilYear || s.truceUntilYear <= year),
+        );
         if (rivalSects.length > 0) {
-          for (const rival of rivalSects) {
-            // 每月 15% 概率进攻
-            if (Math.random() < 0.15) {
-              const ourCombat = calculateSectCombatPower(finalDisciples, currentBuildings).totalPower;
-              const rivalCombat = rival.combatPower;
-              if (ourCombat >= rivalCombat) {
-                // 防守成功
-                const repGain = Math.floor(rival.combatPower * 0.001) + 1;
-                rivalRepGain += repGain;
-                newNotifications.push(createNotification(
-                  'success', '击退来犯',
-                  `「${rival.name}」来袭，本宗成功击退！声望 +${repGain}。`,
-                  { year, month },
-                ));
-              } else {
-                // 防守失败：损失灵石和声望
-                const stoneLoss = Math.floor(rival.combatPower * 0.05);
-                const repLoss = Math.floor(rival.combatPower * 0.002) + 3;
-                rivalStoneLoss += stoneLoss;
-                rivalRepLoss += repLoss;
-                newNotifications.push(createNotification(
-                  'warning', '宗门被攻',
-                  `「${rival.name}」来犯，本宗不敌！损失 ${stoneLoss} 灵石、${repLoss} 声望。`,
-                  { year, month },
-                ));
-              }
+          // 单月仅抽 1 个 rival 进行判定（其他 rival 视为"未进攻"）
+          const rival = rivalSects[Math.floor(Math.random() * rivalSects.length)];
+          // 每月 10% 概率进攻
+          if (Math.random() < 0.10) {
+            const ourCombat = calculateSectCombatPower(finalDisciples, currentBuildings).totalPower;
+            const rivalCombat = rival.combatPower;
+            if (ourCombat >= rivalCombat) {
+              const repGain = Math.floor(rival.combatPower * 0.001) + 1;
+              rivalRepGain += repGain;
+              newNotifications.push(createNotification(
+                'success', '击退来犯',
+                `「${rival.name}」来袭，本宗成功击退！声望 +${repGain}。5 年内双方不得再启战端。`,
+                { year, month },
+              ));
+              pendingSiegeReport = {
+                title: '击退来犯',
+                description: `「${rival.name}」趁本月来袭，战力 ${rivalCombat} vs 本宗战力 ${ourCombat}。本宗成功击退，声望 +${repGain}，双方进入 5 年停战期。`,
+                attackers: [rival.name],
+                isPlayerVictory: true,
+                stoneLoss: 0,
+                repLoss: -repGain,  // 用负数表示获得声望（弹窗统一展示为变化值）
+                deadDisciples: 0,
+                date: { year, month },
+                source: 'rival',
+              };
+            } else {
+              const stoneLoss = Math.floor(rival.combatPower * 0.05);
+              const repLoss = Math.floor(rival.combatPower * 0.002) + 3;
+              rivalStoneLoss += stoneLoss;
+              rivalRepLoss += repLoss;
+              newNotifications.push(createNotification(
+                'warning', '宗门被攻',
+                `「${rival.name}」来犯，本宗不敌！损失 ${stoneLoss} 灵石、${repLoss} 声望。双方进入 5 年停战期。`,
+                { year, month },
+              ));
+              pendingSiegeReport = {
+                title: '宗门被攻',
+                description: `「${rival.name}」趁本月来袭，战力 ${rivalCombat} vs 本宗战力 ${ourCombat}。本宗不敌，损失 ${stoneLoss} 灵石、${repLoss} 声望，双方进入 5 年停战期。`,
+                attackers: [rival.name],
+                isPlayerVictory: false,
+                stoneLoss,
+                repLoss,
+                deadDisciples: 0,
+                date: { year, month },
+                source: 'rival',
+              };
             }
+            // 写入 5 年停战
+            const truceYear = year + 5;
+            refreshedOtherSects = refreshedOtherSects.map(s =>
+              s.id === rival.id ? { ...s, truceUntilYear: truceYear } : s,
+            );
           }
         }
 
-        // 正邪度联合攻击：玩家正邪度过低（魔道）时，正道宗门联合讨伐
-        // 需求4增强：门槛从 -50 下调到 -30，使轻度魔道也会招致注意；-100 时必被讨伐。
-        if (state.karma <= -30) {
-          // 概率随正邪度降低而提高：-30≈6%，-50≈14%，-100=100%（必触发）
+        // 正邪度联合攻击：玩家正邪度过低（魔道）时，正道宗门联合讨伐。
+        // 中立（karma ∈ [-15, +15]）不触发；-16 起按概率触发，-100 必触发。
+        if (state.karma < -15) {
+          // 概率随正邪度降低而提高：-15≈6%，-50≈37%，-100=100%（必触发）
           const jointAttackChance = Math.min(
             1,
-            ((-state.karma) - 30) / 70 * 0.94 + 0.06,
+            ((-state.karma) - 15) / 85 * 0.94 + 0.06,
           );
           if (Math.random() < jointAttackChance) {
-            // 召集正道且非同盟/附庸的宗门；极度邪恶（-100）时扩大至所有非魔道宗门，确保总能形成联军
+            // 召集正道且非同盟/附庸、未停战的宗门；极度邪恶（-100）时扩大至所有非魔道宗门
             const coalition = refreshedOtherSects.filter(s =>
               (s.alignment === 'righteous' || (state.karma <= -100 && s.alignment === 'neutral')) &&
               s.diplomaticStatus !== 'ally' &&
-              s.diplomaticStatus !== 'vassal'
+              s.diplomaticStatus !== 'vassal' &&
+              (!s.truceUntilYear || s.truceUntilYear <= year)
             );
             if (coalition.length >= 2) {
-              const ourCombat = calculateSectCombatPower(disciples, buildings).totalPower;
-              // 联合战力 = 各宗门战力之和 * 协同系数（0.7，联合行动效率打折）
+              const ourCombat = calculateSectCombatPower(finalDisciples, currentBuildings).totalPower;
+              // 联合战力 = 各宗门战力之和 * 协同系数（0.7）
               const coalitionPower = Math.floor(
                 coalition.reduce((sum, s) => sum + s.combatPower, 0) * 0.7
               );
               const coalitionLabel = coalition.slice(0, 3).map(s => `「${s.name}」`).join('、') +
                 (coalition.length > 3 ? `等${coalition.length}家` : '');
 
+              const truceYear = year + 5;
+
               if (ourCombat >= coalitionPower) {
-                // 防守成功
                 const repGain = Math.floor(coalitionPower * 0.002) + 10;
                 rivalRepGain += repGain;
                 newNotifications.push(createNotification(
                   'success', '击退正道联军',
-                  `${coalitionLabel}正道宗门联合讨伐，本宗成功击退！声望 +${repGain}。`,
+                  `${coalitionLabel}正道宗门联合讨伐，本宗成功击退！声望 +${repGain}。联军 5 年内不得再启战端。`,
                   { year, month },
                 ));
+                pendingSiegeReport = {
+                  title: '击退正道联军',
+                  description: `${coalitionLabel}正道宗门联合讨伐，联军战力 ${coalitionPower} vs 本宗战力 ${ourCombat}。本宗成功击退，声望 +${repGain}，联军 5 年内不得再启战端。`,
+                  attackers: coalition.map(s => s.name),
+                  isPlayerVictory: true,
+                  stoneLoss: 0,
+                  repLoss: -repGain,
+                  deadDisciples: 0,
+                  date: { year, month },
+                  source: 'coalition',
+                };
               } else {
-                // 防守失败：重大损失
                 const stoneLoss = Math.floor(coalitionPower * 0.08);
                 const repLoss = Math.floor(coalitionPower * 0.003) + 10;
                 rivalStoneLoss += stoneLoss;
                 rivalRepLoss += repLoss;
                 newNotifications.push(createNotification(
                   'danger', '正道联军破山',
-                  `${coalitionLabel}正道宗门联合讨伐，本宗不敌！损失 ${stoneLoss} 灵石、${repLoss} 声望。`,
+                  `${coalitionLabel}正道宗门联合讨伐，本宗不敌！损失 ${stoneLoss} 灵石、${repLoss} 声望。联军 5 年内不得再启战端。`,
                   { year, month },
                 ));
+                pendingSiegeReport = {
+                  title: '正道联军破山',
+                  description: `${coalitionLabel}正道宗门联合讨伐，联军战力 ${coalitionPower} vs 本宗战力 ${ourCombat}。本宗不敌，损失 ${stoneLoss} 灵石、${repLoss} 声望，联军 5 年内不得再启战端。`,
+                  attackers: coalition.map(s => s.name),
+                  isPlayerVictory: false,
+                  stoneLoss,
+                  repLoss,
+                  deadDisciples: 0,
+                  date: { year, month },
+                  source: 'coalition',
+                };
               }
+              // 联军全体进入 5 年停战
+              const attackerIds = new Set(coalition.map(s => s.id));
+              refreshedOtherSects = refreshedOtherSects.map(s =>
+                attackerIds.has(s.id) ? { ...s, truceUntilYear: truceYear } : s,
+              );
             }
           }
         }
@@ -1859,6 +1918,10 @@ export const useGameStore = create<GameState>()(
           // 正邪度年度自然回复（每年+1，封顶+100）
           karma: Math.min(100, state.karma + karmaYearlyRecover),
         });
+        // 围攻战报：推入 uiStore 触发弹窗（由 SiegeReportModal 渲染）
+        if (pendingSiegeReport) {
+          useUIStore.getState().setSiegeReport(pendingSiegeReport);
+        }
       },
       
       dismissReport: () => {
@@ -3123,8 +3186,25 @@ export const useGameStore = create<GameState>()(
 
       setSectDiplomaticStatus: (sectId, status) => {
         const state = get();
-        const newSects = state.otherSects.map(sect =>
-          sect.id === sectId ? { ...sect, diplomaticStatus: status } : sect,
+        const sect = state.otherSects.find(s => s.id === sectId);
+        if (!sect) return;
+        // 停战校验：切换为敌对关系前，必须不在停战期
+        if (
+          (status === 'rival' || status === 'vassal') &&
+          sect.truceUntilYear && sect.truceUntilYear > state.year
+        ) {
+          const years = sect.truceUntilYear - state.year;
+          const notif = createNotification(
+            'warning',
+            '停战期间',
+            `与「${sect.name}」尚在停战期（还有 ${years} 年），无法变更外交为敌对。`,
+            { year: state.year, month: state.month },
+          );
+          set({ notifications: [notif, ...state.notifications].slice(0, 50) });
+          return;
+        }
+        const newSects = state.otherSects.map(s =>
+          s.id === sectId ? { ...s, diplomaticStatus: status } : s,
         );
         set({ otherSects: newSects });
       },
@@ -3285,6 +3365,10 @@ export const useGameStore = create<GameState>()(
         const state = get();
         const sect = state.otherSects.find(s => s.id === sectId);
         if (!sect) return { ok: false, reason: '宗门不存在' };
+        // 停战校验
+        if (sect.truceUntilYear && sect.truceUntilYear > state.year) {
+          return { ok: false, reason: `与「${sect.name}」尚在停战期（还有 ${sect.truceUntilYear - state.year} 年）` };
+        }
         const fav = sect.favorability ?? 50;
         if (fav > 30) return { ok: false, reason: `好感度过高，无法宣战（需≤30，当前${fav}）` };
         const st = get();
@@ -3308,6 +3392,10 @@ export const useGameStore = create<GameState>()(
         const sect = state.otherSects.find(s => s.id === sectId);
         if (!sect) return { ok: false, reason: '宗门不存在' };
         if (sect.diplomaticStatus === 'vassal') return { ok: false, reason: '对方已是附庸' };
+        // 停战校验：仍在停战期则禁止讨伐
+        if (sect.truceUntilYear && sect.truceUntilYear > state.year) {
+          return { ok: false, reason: `与「${sect.name}」尚在停战期（还有 ${sect.truceUntilYear - state.year} 年）` };
+        }
         // 战力校验：本宗战力需达到对方 1.3 倍以上
         const ourCombat = calculateSectCombatPower(state.disciples, state.buildings).totalPower;
         if (ourCombat < sect.combatPower * 1.3) {
@@ -4163,6 +4251,7 @@ export const useGameStore = create<GameState>()(
             favorability: s.favorability ?? 50,
             diplomaticStatus: s.diplomaticStatus ?? 'neutral',
             tradeActive: s.tradeActive ?? false,
+            truceUntilYear: s.truceUntilYear ?? null,
           }));
         }
         // v8: 新增灵石收支历史与自动任命长老开关
