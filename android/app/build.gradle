@@ -9,7 +9,7 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         // 版本号支持通过 Gradle 属性覆盖（用于一次代码生成多个版本）：
         //   打 1.6 测试包：cd android && ./gradlew assembleRelease -PVERSION_CODE=6 -PVERSION_NAME=1.6
-        //   打 1.8 正式包：cd android && ./gradlew assembleRelease -PVERSION_CODE=8 -PVERSION_NAME=1.8
+        //   打 1.8.2 正式包：cd android && ./gradlew assembleRelease -PVERSION_CODE=9 -PVERSION_NAME=1.8.2
         // 若不传属性，则使用下面默认的 1.8 版本。
         versionCode project.hasProperty("VERSION_CODE") ? project.property("VERSION_CODE").toInteger() : 8
         versionName project.hasProperty("VERSION_NAME") ? project.property("VERSION_NAME").toString() : "1.8"
