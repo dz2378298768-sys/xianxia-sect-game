@@ -170,6 +170,8 @@ export function generateOtherSect(playerLevel: SectLevel, playerAlignment: SectA
     specialty: pickRandom(SECT_SPECIALTIES),
     description: pickRandom(SECT_DESCRIPTIONS),
     favorability: 50,
+    baseFavorability: 50, // 初始基础好感 = 50；正邪度修正由 store 初始化时按当前 karma 对齐
+    karmaFavorApplied: 0, // 初始尚未扣好感
     diplomaticStatus: 'neutral',
     tradeActive: false,
     truceUntilYear: null,
@@ -194,8 +196,19 @@ export function generateOtherSects(count: number, playerLevel: SectLevel, player
 }
 
 // 刷新关系（每月调用，关系会随机变动）
+// 好感度小幅波动只改 baseFavorability，并保持 favorability = clamp(base + karmaApplied)
 export function refreshSectRelations(sects: OtherSect[]): OtherSect[] {
   return sects.map(sect => {
+    // 对老存档补齐字段（karmaFavorApplied / baseFavorability）
+    const baseFav =
+      typeof (sect as OtherSect).baseFavorability === 'number'
+        ? (sect as OtherSect).baseFavorability
+        : (sect.favorability ?? 50) - ((sect as OtherSect).karmaFavorApplied ?? 0);
+    const karmaApplied =
+      typeof (sect as OtherSect).karmaFavorApplied === 'number'
+        ? (sect as OtherSect).karmaFavorApplied
+        : 0;
+
     // 15%概率关系变动
     if (Math.random() < 0.15) {
       const relations: SectRelation[] = ['ally', 'friendly', 'neutral', 'wary', 'hostile'];
@@ -203,12 +216,27 @@ export function refreshSectRelations(sects: OtherSect[]): OtherSect[] {
       // 倾向于向相邻关系变动
       const delta = Math.random() < 0.5 ? -1 : 1;
       const newIdx = Math.max(0, Math.min(relations.length - 1, currentIdx + delta));
-      // 好感度也小幅波动
+      // 好感度也小幅波动（只改 baseFavorability）
       const favDelta = randomInt(-3, 3);
+      const newBase = Math.max(0, Math.min(100, baseFav + favDelta));
       return {
         ...sect,
+        baseFavorability: newBase,
+        karmaFavorApplied: karmaApplied,
         relation: relations[newIdx],
-        favorability: Math.max(0, Math.min(100, (sect.favorability ?? 50) + favDelta)),
+        favorability: Math.max(0, Math.min(100, newBase + karmaApplied)),
+      };
+    }
+    // 不变动关系时也补齐字段，避免老存档缺字段
+    if (
+      typeof (sect as OtherSect).baseFavorability !== 'number' ||
+      typeof (sect as OtherSect).karmaFavorApplied !== 'number'
+    ) {
+      return {
+        ...sect,
+        baseFavorability: baseFav,
+        karmaFavorApplied: karmaApplied,
+        favorability: Math.max(0, Math.min(100, baseFav + karmaApplied)),
       };
     }
     return sect;
@@ -408,7 +436,7 @@ function generateTrialReward(type: TrialType, difficulty: TrialDifficulty, mul: 
     reward.contributionPoints = contrib;
     descParts.push(`${contrib}贡献`);
   } else if (type === 'monster') {
-    // 妖物：给灵铁/符纸 + 贡献 + 满意度
+    // 妖物：给灵铁/符纸 + 贡献 + 满意度，偶尔掉落战斗相关特殊材料
     const iron = Math.floor(randomInt(5, 12) * mul);
     reward.iron = iron;
     descParts.push(`${iron}灵铁`);
@@ -423,6 +451,18 @@ function generateTrialReward(type: TrialType, difficulty: TrialDifficulty, mul: 
     const sat = Math.floor(randomInt(5, 15) * Math.min(mul, 3));
     reward.satisfaction = sat;
     descParts.push(`${sat}满意度`);
+    // 妖物有 35% 概率掉落 1 种战斗相关特殊材料（龟甲/精钢/朱砂/玄铁粉/冰晶等）
+    if (Math.random() < 0.35) {
+      const monsterDrops = SPECIAL_MATERIALS.filter(m =>
+        ['龟甲', '精钢', '朱砂', '玄铁粉', '冰晶', '雷泽石', '火晶石'].includes(m.name)
+      );
+      if (monsterDrops.length > 0) {
+        const mat = monsterDrops[randomInt(0, monsterDrops.length - 1)];
+        const amount = randomInt(1, 2);
+        reward.specialMaterials = [{ name: mat.name, amount }];
+        descParts.push(`${amount}${mat.name}`);
+      }
+    }
   } else {
     // 秘境：大量灵石 + 贡献 + 满意度，偶尔给原料
     const extraStones = Math.floor(randomInt(50, 150) * mul);

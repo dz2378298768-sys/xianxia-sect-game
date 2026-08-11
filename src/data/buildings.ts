@@ -65,7 +65,7 @@ export const BUILDING_CONFIGS: Record<BuildingType, BuildingConfig> = {
     type: 'servant_hall',
     name: '杂役堂',
     maxLevel: 10,
-    baseOutput: { spiritStones: 40, herbs: 6, iron: 2, paper: 2 },
+    baseOutput: { spiritStones: 25, herbs: 3, iron: 1, paper: 1 },
     baseMaintenanceCost: 10,
     buildCost: { spiritStones: 0 },
     upgradeCosts: [
@@ -86,7 +86,7 @@ export const BUILDING_CONFIGS: Record<BuildingType, BuildingConfig> = {
     description: '宗门杂役之所；弟子在此采集灵草、开采灵铁、制作符纸，为各堂提供原料。',
     discipleEffect: {
       type: 'contribution',
-      description: '灵草+6/灵铁+2/符纸+2 每月',
+      description: '灵草+3/灵铁+1/符纸+1 每月',
       value: '灵石+灵材产出',
     },
   },
@@ -193,7 +193,7 @@ export const BUILDING_CONFIGS: Record<BuildingType, BuildingConfig> = {
     type: 'array_hall',
     name: '阵堂',
     maxLevel: 3,
-    baseOutput: { spiritStones: 20, reputation: 1 },
+    baseOutput: { spiritStones: 15, reputation: 1 },
     baseMaintenanceCost: 20,
     buildCost: { spiritStones: 800 },
     upgradeCosts: [
@@ -218,7 +218,7 @@ export const BUILDING_CONFIGS: Record<BuildingType, BuildingConfig> = {
     type: 'spirit_beast_garden',
     name: '灵兽原',
     maxLevel: 3,
-    baseOutput: { spiritStones: 30, beasts: 1 },
+    baseOutput: { spiritStones: 20, beasts: 1 },
     baseMaintenanceCost: 40,
     buildCost: { spiritStones: 1000 },
     upgradeCosts: [

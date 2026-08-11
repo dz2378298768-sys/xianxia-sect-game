@@ -87,6 +87,25 @@ function buildBeasts(): ShopItem[] {
   }));
 }
 
+// 基础原材料：灵草/玄铁/灵纸（生产建筑产出，也可在商店购买）
+const BASIC_MATERIAL_CONFIGS: { name: string; description: string; price: number }[] = [
+  { name: '灵草', description: '炼丹基础药材，杂役堂可产出', price: 10 },
+  { name: '玄铁', description: '炼器基础矿石，杂役堂可产出', price: 15 },
+  { name: '灵纸', description: '制符基础材料，杂役堂可产出', price: 8 },
+];
+
+function buildBasicMaterials(): ShopItem[] {
+  return BASIC_MATERIAL_CONFIGS.map(m => ({
+    id: `material:${m.name}`,
+    category: 'material' as ShopCategory,
+    name: m.name,
+    description: m.description,
+    price: m.price,
+    sellPrice: Math.floor(m.price * 0.5),
+    materialName: m.name,
+  }));
+}
+
 // 特殊原材料：炼制丹药/法器/符箓所需的稀有材料
 function buildMaterials(): ShopItem[] {
   return SPECIAL_MATERIALS.map(m => ({
@@ -101,6 +120,7 @@ function buildMaterials(): ShopItem[] {
 }
 
 export const SHOP_ITEMS: ShopItem[] = [
+  ...buildBasicMaterials(),
   ...buildMaterials(),
   ...buildPillRecipes(),
   ...buildPills(),

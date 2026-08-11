@@ -1,6 +1,14 @@
 import type { ArtifactType } from '@/types/artifact';
 import type { TalismanType } from '@/types/talisman';
 import type { BeastType } from '@/types/beast';
+import type { PillType } from '@/types/pill';
+
+// 弟子背包物品：记录弟子个人持有的丹药/法器/符箓/灵兽
+export interface DiscipleBackpackItem {
+  kind: 'pill' | 'artifact' | 'talisman' | 'beast';
+  itemType: string;   // PillType | ArtifactType | TalismanType | BeastType
+  quantity: number;
+}
 
 export type DiscipleStatus = 'mortal' | 'servant' | 'outer' | 'inner' | 'core' | 'elder';
 
@@ -208,6 +216,8 @@ export interface Disciple {
   equippedArtifact?: ArtifactType | null;   // 法器
   equippedTalisman?: TalismanType | null;   // 符箓
   equippedBeast?: BeastType | null;         // 灵兽
+  // 弟子背包：个人持有的丹药/法器/符箓/灵兽
+  backpack?: DiscipleBackpackItem[];
   // 人物经历
   master: string | null;        // 师傅名称
   friends: string[];            // 好友名称列表

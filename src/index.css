@@ -3904,6 +3904,245 @@ button[class*="btn-"], [class*="Button"] {
   cursor: not-allowed;
 }
 
+/* ========================================
+   库房：快捷交易 + 自动交易 UI
+   ======================================== */
+.wh-trade-block {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(212, 168, 87, 0.18);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wh-trade-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--gold-200);
+  font-family: var(--font-display), serif;
+  letter-spacing: 0.1em;
+}
+
+.wh-trade-prices {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.wh-trade-price {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  background: rgba(5, 8, 17, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.wh-trade-price-label {
+  font-size: 10px;
+  color: var(--ink-400);
+  letter-spacing: 0.08em;
+}
+
+.wh-trade-price-value {
+  font-size: 13px;
+}
+
+.wh-trade-btns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.wh-trade-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(100, 180, 255, 0.35);
+  background: rgba(13, 17, 23, 0.55);
+  color: #9ed4ff;
+  font-size: 12px;
+  font-family: var(--font-display), serif;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  -webkit-text-size-adjust: 100%;
+}
+
+.wh-trade-btn--buy {
+  border-color: rgba(100, 180, 255, 0.45);
+  color: #9ed4ff;
+}
+.wh-trade-btn--buy:hover:not(:disabled) {
+  background: rgba(100, 180, 255, 0.14);
+  box-shadow: 0 0 10px rgba(100, 180, 255, 0.2);
+}
+
+.wh-trade-btn--sell {
+  border-color: rgba(240, 195, 109, 0.45);
+  color: #f0c36d;
+}
+.wh-trade-btn--sell:hover:not(:disabled) {
+  background: rgba(240, 195, 109, 0.12);
+  box-shadow: 0 0 10px rgba(240, 195, 109, 0.2);
+}
+
+.wh-trade-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 自动交易展开入口 */
+.wh-autotrade-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(158, 212, 255, 0.2);
+  background: rgba(100, 180, 255, 0.06);
+  color: var(--ink-200);
+  font-size: 11px;
+  font-family: var(--font-display), serif;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.wh-autotrade-toggle:hover {
+  background: rgba(100, 180, 255, 0.12);
+  border-color: rgba(158, 212, 255, 0.45);
+}
+
+.wh-autotrade-toggle.is-open {
+  background: rgba(100, 180, 255, 0.14);
+  border-color: rgba(158, 212, 255, 0.55);
+  color: #c7e2ff;
+}
+
+/* 自动交易设置面板 */
+.wh-autotrade-panel {
+  padding: 10px;
+  border-radius: 6px;
+  background: rgba(5, 8, 17, 0.55);
+  border: 1px solid rgba(158, 212, 255, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wh-autotrade-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.wh-autotrade-row--enable {
+  justify-content: space-between;
+  padding-bottom: 6px;
+  border-bottom: 1px dashed rgba(158, 212, 255, 0.15);
+}
+
+.wh-autotrade-label {
+  font-size: 11px;
+  color: var(--ink-300);
+  letter-spacing: 0.06em;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.wh-autotrade-suffix {
+  font-size: 10px;
+  color: var(--ink-400);
+  white-space: nowrap;
+}
+
+.wh-autotrade-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.wh-autotrade-body.is-disabled { opacity: 0.55; pointer-events: none; }
+
+.wh-number-input--sm {
+  max-width: 64px;
+}
+
+.wh-autotrade-tip {
+  font-size: 10px;
+  color: var(--ink-400);
+  line-height: 1.55;
+  padding-top: 2px;
+  border-top: 1px dashed rgba(212, 168, 87, 0.12);
+  margin-top: 2px;
+  padding-top: 6px;
+}
+
+/* 买入/卖出小圆点标识 */
+.wh-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.wh-dot--buy {
+  background: rgba(100, 180, 255, 0.75);
+  box-shadow: 0 0 6px rgba(100, 180, 255, 0.5);
+}
+.wh-dot--sell {
+  background: rgba(240, 195, 109, 0.75);
+  box-shadow: 0 0 6px rgba(240, 195, 109, 0.5);
+}
+
+/* 开关 */
+.wh-switch {
+  position: relative;
+  width: 38px;
+  height: 20px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.06);
+  padding: 0;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.wh-switch-knob {
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--ink-300);
+  transform: translateY(-50%);
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
+.wh-switch.is-on {
+  background: rgba(100, 200, 120, 0.35);
+  border-color: rgba(100, 200, 120, 0.6);
+}
+.wh-switch.is-on .wh-switch-knob {
+  left: calc(100% - 16px);
+  background: #84e0a2;
+  box-shadow: 0 0 8px rgba(100, 200, 120, 0.6);
+}
+
 .wh-toast {
   position: fixed;
   left: 50%;

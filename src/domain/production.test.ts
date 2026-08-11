@@ -32,6 +32,8 @@ function makeDisciple(id: string, name: string, spiritRhythm: number) {
   d.name = name;
   d.hiddenTalents = { ...d.hiddenTalents, spiritRhythm };
   d.assignedBuilding = 'pill-1';
+  d.contributionPoints = 100; // 充足贡献用于自动兑换原材料，但不足以触发弟子AI兑换突破丹（需225）
+  d.realmProgress = 0; // 避免触发"即将突破"判定导致自动兑换产出的丹药
   return d;
 }
 

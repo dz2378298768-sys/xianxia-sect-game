@@ -69,6 +69,96 @@ function getSpiritRootQualityClass(quality: number): string {
   return 'text-gray-300';
 }
 
+// 弟子综合天赋评级（用于候选卡边框颜色）
+// 综合考虑：灵根最高品质 / 四大天赋平均 / 单项极值 三者加权
+export type TalentTier = 'fodder' | 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic';
+
+export function evaluateDiscipleTalentTier(t: {
+  rootBone: number; spiritRhythm: number; constitution: number; daoFate: number;
+  spiritRoots?: { quality: number }[] | null;
+}): { tier: TalentTier; score: number } {
+  const maxAttr = Math.max(t.rootBone, t.spiritRhythm, t.constitution, t.daoFate);
+  const avgAttr = (t.rootBone + t.spiritRhythm + t.constitution + t.daoFate) / 4;
+  const maxRootQuality =
+    t.spiritRoots && t.spiritRoots.length > 0
+      ? t.spiritRoots.reduce((m, r) => Math.max(m, r.quality), 0)
+      : 50; // 无灵根按普通凡根算
+  // 加权得分：灵根品质 40% + 平均 35% + 单项极值 25%
+  const score = Math.round(maxRootQuality * 0.4 + avgAttr * 0.35 + maxAttr * 0.25);
+  let tier: TalentTier = 'common';
+  if (score >= 96) tier = 'mythic';
+  else if (score >= 88) tier = 'legendary';
+  else if (score >= 76) tier = 'epic';
+  else if (score >= 64) tier = 'rare';
+  else if (score >= 52) tier = 'uncommon';
+  else if (score >= 40) tier = 'common';
+  else tier = 'fodder';
+  return { tier, score };
+}
+
+export function getTalentTierLabel(tier: TalentTier): string {
+  switch (tier) {
+    case 'mythic': return '仙苗';
+    case 'legendary': return '绝世';
+    case 'epic': return '天骄';
+    case 'rare': return '英才';
+    case 'uncommon': return '良好';
+    case 'common': return '平庸';
+    case 'fodder': return '凡俗';
+  }
+}
+
+// 候选卡边框 + 标签样式：不同天赋等级不同颜色
+export function getTalentCardClasses(tier: TalentTier): {
+  cardBorder: string; cardRing: string; tag: string;
+} {
+  switch (tier) {
+    case 'mythic':
+      return {
+        cardBorder: 'border-fuchsia-400 shadow-[0_0_12px_rgba(232,121,249,0.45)]',
+        cardRing: 'ring-2 ring-fuchsia-300/60',
+        tag: 'bg-fuchsia-500/20 text-fuchsia-100 border border-fuchsia-300/40',
+      };
+    case 'legendary':
+      return {
+        cardBorder: 'border-yellow-300 shadow-[0_0_10px_rgba(250,204,21,0.45)]',
+        cardRing: 'ring-2 ring-yellow-200/50',
+        tag: 'bg-yellow-500/20 text-yellow-100 border border-yellow-300/50',
+      };
+    case 'epic':
+      return {
+        cardBorder: 'border-violet-300 shadow-[0_0_8px_rgba(167,139,250,0.4)]',
+        cardRing: 'ring-2 ring-violet-300/40',
+        tag: 'bg-violet-500/20 text-violet-100 border border-violet-300/40',
+      };
+    case 'rare':
+      return {
+        cardBorder: 'border-sky-300 shadow-[0_0_6px_rgba(125,211,252,0.35)]',
+        cardRing: 'ring-2 ring-sky-300/30',
+        tag: 'bg-sky-500/20 text-sky-100 border border-sky-300/40',
+      };
+    case 'uncommon':
+      return {
+        cardBorder: 'border-emerald-300/70',
+        cardRing: '',
+        tag: 'bg-emerald-500/15 text-emerald-200 border border-emerald-300/30',
+      };
+    case 'fodder':
+      return {
+        cardBorder: 'border-zinc-500/40',
+        cardRing: '',
+        tag: 'bg-zinc-500/15 text-zinc-300 border border-zinc-400/30',
+      };
+    case 'common':
+    default:
+      return {
+        cardBorder: 'border-sect-gold/20',
+        cardRing: '',
+        tag: 'bg-sect-ink-light/40 text-sect-jade/80 border border-sect-gold/15',
+      };
+  }
+}
+
 function getBaseCultivationSpeed(disciple: any): number {
   const totalBonus = disciple.buffs
     .filter((b: any) => b.type === 'cultivation')
@@ -88,9 +178,10 @@ function getBaseCultivationSpeed(disciple: any): number {
 
 export const DisciplesPanel: React.FC = () => {
   const {
-    disciples, recruitDisciple, recruitCandidates, recruitCostPerDisciple, recruitConfirmDisciple,
-    clearRecruitCandidates, spiritStones, getBuildingById, followedDiscipleIds, toggleFollowDisciple,
-    canPromoteDisciple, promoteDisciple, kickDisciple, contributionLogs,
+    disciples, recruitDisciple, recruitCandidates, recruitCostPerDisciple, recruitRefreshCost,
+    recruitConfirmDisciple, clearRecruitCandidates, spiritStones, getBuildingById,
+    followedDiscipleIds, toggleFollowDisciple, canPromoteDisciple, promoteDisciple, kickDisciple,
+    contributionLogs,
   } = useGameStore();
   const { selectedDiscipleId, setSelectedDiscipleId } = useUIStore();
   const [statusFilter, setStatusFilter] = useState<DiscipleStatus | 'all'>('all');
@@ -144,12 +235,17 @@ export const DisciplesPanel: React.FC = () => {
   const canRecruit = spiritStones >= recruitCostPerDisciple;
 
   const handleRecruit = () => {
-    // 有候选就直接打开，否则先 recruitDisciple 生成候选
+    // 有候选就直接打开（候选已在上次生成时扣费，直接查看不重复扣）；否则调用 recruitDisciple 生成候选并扣 50
     if (recruitCandidates.length > 0) {
       setShowRecruitModal(true);
       return;
     }
-    const { candidates, costPerDisciple } = recruitDisciple();
+    if (spiritStones < recruitCostPerDisciple) {
+      setRecruitResultMsg(`灵石不足（生成候选人需 ${recruitCostPerDisciple} 灵石）`);
+      setTimeout(() => setRecruitResultMsg(null), 2500);
+      return;
+    }
+    const { candidates } = recruitDisciple();
     if (candidates && candidates.length > 0) {
       setShowRecruitModal(true);
     } else {
@@ -1288,7 +1384,7 @@ export const DisciplesPanel: React.FC = () => {
               <SectIcon name="disciple" size={14} strokeWidth={1.8} />
               <span className="font-display text-sm text-gold-gradient">招募候选人</span>
               <span className="text-[10px] text-sect-jade/60 ml-1">
-                每人 {recruitCostPerDisciple} 灵石 · 当前灵石 {Math.floor(spiritStones)}
+                生成/刷新候选 {recruitRefreshCost} 灵石 · 招入免费 · 当前灵石 {Math.floor(spiritStones)}
               </span>
               <button
                 className="ml-auto text-sect-jade/60 hover:text-sect-gold transition-colors"
@@ -1301,6 +1397,12 @@ export const DisciplesPanel: React.FC = () => {
               </button>
             </div>
             <div className="p-3 overflow-y-auto" style={{ maxHeight: 'calc(90vh - 40px)' }}>
+              {/* 结果提示 */}
+              {recruitResultMsg && (
+                <div className="mb-2 text-center text-[12px] text-rose-300 bg-rose-500/10 border border-rose-400/30 rounded px-2 py-1">
+                  {recruitResultMsg}
+                </div>
+              )}
               {recruitCandidates.length === 0 ? (
                 <div className="text-sect-jade/50 italic text-sm py-8 text-center">没有候选人</div>
               ) : (
@@ -1308,12 +1410,22 @@ export const DisciplesPanel: React.FC = () => {
                   {recruitCandidates.map((c, i) => {
                     const t = c.hiddenTalents;
                     const maxAttr = Math.max(t.rootBone, t.spiritRhythm, t.constitution, t.daoFate);
+                    const { tier, score } = evaluateDiscipleTalentTier(t);
+                    const cls = getTalentCardClasses(tier);
                     return (
-                      <div key={i} className="p-2 rounded bg-sect-ink-light/30 border border-sect-gold/20 flex flex-col gap-1.5">
+                      <div
+                        key={i}
+                        className={`p-2 rounded bg-sect-ink-light/30 flex flex-col gap-1.5 border-2 transition-all ${cls.cardBorder} ${cls.cardRing}`}
+                      >
                         <div className="flex items-center gap-2">
                           <DiscipleAvatar seed={c.avatarSeed || 0} size={40} status={c.status} realm={c.realm} />
                           <div className="min-w-0 flex-1">
-                            <div className="font-display text-sm text-sect-gold truncate">{c.name}</div>
+                            <div className="flex items-center gap-1">
+                              <div className="font-display text-sm text-sect-gold truncate">{c.name}</div>
+                              <span className={`text-[9px] px-1.5 py-0.5 rounded shrink-0 ${cls.tag}`}>
+                                {getTalentTierLabel(tier)}·{score}
+                              </span>
+                            </div>
                             <div className="text-[10px] text-sect-jade/60 flex items-center gap-1">
                               {getRealmDisplay({ realm: c.realm, realmStage: c.realmStage })}
                               {maxAttr >= 85 && (
@@ -1341,7 +1453,6 @@ export const DisciplesPanel: React.FC = () => {
                           <Button
                             size="sm"
                             variant="outline"
-                            disabled={spiritStones < recruitCostPerDisciple}
                             onClick={() => {
                               const res = recruitConfirmDisciple(c);
                               if (res && !res.ok) {
@@ -1350,7 +1461,7 @@ export const DisciplesPanel: React.FC = () => {
                               }
                             }}
                           >
-                            招入 ({recruitCostPerDisciple})
+                            招入（免费）
                           </Button>
                         </div>
                       </div>
@@ -1363,11 +1474,17 @@ export const DisciplesPanel: React.FC = () => {
                   size="sm"
                   variant="ghost"
                   onClick={() => {
-                    recruitDisciple();  // 重新生成一轮候选人
+                    if (spiritStones < recruitRefreshCost) {
+                      setRecruitResultMsg(`灵石不足（换一批需 ${recruitRefreshCost} 灵石）`);
+                      setTimeout(() => setRecruitResultMsg(null), 2000);
+                      return;
+                    }
+                    recruitDisciple({ refresh: true });  // 重新生成一轮候选人，并扣 50 灵石
                   }}
-                  disabled={spiritStones < recruitCostPerDisciple}
+                  disabled={spiritStones < recruitRefreshCost}
+                  title={`换一批（${recruitRefreshCost} 灵石）`}
                 >
-                  <UserPlus size={12} className="mr-1" /> 换一批
+                  <UserPlus size={12} className="mr-1" /> 换一批 ({recruitRefreshCost})
                 </Button>
                 <Button
                   size="sm"

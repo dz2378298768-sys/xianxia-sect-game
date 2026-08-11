@@ -652,11 +652,51 @@ export const IconPlay: React.FC<IconProps> = ({ size = 24, className = '', strok
   </svg>
 );
 
+// 商店：摊位 + 布帘
+export const IconShop: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <path d="M3 10 L21 10" />
+    <path d="M4 10 L5 20 L19 20 L20 10" />
+    <path d="M3 10 Q12 4 21 10" />
+    <path d="M8 20 L8 14 M12 20 L12 14 M16 20 L16 14" />
+  </svg>
+);
+
+// 加号
+export const IconPlus: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 2.2 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <path d="M12 5 L12 19" />
+    <path d="M5 12 L19 12" />
+  </svg>
+);
+
+// 减号
+export const IconMinus: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 2.2 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <path d="M5 12 L19 12" />
+  </svg>
+);
+
+// 上三角（折叠展开：收起方向）
+export const IconChevronUp: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 2 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <path d="M6 15 L12 9 L18 15" />
+  </svg>
+);
+
+// 下三角（折叠展开：展开方向）
+export const IconChevronDown: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 2 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <path d="M6 9 L12 15 L18 9" />
+  </svg>
+);
+
 export type IconName =
   | 'mountain' | 'building' | 'disciple' | 'cultivate' | 'warehouse'
   | 'battle' | 'world' | 'nextMonth' | 'scroll' | 'talisman'
   | 'close' | 'arrowRight' | 'back' | 'eye' | 'gear'
   | 'gift' | 'play'
+  | 'shop' | 'plus' | 'minus' | 'chevronUp' | 'chevronDown'
   | 'gem' | 'crystal' | 'pill' | 'book' | 'bulb'
   | 'warning' | 'herb' | 'lantern' | 'balance' | 'trophy'
   | 'chart' | 'trendUp' | 'trendDown' | 'yinyang' | 'mobile'
@@ -716,6 +756,11 @@ const ICON_MAP: Record<IconName, React.FC<IconProps>> = {
   sword: IconSword,
   gift: IconGift,
   play: IconPlay,
+  shop: IconShop,
+  plus: IconPlus,
+  minus: IconMinus,
+  chevronUp: IconChevronUp,
+  chevronDown: IconChevronDown,
   // 丹药
   pillFoundation: IconPillFoundation,
   pillGolden: IconPillGolden,

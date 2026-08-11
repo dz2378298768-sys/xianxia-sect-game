@@ -31,7 +31,7 @@ export const BEAST_CONFIGS: Record<BeastType, Beast> = {
   jade_rabbit: {
     type: 'jade_rabbit',
     name: '玉兔',
-    description: '月宫玉兔，灵药伴生，可延寿增元。',
+    description: '月宫玉兔，灵药伴生，装备后+50年寿命。',
     tier: 3,
     combatPowerBonus: 25,
     lifespanBonus: 50,

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useGameStore } from '@/store/gameStore';
 import { useUIStore } from '@/store/uiStore';
 import { DiscipleStatusNames, getRealmDisplay } from '@/types/disciple';
-import type { DiscipleStatus } from '@/types/disciple';
+import type { DiscipleStatus, DiscipleBackpackItem } from '@/types/disciple';
 import { getStageBreakthroughRequired, calculateDiscipleCombatPower } from '@/utils/gameLogic';
 import { getRootBoneEffectiveness } from '@/data/buildings';
 import { SectIcon } from '@/components/icons/SectIcons';
@@ -10,7 +10,8 @@ import { DiscipleAvatar } from '@/components/ui/Avatar';
 import { ArtifactTypeNames } from '@/types/artifact';
 import { TalismanTypeNames } from '@/types/talisman';
 import { BeastTypeNames } from '@/types/beast';
-import { Sword, ChevronUp, History, BookOpen, Sparkles, Trophy, LogOut } from 'lucide-react';
+import { PillTypeNames } from '@/types/pill';
+import { Sword, ChevronUp, History, BookOpen, Sparkles, Trophy, LogOut, Backpack } from 'lucide-react';
 import type { ContributionLogType } from '@/types/game';
 import { CONSTITUTIONS, RARITY_COLORS, RARITY_NAMES } from '@/data/constitutions';
 import { Badge } from '@/components/ui/Badge';
@@ -20,10 +21,12 @@ export const DiscipleDetailModal: React.FC = () => {
   const { selectedDiscipleId, setSelectedDiscipleId } = useUIStore();
   const {
     disciples, equipItem, unequipItem, artifactInventory, talismanInventory, beastInventory,
-    contributionLogs, canPromoteDisciple, promoteDisciple, kickDisciple,
+    pillInventory, contributionLogs, canPromoteDisciple, promoteDisciple, kickDisciple,
+    giveItemToDisciple, takeItemFromDisciple,
   } = useGameStore();
   const disciple = disciples.find(d => d.id === selectedDiscipleId);
   const [kickConfirm, setKickConfirm] = useState(false);
+  const [giveKind, setGiveKind] = useState<'pill' | 'artifact' | 'talisman' | 'beast'>('pill');
 
   // 贡献流水类型 → 中文名称 + 颜色
   const LogTypeMeta: Record<ContributionLogType, { name: string; color: string }> = {
@@ -330,6 +333,111 @@ export const DiscipleDetailModal: React.FC = () => {
                   </select>
                 )}
               </div>
+            </div>
+          </div>
+
+          {/* 弟子背包 */}
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded p-2 mt-2">
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <Backpack size={12} className="text-amber-300" />
+              <span className="font-display text-amber-300 text-xs">弟子背包</span>
+              <span className="text-[9px] text-sect-jade/50">
+                （{disciple.backpack?.reduce((s, b) => s + b.quantity, 0) || 0} 件）
+              </span>
+            </div>
+
+            {/* 背包物品列表 */}
+            {disciple.backpack && disciple.backpack.length > 0 ? (
+              <div className="space-y-1 mb-2">
+                {disciple.backpack.map((bp: DiscipleBackpackItem, i: number) => {
+                  // 原材料使用特殊存储格式：kind='artifact'，itemType 前缀为 "material:"
+                  const isMaterial = bp.kind === 'artifact' && String(bp.itemType).startsWith('material:');
+                  const materialRealName = isMaterial ? String(bp.itemType).slice('material:'.length) : '';
+                  let itemName: string;
+                  let kindLabel: string;
+                  let kindColor: string;
+                  if (isMaterial) {
+                    itemName = materialRealName;
+                    kindLabel = '材';
+                    kindColor = 'text-emerald-300';
+                  } else {
+                    itemName =
+                      bp.kind === 'pill' ? (PillTypeNames as any)[bp.itemType] :
+                      bp.kind === 'artifact' ? (ArtifactTypeNames as any)[bp.itemType] :
+                      bp.kind === 'talisman' ? (TalismanTypeNames as any)[bp.itemType] :
+                      (BeastTypeNames as any)[bp.itemType];
+                    kindLabel =
+                      bp.kind === 'pill' ? '丹' : bp.kind === 'artifact' ? '器' : bp.kind === 'talisman' ? '符' : '兽';
+                    kindColor =
+                      bp.kind === 'pill' ? 'text-green-300' :
+                      bp.kind === 'artifact' ? 'text-purple-300' :
+                      bp.kind === 'talisman' ? 'text-cyan-300' : 'text-orange-300';
+                  }
+                  return (
+                    <div key={i} className="flex items-center justify-between px-1.5 py-1 rounded bg-sect-ink/40 border border-amber-500/10">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className={`text-[9px] px-1 py-0.5 rounded bg-sect-ink/60 ${kindColor} shrink-0`}>{kindLabel}</span>
+                        <span className="text-[11px] text-sect-gold truncate">{itemName}</span>
+                        <span className="text-[10px] text-sect-jade/60 shrink-0">×{bp.quantity}</span>
+                      </div>
+                      <button
+                        className="text-[9px] px-1.5 py-0.5 rounded border border-amber-500/30 text-amber-300 hover:bg-amber-500/15 transition-colors shrink-0"
+                        onClick={() => takeItemFromDisciple(disciple.id, bp.kind, bp.itemType, 1)}
+                        title="取回 1 件到宗门仓库"
+                      >
+                        取回
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-[10px] text-sect-jade/30 italic mb-2">背包空空如也</div>
+            )}
+
+            {/* 给予物品：从宗门仓库选择物品放入弟子背包 */}
+            <div className="border-t border-amber-500/15 pt-1.5">
+              <div className="flex items-center gap-1 mb-1">
+                <span className="text-[9px] text-sect-jade/50">给予物品</span>
+                <div className="flex gap-0.5 ml-auto">
+                  {(['pill', 'artifact', 'talisman', 'beast'] as const).map(k => (
+                    <button
+                      key={k}
+                      className={`text-[9px] px-1.5 py-0.5 rounded border transition-colors ${
+                        giveKind === k
+                          ? 'border-amber-400/50 bg-amber-500/15 text-amber-300'
+                          : 'border-sect-jade/15 text-sect-jade/40 hover:text-sect-jade/70'
+                      }`}
+                      onClick={() => setGiveKind(k)}
+                    >
+                      {k === 'pill' ? '丹药' : k === 'artifact' ? '法器' : k === 'talisman' ? '符箓' : '灵兽'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <select
+                className="w-full bg-[rgba(13,17,23,0.6)] border border-amber-500/20 rounded px-1.5 py-1 text-[10px] text-sect-jade"
+                value=""
+                onChange={e => {
+                  if (e.target.value) {
+                    giveItemToDisciple(disciple.id, giveKind, e.target.value, 1);
+                  }
+                }}
+              >
+                <option value="">— 选择物品给予 —</option>
+                {giveKind === 'pill' && pillInventory.filter(i => i.quantity > 0).map(i => (
+                  <option key={i.type} value={i.type}>{PillTypeNames[i.type as keyof typeof PillTypeNames]} ×{i.quantity}</option>
+                ))}
+                {giveKind === 'artifact' && artifactInventory.filter(i => i.quantity > 0).map(i => (
+                  <option key={i.type} value={i.type}>{ArtifactTypeNames[i.type]} ×{i.quantity}</option>
+                ))}
+                {giveKind === 'talisman' && talismanInventory.filter(i => i.quantity > 0).map(i => (
+                  <option key={i.type} value={i.type}>{TalismanTypeNames[i.type]} ×{i.quantity}</option>
+                ))}
+                {giveKind === 'beast' && beastInventory.filter(i => i.quantity > 0).map(i => (
+                  <option key={i.type} value={i.type}>{BeastTypeNames[i.type]} ×{i.quantity}</option>
+                ))}
+              </select>
             </div>
           </div>
 

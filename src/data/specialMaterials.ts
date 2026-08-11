@@ -22,21 +22,21 @@ export const SPECIAL_MATERIALS: SpecialMaterialConfig[] = [
   { name: '灵晶', description: '凝结天地灵气的晶石，炼制聚气丹所需', price: 120, rarity: 'uncommon', iconName: 'gem', source: '秘境试炼掉落' },
   { name: '玄铁粉', description: '玄铁研磨而成的细粉，炼制锻骨丹所需', price: 60, rarity: 'common', iconName: 'crystal', source: '商店购买/秘境' },
   // —— 法器专用 ——
-  { name: '龟甲', description: '千年玄龟的甲壳，坚硬异常，炼制玄龟盾所需', price: 90, rarity: 'uncommon', iconName: 'crystal', source: '妖物试炼掉落' },
-  { name: '火晶石', description: '蕴含烈焰之力的矿石，炼制赤焰刀所需', price: 150, rarity: 'rare', iconName: 'crystal', source: '秘境试炼掉落' },
-  { name: '精钢', description: '百炼成钢的优质金属，炼制赤焰刀所需', price: 50, rarity: 'common', iconName: 'crystal', source: '商店购买/妖物' },
+  { name: '龟甲', description: '千年玄龟的甲壳，坚硬异常，炼制玄龟盾所需', price: 90, rarity: 'uncommon', iconName: 'crystal', source: '妖物/秘境试炼掉落' },
+  { name: '火晶石', description: '蕴含烈焰之力的矿石，炼制赤焰刀所需', price: 150, rarity: 'rare', iconName: 'crystal', source: '妖物/秘境试炼掉落' },
+  { name: '精钢', description: '百炼成钢的优质金属，炼制赤焰刀所需', price: 50, rarity: 'common', iconName: 'crystal', source: '商店购买/妖物/秘境试炼' },
   { name: '灵玉', description: '温润灵秀的玉石，炼制聚灵瓶/八卦玄光镜所需', price: 180, rarity: 'rare', iconName: 'gem', source: '秘境试炼掉落' },
   { name: '灵液', description: '灵泉凝练的液态灵气，炼制聚灵瓶所需', price: 100, rarity: 'uncommon', iconName: 'steam', source: '秘境试炼掉落' },
   { name: '空冥石', description: '蕴含空间之力的奇石，炼制须弥戒/传送符所需', price: 300, rarity: 'epic', iconName: 'crystal', source: '秘境试炼掉落' },
   { name: '万年玄冰', description: '万载不化的玄冰，炼制须弥戒所需', price: 250, rarity: 'epic', iconName: 'crystal', source: '秘境试炼掉落' },
-  { name: '雷泽石', description: '雷泽中诞生的雷属性矿石，炼制九霄雷珠/惊雷符所需', price: 200, rarity: 'rare', iconName: 'crystal', source: '秘境试炼掉落' },
-  { name: '镜砂', description: '可反光的特殊砂矿，炼制八卦玄光镜所需', price: 120, rarity: 'uncommon', iconName: 'crystal', source: '商店购买/秘境' },
+  { name: '雷泽石', description: '雷泽中诞生的雷属性矿石，炼制九霄雷珠/惊雷符所需', price: 200, rarity: 'rare', iconName: 'crystal', source: '妖物/秘境试炼掉落' },
+  { name: '镜砂', description: '可反光的特殊砂矿，炼制八卦玄光镜所需', price: 120, rarity: 'uncommon', iconName: 'crystal', source: '商店购买/秘境试炼' },
   { name: '七宝砂', description: '七种灵材熔炼而成的神砂，炼制七宝镇妖塔所需', price: 500, rarity: 'epic', iconName: 'gem', source: '秘境试炼掉落' },
   { name: '万年玄铁', description: '万年地火淬炼的玄铁，炼制七宝镇妖塔所需', price: 400, rarity: 'epic', iconName: 'crystal', source: '秘境试炼掉落' },
   // —— 符箓专用 ——
   { name: '冰晶', description: '极寒之地的冰之结晶，炼制寒冰符所需', price: 70, rarity: 'uncommon', iconName: 'crystal', source: '商店购买/秘境' },
   { name: '隐灵草', description: '可隐匿气息的灵草，炼制隐身符所需', price: 90, rarity: 'uncommon', iconName: 'herb', source: '秘境试炼掉落' },
-  { name: '朱砂', description: '镇邪驱煞的红色矿石，炼制镇宅符所需', price: 40, rarity: 'common', iconName: 'crystal', source: '商店购买/妖物' },
+  { name: '朱砂', description: '镇邪驱煞的红色矿石，炼制镇宅符所需', price: 40, rarity: 'common', iconName: 'crystal', source: '商店购买/妖物/秘境试炼' },
   { name: '剑意草', description: '蕴含剑意的灵草，炼制剑气符所需', price: 110, rarity: 'rare', iconName: 'herb', source: '秘境试炼掉落' },
   { name: '风灵羽', description: '风灵鸟的羽毛，炼制神行符所需', price: 130, rarity: 'rare', iconName: 'scrollText', source: '秘境试炼掉落' },
 ];
@@ -54,6 +54,31 @@ export function isSpecialMaterial(name: string): boolean {
 /** 获取特殊材料商店售价（未知材料返回 0） */
 export function getSpecialMaterialPrice(name: string): number {
   return SPECIAL_MATERIAL_MAP[name]?.price ?? 0;
+}
+
+// ===== 原材料贡献兑换价表 =====
+// 基础材料固定贡献价；特殊材料 = floor(商店灵石价 × 0.5)
+// 弟子每月自动从宗门仓库兑换原材料用于炼制，贡献值自动扣除。
+export const BASIC_MATERIAL_CONTRIBUTION: Record<string, number> = {
+  '灵草': 5,
+  '玄铁': 8,
+  '灵纸': 4,
+  '灵铁': 8,
+  '矿石': 8,
+  '符纸': 4,
+};
+
+/** 获取原材料贡献兑换价（每件） */
+export function getMaterialContributionCost(name: string): number {
+  if (name in BASIC_MATERIAL_CONTRIBUTION) return BASIC_MATERIAL_CONTRIBUTION[name];
+  const mat = SPECIAL_MATERIAL_MAP[name];
+  if (mat) return Math.floor(mat.price * 0.5);
+  return 10; // 未知材料兜底
+}
+
+/** 计算一组配方材料的总贡献值（每件成品所需原材料的贡献总和） */
+export function calcRecipeMaterialContribution(materials: { name: string; amount: number }[]): number {
+  return materials.reduce((sum, m) => sum + getMaterialContributionCost(m.name) * m.amount, 0);
 }
 
 /** 稀有度展示标签 */

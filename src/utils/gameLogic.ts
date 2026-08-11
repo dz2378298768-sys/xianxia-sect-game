@@ -746,7 +746,7 @@ export function canAttemptBreakthrough(disciple: Disciple): boolean {
   return true;
 }
 
-export function attemptBreakthrough(disciple: Disciple, hasPill: boolean = false): {
+export function attemptBreakthrough(disciple: Disciple, hasPill: boolean = false, pillBonus: number = 0): {
   success: boolean;
   newRealm: Realm;
   newStage: RealmStage;
@@ -776,9 +776,9 @@ export function attemptBreakthrough(disciple: Disciple, hasPill: boolean = false
   successRate += disciple.breakthroughAttempts * breakthroughData.failureBonus;
   successRate += disciple.breakthroughBonus;
 
-  // 丹药仅在跨境界突破时生效
+  // 丹药仅在跨境界突破时生效，使用丹药配置中的 breakthroughBonus
   if (hasPill && isRealmAdvance) {
-    successRate += breakthroughData.pillBonus;
+    successRate += pillBonus > 0 ? pillBonus : breakthroughData.pillBonus;
   }
 
   const talentBonus = (disciple.hiddenTalents.rootBone - 50) * 0.2;

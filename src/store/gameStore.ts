@@ -20,7 +20,7 @@ import {
   SectLevelNames, SectLevelRequirementsMap, SectLevelOrder,
   SectLevelDiscipleCap, SectLevelReputationCap, ReputationGrowthConfig,
 } from '@/types/game';
-import type { Trial, ContributionLog, ContributionLogType, SectHistoryEntry } from '@/types/game';
+import type { Trial, ContributionLog, ContributionLogType, SectHistoryEntry, AutoTradeRule } from '@/types/game';
 import {
   createInitialDisciple, createInitialBuildings, getDefaultPromotionRules, autoAssignBuilding,
   autoAssignResidence, getResidenceUpgradeCost, getResidenceCapacityByLevel, getCaveMansionUpgradeCost,
@@ -38,6 +38,7 @@ import {
   processMonthlyLearning,
   canAttemptBreakthrough,
   attemptBreakthrough,
+  getStageBreakthroughRequired,
   generateMonthlyReport,
   createNotification,
   createDeducingBook,
@@ -59,6 +60,7 @@ import {
 } from '@/utils/saveSlots';
 import { SHOP_ITEMS } from '@/data/shop';
 import type { ShopItem } from '@/types/shop';
+import { calcRecipeMaterialContribution, getMaterialContributionCost } from '@/data/specialMaterials';
 import { PILL_CONFIGS } from '@/data/pills';
 import { ARTIFACT_CONFIGS } from '@/data/artifacts';
 import { TALISMAN_CONFIGS } from '@/data/talismans';
@@ -105,6 +107,7 @@ interface GameState {
   libraryCosts: Record<BookTier, number>; // 每层藏经阁学习消耗贡献点
   otherSects: OtherSect[]; // 天下其他宗门
   trials: Trial[]; // 试炼任务列表（每年刷新）
+  autoTrialEnabled: boolean; // 是否每月自动派遣空闲弟子执行可完成的试炼
   followedDiscipleIds: string[]; // 关注的弟子ID列表
   // 大比系统
   sectTournamentConfig: TournamentConfig;        // 山门大比配置（三频率独立）
@@ -116,8 +119,13 @@ interface GameState {
   spiritStoneHistory: { year: number; month: number; spiritStones: number; netIncome: number }[]; // 近24月灵石收支历史
   autoAppointElder: boolean; // 是否每月自动任命符合条件核心弟子为长老
   recruitCandidates: Disciple[];           // 招收弟子候选列表（一次招 3~5 人让玩家挑）
-  recruitCostPerDisciple: number;          // 每个候选人的招收费用（统一费用）
+  recruitCostPerDisciple: number;          // 每个候选人的招收费用（统一费用，固定 50 灵石）
+  recruitRefreshCost: number;              // 「换一批」刷新候选列表的费用（固定 50 灵石）
   clearRecruitCandidates: () => void;      // 清空候选
+  // 仓库快捷交易 & 自动交易：按 ShopItem.id 存规则（键对应 SHOP_ITEMS[i].id）
+  autoTrade: Record<string, AutoTradeRule>;
+  setAutoTradeRule: (shopItemId: string, rule: Partial<AutoTradeRule>) => void;  // 设置/覆盖某物品的自动交易规则
+  toggleAutoTrade: (shopItemId: string, enabled: boolean) => void;               // 某物品启用/停用自动交易
   nextMonth: () => void;
   dismissReport: () => void;
   dismissVictory: () => void;
@@ -135,7 +143,7 @@ interface GameState {
   upgradeBuilding: (buildingId: string) => boolean;
   downgradeBuilding: (buildingId: string) => { success: boolean; refundSpiritStones: number; refundReputation: number; reason?: string };
   toggleBuilding: (buildingId: string) => void;
-  recruitDisciple: () => { candidates: Disciple[]; costPerDisciple: number };  // 返回候选列表
+  recruitDisciple: (opts?: { refresh?: boolean }) => { candidates: Disciple[]; costPerDisciple: number };  // 返回候选列表；refresh=true 会扣 50 灵石的换一批费用
   recruitConfirmDisciple: (candidate: Disciple) => { ok: boolean; reason?: string };  // 确认招收一名候选弟子
   kickDisciple: (discipleId: string) => { ok: boolean; reason?: string };  // 驱逐弟子出门
   getDiscipleById: (id: string) => Disciple | undefined;
@@ -192,10 +200,17 @@ interface GameState {
   ) => { ok: boolean; reason?: string };
   equipItem: (discipleId: string, slot: 'artifact' | 'talisman' | 'beast', type: string) => boolean;
   unequipItem: (discipleId: string, slot: 'artifact' | 'talisman' | 'beast') => void;
+  // 弟子背包：从宗门仓库转移物品到弟子背包
+  giveItemToDisciple: (discipleId: string, kind: 'pill' | 'artifact' | 'talisman' | 'beast', itemType: string, quantity?: number) => { ok: boolean; reason?: string };
+  // 弟子背包：从弟子背包取回物品到宗门仓库
+  takeItemFromDisciple: (discipleId: string, kind: 'pill' | 'artifact' | 'talisman' | 'beast', itemType: string, quantity?: number) => { ok: boolean; reason?: string };
+  // 弟子用贡献兑换原材料（基础或特殊），从宗门仓库转移到弟子背包
+  exchangeMaterialByDisciple: (discipleId: string, materialName: string, quantity: number, contributionCost: number) => { ok: boolean; reason?: string };
   // 试炼系统
   refreshTrials: () => void;  // 刷新试炼列表（按本宗战力生成）
   dispatchDiscipleToTrial: (trialId: string, discipleId: string) => { ok: boolean; reason?: string };  // 派遣弟子执行试炼
   cancelTrial: (trialId: string) => void;  // 取消试炼（弟子返回，无奖励）
+  toggleAutoTrial: () => void;  // 切换自动试炼开关
   // 外交系统优化
   giftSpiritStonesToSect: (sectId: string, amount: number) => { ok: boolean; reason?: string };  // 赠送灵石加好感
   insultSect: (sectId: string) => void;  // 侮辱减好感
@@ -254,19 +269,25 @@ interface ProductionResult {
   pillType?: PillType; artifactType?: ArtifactType; talismanType?: TalismanType;
   quantity: number; herbsConsumed: number; ironConsumed: number; paperConsumed: number;
   specialConsumed: Record<string, number>; // 消耗的特殊材料 { 寿元花: 5, ... }
+  contributionCost: number;   // 本次生产消耗的原材料贡献总值
+  discipleIds: string[];      // 分摊贡献的弟子 ID 列表
+  skippedReason?: string;     // 跳过原因（贡献不足等）
 }
 function produceWorkBuilding(
   building: Building,
   state: GameState,
   mats: { herbs: number; iron: number; paper: number },
   specialMats: Record<string, number>, // 当前特殊材料库存（会被就地扣减）
+  assignedDisciples: Disciple[],      // 该建筑在岗弟子（用于贡献扣减）
 ): ProductionResult[] {
   const targets = building.productionTargets?.filter(t => t && (t.pillType || t.artifactType || t.talismanType)) || [];
   if (targets.length === 0) return [];
 
   const results: ProductionResult[] = [];
   // 工人按槽位数均分（至少1人/槽）
-  const perSlotWorkers = Math.max(1, Math.floor(building.assignedDisciples.length / targets.length));
+  const perSlotWorkers = Math.max(1, Math.floor(assignedDisciples.length / targets.length));
+  // 按槽位分配弟子（顺序取 perSlotWorkers 个）
+  let discipleOffset = 0;
 
   // 基础材料名归类：丹堂=灵草，炼器堂=玄铁/灵铁/矿石，符堂=灵纸/符纸
   const isHerbName = (n: string) => n === '灵草';
@@ -281,15 +302,15 @@ function produceWorkBuilding(
     if (building.type === 'pill_hall' && target.pillType) {
       if (!state.unlockedPillRecipes.includes(target.pillType)) continue;
       recipe = PILL_CONFIGS[target.pillType] ?? null;
-      productionCap = perSlotWorkers;
+      productionCap = Math.max(1, Math.floor(perSlotWorkers / 2)); // 丹药每2工人产1件
     } else if (building.type === 'sutra_hall' && target.artifactType) {
       if (!state.unlockedArtifactRecipes.includes(target.artifactType)) continue;
       recipe = ARTIFACT_CONFIGS[target.artifactType] ?? null;
-      productionCap = Math.max(1, Math.floor(perSlotWorkers / 2)); // 法器耗时，每2工人产1件
+      productionCap = Math.max(1, Math.floor(perSlotWorkers / 3)); // 法器耗时，每3工人产1件
     } else if (building.type === 'artifact_hall' && target.talismanType) {
       if (!state.unlockedTalismanRecipes.includes(target.talismanType)) continue;
       recipe = TALISMAN_CONFIGS[target.talismanType] ?? null;
-      productionCap = perSlotWorkers;
+      productionCap = Math.max(1, Math.floor(perSlotWorkers / 2)); // 符箓每2工人产1件
     }
 
     if (!recipe || recipe.materials.length === 0) continue;
@@ -317,6 +338,34 @@ function produceWorkBuilding(
     }
     if (maxUnits <= 0) continue;
 
+    // ===== 弟子自动兑换原材料：计算贡献值并检查 =====
+    // 每件成品所需原材料的贡献总值
+    const perUnitContrib = calcRecipeMaterialContribution(recipe.materials);
+    const totalContrib = perUnitContrib * maxUnits;
+
+    // 分配到此槽位的弟子
+    const slotDisciples = assignedDisciples.slice(discipleOffset, discipleOffset + perSlotWorkers);
+    discipleOffset += perSlotWorkers;
+    const slotDiscipleIds = slotDisciples.map(d => d.id);
+
+    // 检查每个弟子是否有足够贡献分摊
+    const perDiscipleCost = slotDisciples.length > 0 ? Math.ceil(totalContrib / slotDisciples.length) : 0;
+    const canAfford = slotDisciples.length > 0 && slotDisciples.every(d => (d.contributionPoints || 0) >= perDiscipleCost);
+
+    if (!canAfford && perDiscipleCost > 0) {
+      // 贡献不足：跳过此目标，不消耗材料
+      const itemName = target.pillType ? PILL_CONFIGS[target.pillType]?.name
+        : target.artifactType ? ARTIFACT_CONFIGS[target.artifactType]?.name
+        : target.talismanType ? TALISMAN_CONFIGS[target.talismanType]?.name : '未知';
+      results.push({
+        pillType: target.pillType, artifactType: target.artifactType, talismanType: target.talismanType,
+        quantity: 0, herbsConsumed: 0, ironConsumed: 0, paperConsumed: 0,
+        specialConsumed: {}, contributionCost: 0, discipleIds: slotDiscipleIds,
+        skippedReason: `贡献不足（需 ${perDiscipleCost}/人）`,
+      });
+      continue;
+    }
+
     // 扣减材料并记录消耗
     let herbsConsumed = 0, ironConsumed = 0, paperConsumed = 0;
     const specialConsumed: Record<string, number> = {};
@@ -335,6 +384,8 @@ function produceWorkBuilding(
       quantity: maxUnits,
       herbsConsumed, ironConsumed, paperConsumed,
       specialConsumed,
+      contributionCost: totalContrib,
+      discipleIds: slotDiscipleIds,
     });
   }
 
@@ -437,6 +488,7 @@ const createInitialState = () => {
     },
     otherSects,
     trials: [],
+    autoTrialEnabled: false,
     followedDiscipleIds: [],
     sectTournamentConfig: getDefaultTournamentConfig('sect'),
     interSectTournamentConfig: getDefaultTournamentConfig('inter-sect'),
@@ -448,6 +500,8 @@ const createInitialState = () => {
     autoAppointElder: false,
     recruitCandidates: [],
     recruitCostPerDisciple: 50,
+    recruitRefreshCost: 50,
+    autoTrade: {},
   };
 };
 
@@ -630,9 +684,9 @@ export const useGameStore = create<GameState>()(
         let accPaper = state.paperInventory;
         // 特殊材料累加器：以当前库存为基底，按配方就地扣减
         const accSpecialMaterials: Record<string, number> = { ...state.specialMaterials };
-        const accPillInventory: PillInventory[] = state.pillInventory.map(p => ({ ...p }));
-        const accArtifactInventory: ArtifactInventory[] = state.artifactInventory.map(a => ({ ...a }));
-        const accTalismanInventory: TalismanInventory[] = state.talismanInventory.map(t => ({ ...t }));
+        let accPillInventory: PillInventory[] = state.pillInventory.map(p => ({ ...p }));
+        let accArtifactInventory: ArtifactInventory[] = state.artifactInventory.map(a => ({ ...a }));
+        let accTalismanInventory: TalismanInventory[] = state.talismanInventory.map(t => ({ ...t }));
 
         // 灵兽库存：以当前库存为基底，累加本月灵兽原产出
         let newBeastInventory: BeastInventory[] = state.beastInventory.map(b => ({ ...b }));
@@ -648,6 +702,29 @@ export const useGameStore = create<GameState>()(
             type, amount, balance, description,
           });
         };
+
+        // ===== 生产原材料贡献扣减（暂存区） =====
+        // 说明：nextMonth 前期（buildings.forEach 阶段）不能直接修改 state.disciples 的对象，
+        // 原因有二：① 时序上本月工作贡献尚未发放，直接按月初余额判定不公平；
+        //        ② 脏写 state 原对象若中途异常会污染存档。
+        // 因此在 buildings.forEach 内仅计算扣减信息并暂存，待 updatedDisciples.map
+        // 发完本月工作贡献后，在同一链路统一扣减 + 记录流水。
+        // Map<discipleId, { amount: number; description: string }[]> 每个弟子本月待扣的原材料贡献条目（多条可累加）
+        type _PendDeduct = { amount: number; description: string };
+        const pendingMatContributionDeductions = new Map<string, _PendDeduct[]>();
+        const pushPendingMatDeduct = (discipleId: string, amount: number, description: string) => {
+          if (amount <= 0) return;
+          const arr = pendingMatContributionDeductions.get(discipleId) || [];
+          arr.push({ amount, description });
+          pendingMatContributionDeductions.set(discipleId, arr);
+        };
+
+        // 预计算每个弟子本月可获得的工作贡献（用于贡献检查时"预估可支配"，避免月初0贡献直接跳过生产）
+        const projectWorkContribution = new Map<string, number>();
+        for (const d of disciples) {
+          const b = buildings.find(b0 => b0.assignedDisciples.includes(d.id)) || null;
+          projectWorkContribution.set(d.id, computeMonthlyContribution(d, b));
+        }
 
         // 提前声明后续会用到的变量（避免块级变量先用后声明）
         let currentBuildings = [...buildings];
@@ -715,9 +792,41 @@ export const useGameStore = create<GameState>()(
           spiritStoneExpense.push({ source: `${building.name}维护`, amount: maintenance });
 
           // 工作建筑按配方生产成品：消耗材料、产出丹药/法器/符箓
-          const prods = produceWorkBuilding(building, state, { herbs: accHerbs, iron: accIron, paper: accPaper }, accSpecialMaterials);
+          // 弟子自动兑换原材料：贡献值不足时跳过生产
+          const buildingDisciples = (building.assignedDisciples || [])
+            .map(id => disciples.find(d => d.id === id))
+            .filter(d => d) as Disciple[];
+          // 生产前：为在岗弟子注入"本月预估工作贡献"，使贡献检查能基于「月初余额 + 本月预计赚到的贡献」
+          // 注意：此处不直接修改 disciple 对象，仅把预估值传给 produceWorkBuilding 做判定
+          const projectedDisciples = buildingDisciples.map(d => ({
+            ...d,
+            contributionPoints: (d.contributionPoints || 0) + (projectWorkContribution.get(d.id) || 0),
+          }));
+          const prods = produceWorkBuilding(building, state, { herbs: accHerbs, iron: accIron, paper: accPaper }, accSpecialMaterials, projectedDisciples);
           for (const prod of prods) {
+            // 贡献不足跳过
+            if (prod.skippedReason) {
+              const itemName = prod.pillType ? PILL_CONFIGS[prod.pillType]?.name
+                : prod.artifactType ? ARTIFACT_CONFIGS[prod.artifactType]?.name
+                : prod.talismanType ? TALISMAN_CONFIGS[prod.talismanType]?.name : '未知';
+              newNotifications.push(createNotification(
+                'warning', '生产跳过',
+                `${building.name}·「${itemName}」因弟子${prod.skippedReason}，本月未生产`,
+                { year, month },
+              ));
+              continue;
+            }
             if (prod.quantity <= 0) continue;
+
+            // 暂存原材料贡献扣减：待本月工作贡献发放后，统一在 updatedDisciples.map 扣减
+            // （避免脏写 state.disciples 原对象，且时序更合理：先领工资再扣材料钱）
+            if (prod.contributionCost > 0 && prod.discipleIds.length > 0) {
+              const perDisciple = Math.ceil(prod.contributionCost / prod.discipleIds.length);
+              for (const did of prod.discipleIds) {
+                pushPendingMatDeduct(did, perDisciple, `自动兑换原材料（${building.name}生产）`);
+              }
+            }
+
             if (prod.pillType) {
               const existing = accPillInventory.find(p => p.type === prod.pillType);
               if (existing) existing.quantity += prod.quantity;
@@ -920,11 +1029,20 @@ export const useGameStore = create<GameState>()(
                   .filter(s => s.diplomaticStatus === 'vassal')
                   .map(s => s.name);
                 if (vassalNames.length > 0) {
-                  refreshedOtherSects = refreshedOtherSects.map(s =>
-                    s.diplomaticStatus === 'vassal'
-                      ? { ...s, diplomaticStatus: 'neutral' as const, favorability: Math.max(0, (s.favorability ?? 50) - 30) }
-                      : s,
-                  );
+                  refreshedOtherSects = refreshedOtherSects.map(s => {
+                    if (s.diplomaticStatus !== 'vassal') return s;
+                    // 附庸独立：好感-30（改基础好感），同时清空 karmaFavorApplied 重新参与每月正邪对齐
+                    const indBase =
+                      typeof s.baseFavorability === 'number' ? s.baseFavorability : (s.favorability ?? 50) - (s.karmaFavorApplied ?? 0);
+                    const newIndBase = Math.max(0, indBase - 30);
+                    return {
+                      ...s,
+                      diplomaticStatus: 'neutral' as const,
+                      baseFavorability: newIndBase,
+                      karmaFavorApplied: 0,
+                      favorability: Math.max(0, Math.min(100, newIndBase)),
+                    };
+                  });
                   const vassalLabel = vassalNames.slice(0, 3).map(n => `「${n}」`).join('、') +
                     (vassalNames.length > 3 ? `等${vassalNames.length}家` : '');
                   newNotifications.push(createNotification(
@@ -1201,6 +1319,18 @@ export const useGameStore = create<GameState>()(
             );
           }
 
+          // 发完本月工作贡献后，统一扣暂存的「自动兑换原材料」贡献
+          // （此处与生产阶段分属不同流程，避免脏写 state 原对象 + 保证时序合理）
+          const pendings = pendingMatContributionDeductions.get(d2.id);
+          if (pendings && pendings.length > 0) {
+            let bal = d2.contributionPoints;
+            for (const p of pendings) {
+              bal = Math.max(0, bal - p.amount);
+              pushContributionLog(d2.id, 'deduct', -p.amount, bal, p.description);
+            }
+            d2 = { ...d2, contributionPoints: bal };
+          }
+
           // 藏经阁推演功法：金丹期以上弟子在藏经阁工作，每月获得贡献
           if (building && building.type === 'secret_library' && building.status === 'active') {
             const realmOrder = ['mortal', 'qi', 'foundation', 'golden', 'nascent', 'spirit'];
@@ -1377,8 +1507,12 @@ export const useGameStore = create<GameState>()(
               return null;
             })();
             const hasPill = pillForBreak !== null;
+            // 从丹药配置读取实际突破加成值
+            const pillCfg = pillForBreak ? PILL_CONFIGS[pillForBreak] : null;
+            const pillBreakBonus = pillCfg?.breakthroughBonus ?? 0;
+            const pillLifespan = pillCfg?.lifespanBonus ?? 0;
 
-            const result = attemptBreakthrough(d2, hasPill);
+            const result = attemptBreakthrough(d2, hasPill, pillBreakBonus);
 
             breakthroughEvents.push({
               discipleId: d2.id,
@@ -1399,6 +1533,10 @@ export const useGameStore = create<GameState>()(
                 realmProgress: result.newProgress,
                 cultivationSpeed: recomputeCultivationSpeed(breakthroughed),
                 maxAge: realmChanged ? recomputeLifespan(breakthroughed) : d2.maxAge,
+                // 丹药延寿效果：首次服用有效
+                ...(hasPill && pillLifespan > 0 && pillCfg?.firstUseOnly
+                  ? { maxAge: (realmChanged ? recomputeLifespan(breakthroughed) : d2.maxAge) + pillLifespan }
+                  : {}),
                 breakthroughAttempts: 0,
                 breakthroughBonus: 0,
                 isBreakingThrough: false,
@@ -1672,8 +1810,11 @@ export const useGameStore = create<GameState>()(
           );
         }
         
-        // 正邪度每年自然回归中立 +1（需求：正邪度可每年1点回复）
+        // 跨年：正邪度每年自然回归中立 +1；所有互动产生的好感度 buff 也以每年 1 点向中立(50)回归
         let karmaYearlyRecover = 0;
+        // 跨年回归时：每个宗门的 baseFavorability 向 50 靠拢 ±1（已达 50 的不调整）
+        // 敌对/附庸门派不参与好感度自动回归（已是特殊关系）
+        const yearStartFavorDecay: { name: string; before: number; after: number }[] = [];
         month += 1;
         if (month > 12) {
           month = 1;
@@ -1685,7 +1826,42 @@ export const useGameStore = create<GameState>()(
               `新的一年到來，宗门正邪度悄然回归中立 +1（当前 ${Math.min(100, state.karma + 1)}）。`,
               { year, month },
             ));
-          }        }
+          }
+          // 好感度（所有互动 buff）每年 1 点向中立回归
+          refreshedOtherSects = refreshedOtherSects.map(s => {
+            if (s.diplomaticStatus === 'rival' || s.diplomaticStatus === 'vassal') return s;
+            const baseFav =
+              typeof s.baseFavorability === 'number'
+                ? s.baseFavorability
+                : (s.favorability ?? 50) - (s.karmaFavorApplied ?? 0);
+            if (baseFav === 50) return s;
+            const step = baseFav > 50 ? -1 : +1; // 向 50 靠拢
+            const newBase = baseFav + step;
+            const applied =
+              typeof s.karmaFavorApplied === 'number' ? s.karmaFavorApplied : 0;
+            const newFav = Math.max(0, Math.min(100, newBase + applied));
+            const before = s.favorability ?? 50;
+            if (Math.abs(newFav - before) > 0) {
+              yearStartFavorDecay.push({ name: s.name, before, after: newFav });
+            }
+            return {
+              ...s,
+              baseFavorability: newBase,
+              favorability: newFav,
+            };
+          });
+          if (yearStartFavorDecay.length > 0) {
+            // 若跨年变动宗门不多（<=4）逐个列出；否则只展示数量
+            const label = yearStartFavorDecay.length <= 4
+              ? yearStartFavorDecay.map(r => `「${r.name}」${r.before>r.after?'↘':'↗'}${r.before>r.after?r.before-r.after:r.after-r.before}`).join('、')
+              : `${yearStartFavorDecay.length} 家宗门`;
+            newNotifications.push(createNotification(
+              'info', '好感度淡忘',
+              `随着时间流逝，昔日恩怨渐被淡忘，${label} 的好感度悄然向中立回归 1 点。`,
+              { year, month },
+            ));
+          }
+        }
         
         const report = generateMonthlyReport(
           { year, month },
@@ -1720,17 +1896,46 @@ export const useGameStore = create<GameState>()(
         // 否则会从 state.otherSects 重新计算，把刚写入的停战期丢掉，导致停战期下月失效。
         refreshedOtherSects = refreshSectRelations(refreshedOtherSects);
 
-        // 正邪度影响好感度：低正邪度（karma<0）每月对所有非敌对宗门扣好感
-        // 规则：每 10 点负 karma 扣 5 好感度（floor 计算），即 karma=-30 → 扣 15 好感
-        // 正 karma 不额外加好感（避免正道玩家好感度滚雪球），karma>=0 时无影响
-        if (state.karma < 0) {
-          // 每 10 点负 karma 扣 5 好感（向下取整，如 -25 → floor(-25/10)*5 = -3*5 = -15）
-          const favDelta = Math.floor(state.karma / 10) * 5; // 负数
+        // 正邪度影响好感度：低正邪度（karma<0）对所有非敌对/非附庸宗门扣好感
+        // —— 总量对齐模式：每个宗门维护 karmaFavorApplied（累计已扣量，负数）
+        //    每个月只把它「对齐」到当前应扣的目标总量，diff 才作用到 favorability，
+        //    因此不会每月重复扣（不再是累计流失）。
+        // 规则：目标扣量 target = floor(karma/10) * 5  当 karma<0；目标 0  当 karma>=0
+        //       diff = target - karmaFavorApplied
+        //       例：karma 稳定在 -30，则 target=-15，首月从 0→-15（扣 15），之后 diff=0 不再扣
+        //           若 karma 从 -30 回升到 -10，target=-10，diff=+5（回升 5）
+        //           若 karma 从 -30 跌到 -50，target=-25，diff=-10（再扣 10）
+        {
+          const targetApplied =
+            state.karma < 0 ? Math.floor(state.karma / 10) * 5 : 0; // 应扣的总量
           refreshedOtherSects = refreshedOtherSects.map(s => {
             // 敌对/附庸宗门不受正邪度好感影响（已是对立面）
-            if (s.diplomaticStatus === 'rival' || s.diplomaticStatus === 'vassal') return s;
-            const newFav = Math.max(0, Math.min(100, (s.favorability ?? 50) + favDelta));
-            return { ...s, favorability: newFav };
+            if (s.diplomaticStatus === 'rival' || s.diplomaticStatus === 'vassal') {
+              // 补齐字段但不应用修正：对齐 applied=0，同时把 base 固定为当前 favorability
+              const baseFav = typeof s.baseFavorability === 'number' ? s.baseFavorability : (s.favorability ?? 50);
+              return {
+                ...s,
+                baseFavorability: baseFav,
+                karmaFavorApplied: 0,
+                favorability: Math.max(0, Math.min(100, baseFav)),
+              };
+            }
+            const baseFav =
+              typeof s.baseFavorability === 'number'
+                ? s.baseFavorability
+                : (s.favorability ?? 50) - (s.karmaFavorApplied ?? 0);
+            const prevApplied =
+              typeof s.karmaFavorApplied === 'number' ? s.karmaFavorApplied : 0;
+            const diff = targetApplied - prevApplied; // 本次变动
+            // 基础好感不受正邪度回归/下降影响；若 diff 为正（回升好感），基础好感不变，只放开上限
+            const newApplied = targetApplied;
+            const clampedFav = Math.max(0, Math.min(100, baseFav + newApplied));
+            return {
+              ...s,
+              baseFavorability: baseFav,
+              karmaFavorApplied: newApplied,
+              favorability: clampedFav,
+            };
           });
         }
 
@@ -1930,6 +2135,88 @@ export const useGameStore = create<GameState>()(
           }
         }
 
+        // ===== 自动试炼：每月为空闲弟子匹配可完成的试炼 =====
+        // 策略：开启后，遍历 available 试炼（按难度升序、奖励降序），为每个试炼挑选
+        //       战力最匹配的空闲弟子（战力 >= requiredPower 优先，至少 >= 0.8 倍避免必败）。
+        //       每个弟子每月最多被自动派遣一次，避免冲突。
+        if (state.autoTrialEnabled) {
+          // 收集空闲弟子（非试炼中、非突破中、非学习秘籍、未离开）
+          const idleDisciples = finalDisciples.filter(d =>
+            !d.onTrialId && !d.isBreakingThrough && !d.isLearningSecret && d.status !== 'mortal',
+          );
+          // 已被自动派遣占用的弟子ID集合
+          const assignedIds = new Set<string>();
+          // 按难度升序（easy→extreme）、同难度按奖励总价值降序排序
+          const diffOrder: Record<string, number> = { easy: 0, normal: 1, hard: 2, extreme: 3 };
+          const sortedAvail = finalTrials
+            .filter(t => t.status === 'available')
+            .sort((a, b) => {
+              const da = diffOrder[a.difficulty] ?? 9;
+              const db = diffOrder[b.difficulty] ?? 9;
+              if (da !== db) return da - db;
+              // 奖励价值粗略估算：灵石 + 声望*2 + 贡献*0.5
+              const va = (a.rewards.spiritStones || 0) + (a.rewards.reputation || 0) * 2 + (a.rewards.contributionPoints || 0) * 0.5;
+              const vb = (b.rewards.spiritStones || 0) + (b.rewards.reputation || 0) * 2 + (b.rewards.contributionPoints || 0) * 0.5;
+              return vb - va;
+            });
+          // 标记本轮被派遣的试炼与弟子，最后统一应用
+          const dispatchPairs: { trialId: string; discipleId: string }[] = [];
+          for (const trial of sortedAvail) {
+            if (idleDisciples.length === 0) break;
+            // 找出尚未被占用的空闲弟子，按战力降序
+            const candidates = idleDisciples
+              .filter(d => !assignedIds.has(d.id))
+              .map(d => ({ d, power: calculateDiscipleCombatPower(d) }))
+              .sort((a, b) => b.power - a.power);
+            if (candidates.length === 0) continue;
+            // 筛选"能完成"的弟子：战力 >= requiredPower * 0.8（避免必败）
+            const minPower = trial.requiredPower * 0.8;
+            const qualified = candidates.filter(c => c.power >= minPower);
+            // 优先选战力最接近 requiredPower（略高）的弟子，避免浪费高战力
+            const pick = qualified.length > 0
+              ? qualified.reduce((best, c) => {
+                  // 偏好战力刚好覆盖 requiredPower 的弟子
+                  const diffC = Math.abs(c.power - trial.requiredPower);
+                  const diffBest = Math.abs(best.power - trial.requiredPower);
+                  return diffC < diffBest ? c : best;
+                })
+              : null;
+            if (pick) {
+              dispatchPairs.push({ trialId: trial.id, discipleId: pick.d.id });
+              assignedIds.add(pick.d.id);
+            }
+          }
+          // 应用派遣：更新 finalTrials 与 finalDisciples
+          if (dispatchPairs.length > 0) {
+            const pairMap = new Map(dispatchPairs.map(p => [p.trialId, p.discipleId]));
+            finalTrials = finalTrials.map(t => {
+              const did = pairMap.get(t.id);
+              if (!did) return t;
+              return {
+                ...t, status: 'in_progress' as const,
+                assignedDiscipleId: did,
+                startYear: year, startMonth: month, progress: 0,
+              };
+            });
+            const dispatchedDiscipleIds = new Set(dispatchPairs.map(p => p.discipleId));
+            finalDisciples = finalDisciples.map(d =>
+              dispatchedDiscipleIds.has(d.id)
+                ? (() => {
+                  const tid = dispatchPairs.find(p => p.discipleId === d.id)!.trialId;
+                  return { ...d, onTrialId: tid };
+                })()
+                : d,
+            );
+            if (dispatchPairs.length > 0) {
+              trialNotifs.push(createNotification(
+                'info', '自动试炼',
+                `本月自动派遣 ${dispatchPairs.length} 名弟子执行试炼任务。`,
+                { year, month },
+              ));
+            }
+          }
+        }
+
         // 推进进行中试炼的进度
         finalTrials = finalTrials.map(trial => {
           if (trial.status !== 'in_progress' || !trial.assignedDiscipleId) return trial;
@@ -2019,6 +2306,146 @@ export const useGameStore = create<GameState>()(
         accHerbs = trialHerbs;
         accIron = trialIron;
         accPaper = trialPaper;
+
+        // ===== 自动交易（低买高卖）：基于阈值规则，每月批量执行一次 =====
+        interface AutoTradeRecord {
+          id: string;
+          name: string;
+          bought: number;
+          sold: number;
+          cost: number;
+          gain: number;
+        }
+        const autoTradeRecords: AutoTradeRecord[] = [];
+        {
+          // 读取某 shopItem 当前库存（基于本月累加器，不走 state 因为最终 set 还没执行）
+          const getStock = (item: typeof SHOP_ITEMS[number]): number => {
+            if (item.pillType)
+              return accPillInventory.find(p => p.type === item.pillType)?.quantity ?? 0;
+            if (item.artifactType)
+              return accArtifactInventory.find(a => a.type === item.artifactType)?.quantity ?? 0;
+            if (item.talismanType)
+              return accTalismanInventory.find(t => t.type === item.talismanType)?.quantity ?? 0;
+            if (item.beastType)
+              return newBeastInventory.find(b => b.type === item.beastType)?.quantity ?? 0;
+            if (item.materialName)
+              return accSpecialMaterials[item.materialName] ?? 0;
+            return 0;
+          };
+          const addStock = (item: typeof SHOP_ITEMS[number]) => {
+            if (item.pillType) {
+              const idx = accPillInventory.findIndex(p => p.type === item.pillType);
+              if (idx >= 0) accPillInventory[idx] = { ...accPillInventory[idx], quantity: accPillInventory[idx].quantity + 1 };
+              else accPillInventory.push({ type: item.pillType!, quantity: 1 });
+            } else if (item.artifactType) {
+              const idx = accArtifactInventory.findIndex(a => a.type === item.artifactType);
+              if (idx >= 0) accArtifactInventory[idx] = { ...accArtifactInventory[idx], quantity: accArtifactInventory[idx].quantity + 1 };
+              else accArtifactInventory.push({ type: item.artifactType!, quantity: 1 });
+            } else if (item.talismanType) {
+              const idx = accTalismanInventory.findIndex(t => t.type === item.talismanType);
+              if (idx >= 0) accTalismanInventory[idx] = { ...accTalismanInventory[idx], quantity: accTalismanInventory[idx].quantity + 1 };
+              else accTalismanInventory.push({ type: item.talismanType!, quantity: 1 });
+            } else if (item.beastType) {
+              const idx = newBeastInventory.findIndex(b => b.type === item.beastType);
+              if (idx >= 0) newBeastInventory[idx] = { ...newBeastInventory[idx], quantity: newBeastInventory[idx].quantity + 1 };
+              else newBeastInventory.push({ type: item.beastType!, quantity: 1 });
+            } else if (item.materialName) {
+              accSpecialMaterials[item.materialName] = (accSpecialMaterials[item.materialName] ?? 0) + 1;
+            }
+          };
+          const removeStock = (item: typeof SHOP_ITEMS[number]) => {
+            if (item.pillType) {
+              accPillInventory = accPillInventory.map(p =>
+                p.type === item.pillType ? { ...p, quantity: Math.max(0, p.quantity - 1) } : p,
+              ).filter(p => p.quantity > 0);
+            } else if (item.artifactType) {
+              accArtifactInventory = accArtifactInventory.map(a =>
+                a.type === item.artifactType ? { ...a, quantity: Math.max(0, a.quantity - 1) } : a,
+              ).filter(a => a.quantity > 0);
+            } else if (item.talismanType) {
+              accTalismanInventory = accTalismanInventory.map(t =>
+                t.type === item.talismanType ? { ...t, quantity: Math.max(0, t.quantity - 1) } : t,
+              ).filter(t => t.quantity > 0);
+            } else if (item.beastType) {
+              newBeastInventory = newBeastInventory.map(b =>
+                b.type === item.beastType ? { ...b, quantity: Math.max(0, b.quantity - 1) } : b,
+              ).filter(b => b.quantity > 0);
+            } else if (item.materialName) {
+              accSpecialMaterials[item.materialName] = Math.max(0, (accSpecialMaterials[item.materialName] ?? 0) - 1);
+            }
+          };
+          const sellPriceOf = (item: typeof SHOP_ITEMS[number]): number =>
+            item.sellPrice ?? Math.floor(item.price * 0.5);
+
+          for (const [shopItemId, rule] of Object.entries(state.autoTrade)) {
+            if (!rule?.enabled) continue;
+            const item = SHOP_ITEMS.find(i => i.id === shopItemId);
+            if (!item) continue;
+            // 配方类不参与交易（一次性解锁，不支持回收）
+            const tradable = !!(item.pillType || item.artifactType || item.talismanType || item.beastType || item.materialName);
+            if (!tradable) continue;
+
+            let bought = 0;
+            let sold = 0;
+            let cost = 0;
+            let gain = 0;
+
+            // 低买：库存 < buyBelow 时买入
+            if (rule.buyBelow > 0) {
+              const maxBuy = Math.max(1, rule.monthlyBuyQty ?? 1);
+              for (let i = 0; i < maxBuy; i++) {
+                const stock = getStock(item);
+                if (stock >= rule.buyBelow) break;
+                if (finalSpiritStones < item.price) break;
+                finalSpiritStones -= item.price;
+                cost += item.price;
+                addStock(item);
+                bought += 1;
+              }
+            }
+
+            // 高卖：库存 > sellAbove 时卖出
+            if (rule.sellAbove > 0) {
+              const maxSell = Math.max(1, rule.monthlySellQty ?? 1);
+              for (let i = 0; i < maxSell; i++) {
+                const stock = getStock(item);
+                if (stock <= rule.sellAbove) break;
+                const sp = sellPriceOf(item);
+                finalSpiritStones += sp;
+                gain += sp;
+                removeStock(item);
+                sold += 1;
+              }
+            }
+
+            if (bought > 0 || sold > 0) {
+              autoTradeRecords.push({ id: shopItemId, name: item.name, bought, sold, cost, gain });
+            }
+          }
+        }
+        if (autoTradeRecords.length > 0) {
+          const buySummary = autoTradeRecords
+            .filter(r => r.bought > 0)
+            .map(r => `「${r.name}」×${r.bought}(-${r.cost}灵石)`)
+            .join('、');
+          const sellSummary = autoTradeRecords
+            .filter(r => r.sold > 0)
+            .map(r => `「${r.name}」×${r.sold}(+${r.gain}灵石)`)
+            .join('、');
+          const totalCost = autoTradeRecords.reduce((s, r) => s + r.cost, 0);
+          const totalGain = autoTradeRecords.reduce((s, r) => s + r.gain, 0);
+          const netLabel = totalGain - totalCost >= 0 ? `净+${totalGain - totalCost}` : `净${totalGain - totalCost}`;
+          const body = [
+            buySummary ? `买入：${buySummary}` : null,
+            sellSummary ? `卖出：${sellSummary}` : null,
+            `合计（${netLabel}灵石）`,
+          ].filter(Boolean).join('；');
+          newNotifications.push(createNotification(
+            'info', '自动交易',
+            body,
+            { year, month },
+          ));
+        }
 
         // 记录本月灵石收支历史（保留最近24条）
         const netIncome = totalSpiritStoneIncome - totalMaintenance;
@@ -2389,20 +2816,16 @@ export const useGameStore = create<GameState>()(
         return { ok: true };
       },
       
-      recruitDisciple: () => {
+      recruitDisciple: (opts) => {
         const state = get();
-        // 按招收规则 + 费用生成 3~5 名候选弟子，返回数组供玩家挑选
+        // 固定规则：首次打开生成候选、以及「换一批」刷新候选都扣 50 灵石；招入免费
+        const FIXED_COST = 50;
+        // 灵石不足：拒绝生成/刷新候选（返回空数组，UI 会显示无候选）
+        if (state.spiritStones < FIXED_COST) {
+          return { candidates: [], costPerDisciple: FIXED_COST };
+        }
+        // 按招收规则生成 3~5 名候选弟子
         const rule = state.promotionRules.recruitment;
-        const attrSum =
-          Math.max(0, rule.minRootBone - 50) + Math.max(0, rule.minSpiritRhythm - 50) +
-          Math.max(0, rule.minConstitution - 50) + Math.max(0, rule.minDaoFate - 50);
-        const thresholdMult = 1 + attrSum / 50;
-        const exceptionalBonus =
-          (rule.exceptionalThreshold > 0 && rule.exceptionalThreshold <= 85) ? 1.5 : 1.0;
-        const baseCost = Math.round(50 * thresholdMult * exceptionalBonus);
-        const finalCostPerDisciple = Math.max(50, baseCost);
-
-        // 尝试多次生成候选，返回 3~4 个符合门槛（含破格）的
         const candidates: Disciple[] = [];
         const maxTries = 20;
         const candidateCount = 4;
@@ -2431,20 +2854,19 @@ export const useGameStore = create<GameState>()(
           c.contributionPoints = 0;
           candidates.push(c);
         }
-        // 暂存到 state 中，UI 从 state 里取候选
+        // 首次打开 & 刷新都扣 50 灵石；招入时免费
         set({
           recruitCandidates: candidates,
-          recruitCostPerDisciple: finalCostPerDisciple,
+          recruitCostPerDisciple: FIXED_COST,
+          recruitRefreshCost: FIXED_COST,
+          spiritStones: state.spiritStones - FIXED_COST,
         });
-        return { candidates, costPerDisciple: finalCostPerDisciple };
+        return { candidates, costPerDisciple: FIXED_COST };
       },
 
-      // 确认招收候选弟子
+      // 确认招收候选弟子（不再扣灵石，灵石费已在生成候选时一次性扣除）
       recruitConfirmDisciple: (candidate) => {
         const state = get();
-        if (state.spiritStones < state.recruitCostPerDisciple) {
-          return { ok: false, reason: `灵石不足（需${state.recruitCostPerDisciple}）` };
-        }
         const newDisciple: Disciple = { ...candidate, id: generateId() };
 
         // 师承关系
@@ -2484,7 +2906,7 @@ export const useGameStore = create<GameState>()(
         set(state => ({
           disciples: [...state.disciples, newDisciple],
           buildings: newBuildings,
-          spiritStones: state.spiritStones - state.recruitCostPerDisciple,
+          // 招入时免费：灵石已在生成/刷新候选列表时一次性扣除
           recruitCandidates: state.recruitCandidates.filter(c => c.id !== candidate.id),
           notifications: [joinNotif, ...state.notifications].slice(0, 50),
         }));
@@ -2493,7 +2915,7 @@ export const useGameStore = create<GameState>()(
 
       // 清空招收候选
       clearRecruitCandidates: () => {
-        set({ recruitCandidates: [], recruitCostPerDisciple: 50 });
+        set({ recruitCandidates: [], recruitCostPerDisciple: 50, recruitRefreshCost: 50 });
       },
       
       getDiscipleById: (id: string) => {
@@ -3394,8 +3816,20 @@ export const useGameStore = create<GameState>()(
         const state = get();
         const newSects = state.otherSects.map(sect => {
           if (sect.id !== sectId) return sect;
-          const newFav = Math.max(0, Math.min(100, (sect.favorability ?? 50) + delta));
-          return { ...sect, favorability: newFav };
+          // 手动改好感度 = 改 baseFavorability；karmaFavorApplied 保持，favorability 重新钳制
+          const baseFav =
+            typeof sect.baseFavorability === 'number'
+              ? sect.baseFavorability
+              : (sect.favorability ?? 50) - (sect.karmaFavorApplied ?? 0);
+          const applied =
+            typeof sect.karmaFavorApplied === 'number' ? sect.karmaFavorApplied : 0;
+          const newBase = Math.max(0, Math.min(100, baseFav + delta));
+          return {
+            ...sect,
+            baseFavorability: newBase,
+            karmaFavorApplied: applied,
+            favorability: Math.max(0, Math.min(100, newBase + applied)),
+          };
         });
         set({ otherSects: newSects });
       },
@@ -3429,25 +3863,41 @@ export const useGameStore = create<GameState>()(
         const state = get();
         const sect = state.otherSects.find(s => s.id === sectId);
         if (!sect) return false;
-        // 开启交易需消耗灵石
+        // 开启交易：扣 50 灵石，开通后维持交易关系；提醒玩家可在合适时机手动结束获取一次性收益
         if (!sect.tradeActive) {
           const cost = 50;
           if (state.spiritStones < cost) return false;
           const newSects = state.otherSects.map(s =>
             s.id === sectId ? { ...s, tradeActive: true } : s,
           );
-          set({ otherSects: newSects, spiritStones: state.spiritStones - cost });
+          const openNotif = createNotification(
+            'info', '交易开启',
+            `已与「${sect.name}」建立交易通道（消耗 50 灵石）。结束时将按对方战力一次性获得少量灵石与 1 点声望，请在合适时机手动结束。`,
+            { year: state.year, month: state.month },
+          );
+          set({
+            otherSects: newSects,
+            spiritStones: state.spiritStones - cost,
+            notifications: [openNotif, ...state.notifications].slice(0, 50),
+          });
           return true;
         } else {
-          // 关闭交易，获得收益
-          const income = Math.floor(sect.combatPower * 0.01) + 20;
+          // 结束交易：收益 = 对方战力 ×0.3% + 5（最低 5）；声望 +1
+          const income = Math.max(5, Math.floor(sect.combatPower * 0.003) + 5);
+          const repGain = 1;
           const newSects = state.otherSects.map(s =>
             s.id === sectId ? { ...s, tradeActive: false } : s,
+          );
+          const closeNotif = createNotification(
+            'success', '交易结算',
+            `与「${sect.name}」的交易圆满结束，本次获利 ${income} 灵石、${repGain} 点声望。`,
+            { year: state.year, month: state.month },
           );
           set({
             otherSects: newSects,
             spiritStones: state.spiritStones + income,
-            reputation: state.reputation + 2,
+            reputation: state.reputation + repGain,
+            notifications: [closeNotif, ...state.notifications].slice(0, 50),
           });
           return true;
         }
@@ -3503,6 +3953,11 @@ export const useGameStore = create<GameState>()(
         });
       },
 
+      toggleAutoTrial: () => {
+        const state = get();
+        set({ autoTrialEnabled: !state.autoTrialEnabled });
+      },
+
       // ===== 外交系统优化 =====
       // 注：所有主动互动（赠送/侮辱/同盟/宿敌/讨伐）每宗门每年只能执行一次，
       // 由 checkSectInteraction 统一校验，并在成功后写入 lastInteractionYear。
@@ -3518,7 +3973,12 @@ export const useGameStore = create<GameState>()(
         }
         // 每 50 灵石 +5 好感，上限 +20
         const favGain = Math.min(20, Math.floor(amount / 50) * 5);
-        const newFav = Math.min(100, (sect.favorability ?? 50) + favGain);
+        // 手动改好感：增量加在 baseFavorability，karmaFavorApplied 保留
+        const giftBase =
+          typeof sect.baseFavorability === 'number' ? sect.baseFavorability : (sect.favorability ?? 50) - (sect.karmaFavorApplied ?? 0);
+        const giftApplied = typeof sect.karmaFavorApplied === 'number' ? sect.karmaFavorApplied : 0;
+        const newGiftBase = Math.min(100, giftBase + favGain);
+        const newGiftFav = Math.max(0, Math.min(100, newGiftBase + giftApplied));
         const st = get();
         const notif = createNotification(
           'info', '赠送灵石',
@@ -3529,7 +3989,7 @@ export const useGameStore = create<GameState>()(
           spiritStones: state.spiritStones - amount,
           karma: Math.min(100, state.karma + 3),
           otherSects: state.otherSects.map(s =>
-            s.id === sectId ? { ...s, favorability: newFav, lastInteractionYear: st.year } : s,
+            s.id === sectId ? { ...s, baseFavorability: newGiftBase, karmaFavorApplied: giftApplied, favorability: newGiftFav, lastInteractionYear: st.year } : s,
           ),
           notifications: [notif, ...state.notifications].slice(0, 50),
         });
@@ -3551,7 +4011,11 @@ export const useGameStore = create<GameState>()(
           set({ notifications: [notif, ...state.notifications].slice(0, 50) });
           return;
         }
-        const newFav = Math.max(0, (sect.favorability ?? 50) - 15);
+        const insultBase =
+          typeof sect.baseFavorability === 'number' ? sect.baseFavorability : (sect.favorability ?? 50) - (sect.karmaFavorApplied ?? 0);
+        const insultApplied = typeof sect.karmaFavorApplied === 'number' ? sect.karmaFavorApplied : 0;
+        const newInsultBase = Math.max(0, insultBase - 15);
+        const newInsultFav = Math.max(0, Math.min(100, newInsultBase + insultApplied));
         const st = get();
         const notif = createNotification(
           'warning', '侮辱宗门',
@@ -3561,7 +4025,7 @@ export const useGameStore = create<GameState>()(
         set({
           karma: Math.max(-100, state.karma - 5),
           otherSects: state.otherSects.map(s =>
-            s.id === sectId ? { ...s, favorability: newFav, relation: newFav < 30 ? 'hostile' : s.relation, lastInteractionYear: st.year } : s,
+            s.id === sectId ? { ...s, baseFavorability: newInsultBase, karmaFavorApplied: insultApplied, favorability: newInsultFav, relation: newInsultFav < 30 ? 'hostile' : s.relation, lastInteractionYear: st.year } : s,
           ),
           notifications: [notif, ...state.notifications].slice(0, 50),
         });
@@ -3663,12 +4127,18 @@ export const useGameStore = create<GameState>()(
             title: '讨伐附庸',
             description: `击败「${sect.name}」并将其收为附庸，获得 100 灵石、10 声望。`,
           };
+          // 收为附庸：好感+20（改基础好感），附庸不参与正邪度好感修正（下月会重置 karmaFavorApplied=0）
+          const vassBase =
+            typeof sect.baseFavorability === 'number' ? sect.baseFavorability : (sect.favorability ?? 50) - (sect.karmaFavorApplied ?? 0);
+          const vassApplied = typeof sect.karmaFavorApplied === 'number' ? sect.karmaFavorApplied : 0;
+          const newVassBase = Math.min(100, vassBase + 20);
+          const newVassFav = Math.max(0, Math.min(100, newVassBase + vassApplied));
           set({
             karma: Math.max(-100, state.karma - 15),
             spiritStones: state.spiritStones + 100,
             reputation: state.reputation + 10,
             otherSects: state.otherSects.map(s =>
-              s.id === sectId ? { ...s, diplomaticStatus: 'vassal' as const, favorability: Math.min(100, (s.favorability ?? 50) + 20), lastInteractionYear: st.year } : s,
+              s.id === sectId ? { ...s, diplomaticStatus: 'vassal' as const, baseFavorability: newVassBase, karmaFavorApplied: vassApplied, favorability: newVassFav, lastInteractionYear: st.year } : s,
             ),
             notifications: [notif, ...state.notifications].slice(0, 50),
             sectHistory: [historyEntry, ...state.sectHistory].slice(0, 200),
@@ -3682,12 +4152,18 @@ export const useGameStore = create<GameState>()(
             `攻打「${sect.name}」失败！损失 ${loss} 灵石与 5 声望。`,
             { year: st.year, month: st.month },
           );
+          // 失败：好感-20（改基础好感），变为敌对
+          const failBase =
+            typeof sect.baseFavorability === 'number' ? sect.baseFavorability : (sect.favorability ?? 50) - (sect.karmaFavorApplied ?? 0);
+          const failApplied = typeof sect.karmaFavorApplied === 'number' ? sect.karmaFavorApplied : 0;
+          const newFailBase = Math.max(0, failBase - 20);
+          const newFailFav = Math.max(0, Math.min(100, newFailBase + failApplied));
           set({
             spiritStones: Math.max(0, state.spiritStones - loss),
             reputation: Math.max(0, state.reputation - 5),
             karma: Math.max(-100, state.karma - 10),
             otherSects: state.otherSects.map(s =>
-              s.id === sectId ? { ...s, relation: 'hostile' as const, favorability: Math.max(0, (s.favorability ?? 50) - 20), lastInteractionYear: st.year } : s,
+              s.id === sectId ? { ...s, relation: 'hostile' as const, baseFavorability: newFailBase, karmaFavorApplied: failApplied, favorability: newFailFav, lastInteractionYear: st.year } : s,
             ),
             notifications: [notif, ...state.notifications].slice(0, 50),
           });
@@ -3862,6 +4338,33 @@ export const useGameStore = create<GameState>()(
 
         return { success: true, gain };
       },
+
+      // 设置某物品自动交易规则（buyBelow=0 表示关闭自动买，sellAbove=0 表示关闭自动卖，qty<1 会被钳制到 1）
+      setAutoTradeRule: (shopItemId: string, rule: Partial<AutoTradeRule>) => {
+        set(state => {
+          const prev: AutoTradeRule = state.autoTrade[shopItemId] ?? {
+            enabled: false, buyBelow: 0, sellAbove: 0, monthlyBuyQty: 1, monthlySellQty: 1,
+          };
+          const next: AutoTradeRule = {
+            ...prev,
+            ...rule,
+            monthlyBuyQty: Math.max(1, rule.monthlyBuyQty ?? prev.monthlyBuyQty ?? 1),
+            monthlySellQty: Math.max(1, rule.monthlySellQty ?? prev.monthlySellQty ?? 1),
+            buyBelow: Math.max(0, Math.floor(rule.buyBelow ?? prev.buyBelow ?? 0)),
+            sellAbove: Math.max(0, Math.floor(rule.sellAbove ?? prev.sellAbove ?? 0)),
+          };
+          return { autoTrade: { ...state.autoTrade, [shopItemId]: next } };
+        });
+      },
+      toggleAutoTrade: (shopItemId: string, enabled: boolean) => {
+        set(state => {
+          const prev: AutoTradeRule = state.autoTrade[shopItemId] ?? {
+            enabled: false, buyBelow: 0, sellAbove: 0, monthlyBuyQty: 1, monthlySellQty: 1,
+          };
+          return { autoTrade: { ...state.autoTrade, [shopItemId]: { ...prev, enabled } } };
+        });
+      },
+
       setProductionTarget: (buildingId: string, slotIndex: number, target: NonNullable<Building['productionTargets']>[number]) => {
         set(state => ({
           buildings: state.buildings.map(b => {
@@ -3940,8 +4443,21 @@ export const useGameStore = create<GameState>()(
             if (slot) {
               patch[`equipped${slot.charAt(0).toUpperCase() + slot.slice(1)}`] = itemType;
             } else {
-              // 丹药类：加一点突破加成或寿命（简化：每颗丹药+1~3 突破 bonus）
-              patch.breakthroughBonus = (d.breakthroughBonus || 0) + 2;
+              // 丹药类：从丹药配置读取实际效果
+              const pillCfg = PILL_CONFIGS[itemType as PillType];
+              if (pillCfg) {
+                if (pillCfg.breakthroughBonus > 0) {
+                  patch.breakthroughBonus = (d.breakthroughBonus || 0) + pillCfg.breakthroughBonus;
+                }
+                if (pillCfg.lifespanBonus && pillCfg.lifespanBonus > 0) {
+                  patch.maxAge = (d.maxAge || 0) + pillCfg.lifespanBonus;
+                }
+                // 回灵丹：恢复修为进度
+                if (itemType === 'recovery_pill') {
+                  const bkReq = getStageBreakthroughRequired(d.realm, d.realmStage);
+                  patch.realmProgress = Math.min(bkReq, (d.realmProgress || 0) + 50);
+                }
+              }
             }
             return { ...d, ...patch };
           });
@@ -4007,7 +4523,21 @@ export const useGameStore = create<GameState>()(
             if (slot) {
               patch[`equipped${slot.charAt(0).toUpperCase() + slot.slice(1)}`] = itemType;
             } else {
-              patch.breakthroughBonus = (d.breakthroughBonus || 0) + 3;
+              // 丹药类：从丹药配置读取实际效果
+              const pillCfg = PILL_CONFIGS[itemType as PillType];
+              if (pillCfg) {
+                if (pillCfg.breakthroughBonus > 0) {
+                  patch.breakthroughBonus = (d.breakthroughBonus || 0) + pillCfg.breakthroughBonus;
+                }
+                if (pillCfg.lifespanBonus && pillCfg.lifespanBonus > 0) {
+                  patch.maxAge = (d.maxAge || 0) + pillCfg.lifespanBonus;
+                }
+                // 回灵丹：恢复修为进度
+                if (itemType === 'recovery_pill') {
+                  const bkReq = getStageBreakthroughRequired(d.realm, d.realmStage);
+                  patch.realmProgress = Math.min(bkReq, (d.realmProgress || 0) + 50);
+                }
+              }
             }
             return { ...d, ...patch };
           });
@@ -4071,6 +4601,17 @@ export const useGameStore = create<GameState>()(
             if (ex) { ex.quantity -= 1; if (ex.quantity <= 0) newBeastInv = newBeastInv.filter(b => b.type !== type); }
           }
 
+          // 灵兽寿命加成：装备时增加，卸下旧灵兽时扣除
+          let lifespanDelta = 0;
+          if (slot === 'beast') {
+            if (oldEquipped) {
+              const oldBeastCfg = BEAST_CONFIGS[oldEquipped as BeastType];
+              lifespanDelta -= oldBeastCfg?.lifespanBonus ?? 0;
+            }
+            const newBeastCfg = BEAST_CONFIGS[type as BeastType];
+            lifespanDelta += newBeastCfg?.lifespanBonus ?? 0;
+          }
+
           return {
             artifactInventory: newArtifactInv,
             talismanInventory: newTalismanInv,
@@ -4082,6 +4623,7 @@ export const useGameStore = create<GameState>()(
                     equippedArtifact: slot === 'artifact' ? type as any : d.equippedArtifact,
                     equippedTalisman: slot === 'talisman' ? type as any : d.equippedTalisman,
                     equippedBeast: slot === 'beast' ? type as any : d.equippedBeast,
+                    ...(lifespanDelta !== 0 ? { maxAge: d.maxAge + lifespanDelta } : {}),
                   }
                 : d
             ),
@@ -4110,6 +4652,13 @@ export const useGameStore = create<GameState>()(
             if (ex) ex.quantity += 1; else newBeastInv.push({ type: oldEquipped as any, quantity: 1 });
           }
 
+          // 灵兽寿命加成：卸下时扣除
+          let lifespanDelta = 0;
+          if (slot === 'beast' && oldEquipped) {
+            const oldBeastCfg = BEAST_CONFIGS[oldEquipped as BeastType];
+            lifespanDelta -= oldBeastCfg?.lifespanBonus ?? 0;
+          }
+
           return {
             artifactInventory: newArtifactInv,
             talismanInventory: newTalismanInv,
@@ -4121,11 +4670,173 @@ export const useGameStore = create<GameState>()(
                     equippedArtifact: slot === 'artifact' ? null : d.equippedArtifact,
                     equippedTalisman: slot === 'talisman' ? null : d.equippedTalisman,
                     equippedBeast: slot === 'beast' ? null : d.equippedBeast,
+                    ...(lifespanDelta !== 0 ? { maxAge: d.maxAge + lifespanDelta } : {}),
                   }
                 : d
             ),
           };
         });
+      },
+
+      // 弟子背包：从宗门仓库转移物品到弟子背包
+      giveItemToDisciple: (discipleId, kind, itemType, quantity = 1) => {
+        const state = get();
+        const disciple = state.disciples.find(d => d.id === discipleId);
+        if (!disciple) return { ok: false, reason: '弟子不存在' };
+        let invKey: 'pillInventory' | 'artifactInventory' | 'talismanInventory' | 'beastInventory' | null = null;
+        if (kind === 'pill') invKey = 'pillInventory';
+        else if (kind === 'artifact') invKey = 'artifactInventory';
+        else if (kind === 'talisman') invKey = 'talismanInventory';
+        else if (kind === 'beast') invKey = 'beastInventory';
+        if (!invKey) return { ok: false, reason: '未知物品类型' };
+        const item = state[invKey].find(i => i.type === itemType);
+        if (!item || item.quantity < quantity) return { ok: false, reason: '物品库存不足' };
+
+        set(state => {
+          const newInv = (state[invKey!] as any[]).map(i =>
+            i.type === itemType ? { ...i, quantity: Math.max(0, i.quantity - quantity) } : i
+          );
+          const nextDisciples = state.disciples.map(d => {
+            if (d.id !== discipleId) return d;
+            const bp = d.backpack ? [...d.backpack] : [];
+            const existing = bp.find(b => b.kind === kind && b.itemType === itemType);
+            if (existing) {
+              existing.quantity += quantity;
+            } else {
+              bp.push({ kind, itemType, quantity });
+            }
+            return { ...d, backpack: bp };
+          });
+          return { [invKey!]: newInv, disciples: nextDisciples } as any;
+        });
+        return { ok: true };
+      },
+
+      // 弟子背包：从弟子背包取回物品到宗门仓库
+      takeItemFromDisciple: (discipleId, kind, itemType, quantity = 1) => {
+        const state = get();
+        const disciple = state.disciples.find(d => d.id === discipleId);
+        if (!disciple) return { ok: false, reason: '弟子不存在' };
+        const bpItem = disciple.backpack?.find(b => b.kind === kind && b.itemType === itemType);
+        if (!bpItem || bpItem.quantity < quantity) return { ok: false, reason: '弟子背包物品不足' };
+
+        // 判断是否为原材料：kind='artifact' 且 itemType 前缀 "material:"
+        const isMaterial = kind === 'artifact' && String(itemType).startsWith('material:');
+        const materialName = isMaterial ? String(itemType).slice('material:'.length) : '';
+        const isHerb = materialName === '灵草';
+        const isIron = materialName === '玄铁' || materialName === '灵铁' || materialName === '矿石';
+        const isPaper = materialName === '灵纸' || materialName === '符纸';
+
+        if (!isMaterial) {
+          let invKey: 'pillInventory' | 'artifactInventory' | 'talismanInventory' | 'beastInventory' | null = null;
+          if (kind === 'pill') invKey = 'pillInventory';
+          else if (kind === 'artifact') invKey = 'artifactInventory';
+          else if (kind === 'talisman') invKey = 'talismanInventory';
+          else if (kind === 'beast') invKey = 'beastInventory';
+          if (!invKey) return { ok: false, reason: '未知物品类型' };
+
+          set(state => {
+            const newInv = addItem(state[invKey!] as any[], itemType as any);
+            const nextDisciples = state.disciples.map(d => {
+              if (d.id !== discipleId) return d;
+              const bp = (d.backpack || []).map(b => {
+                if (b.kind === kind && b.itemType === itemType) {
+                  return { ...b, quantity: b.quantity - quantity };
+                }
+                return b;
+              }).filter(b => b.quantity > 0);
+              return { ...d, backpack: bp };
+            });
+            return { [invKey!]: newInv, disciples: nextDisciples } as any;
+          });
+        } else {
+          // 原材料：返回到对应基础/特殊材料库存
+          set(state => {
+            const patch: any = {};
+            if (isHerb) patch.herbInventory = state.herbInventory + quantity;
+            else if (isIron) patch.ironInventory = state.ironInventory + quantity;
+            else if (isPaper) patch.paperInventory = state.paperInventory + quantity;
+            else patch.specialMaterials = { ...state.specialMaterials, [materialName]: (state.specialMaterials[materialName] ?? 0) + quantity };
+            const nextDisciples = state.disciples.map(d => {
+              if (d.id !== discipleId) return d;
+              const bp = (d.backpack || []).map(b => {
+                if (b.kind === kind && b.itemType === itemType) {
+                  return { ...b, quantity: b.quantity - quantity };
+                }
+                return b;
+              }).filter(b => b.quantity > 0);
+              return { ...d, backpack: bp };
+            });
+            return { ...patch, disciples: nextDisciples };
+          });
+        }
+        return { ok: true };
+      },
+
+      // 弟子用贡献兑换原材料（基础或特殊），转移到弟子背包
+      exchangeMaterialByDisciple: (discipleId, materialName, quantity, contributionCost) => {
+        const state = get();
+        const disciple = state.disciples.find(d => d.id === discipleId);
+        if (!disciple) return { ok: false, reason: '弟子不存在' };
+        if (quantity < 1) return { ok: false, reason: '数量必须大于 0' };
+        if ((disciple.contributionPoints || 0) < contributionCost) return { ok: false, reason: '贡献值不足' };
+
+        // 确定材料类型与库存
+        const isHerb = materialName === '灵草';
+        const isIron = materialName === '玄铁' || materialName === '灵铁' || materialName === '矿石';
+        const isPaper = materialName === '灵纸' || materialName === '符纸';
+
+        let stock = 0;
+        if (isHerb) stock = state.herbInventory;
+        else if (isIron) stock = state.ironInventory;
+        else if (isPaper) stock = state.paperInventory;
+        else stock = state.specialMaterials[materialName] ?? 0;
+        if (stock < quantity) return { ok: false, reason: '仓库原材料不足' };
+
+        set(state => {
+          const newBalance = (disciple.contributionPoints || 0) - contributionCost;
+          const patch: any = { contributionPoints: newBalance };
+
+          // 扣减原材料库存
+          if (isHerb) patch.herbInventory = Math.max(0, state.herbInventory - quantity);
+          else if (isIron) patch.ironInventory = Math.max(0, state.ironInventory - quantity);
+          else if (isPaper) patch.paperInventory = Math.max(0, state.paperInventory - quantity);
+          else patch.specialMaterials = { ...state.specialMaterials, [materialName]: Math.max(0, (state.specialMaterials[materialName] ?? 0) - quantity) };
+
+          // 添加到弟子背包：用 kind='artifact' 存为特殊背包项目以复用现有 backpack 展示
+          const nextDisciples = state.disciples.map(d => {
+            if (d.id !== discipleId) return d;
+            const bp = d.backpack ? [...d.backpack] : [];
+            const existing = bp.find(b => b.kind === 'artifact' && b.itemType === `material:${materialName}`);
+            if (existing) {
+              existing.quantity += quantity;
+            } else {
+              bp.push({ kind: 'artifact', itemType: `material:${materialName}`, quantity });
+            }
+            return { ...d, ...patch, backpack: bp };
+          });
+
+          // 贡献流水
+          const logEntry: ContributionLog = {
+            id: generateId(),
+            discipleId,
+            date: { year: state.year, month: state.month },
+            type: 'deduct',
+            amount: -contributionCost,
+            balance: newBalance,
+            description: `兑换原材料「${materialName}」×${quantity}，扣除 ${contributionCost} 贡献`,
+          };
+          return { ...patch, disciples: nextDisciples, contributionLogs: [logEntry, ...state.contributionLogs].slice(0, 5000) };
+        });
+        const st = get();
+        const notif = createNotification(
+          'info',
+          '弟子兑换原材料',
+          `${disciple.name} 花费 ${contributionCost} 贡献兑换「${materialName}」×${quantity}，前往堂口炼制`,
+          { year: st.year, month: st.month }
+        );
+        set(state => ({ notifications: [notif, ...state.notifications].slice(0, 50) }));
+        return { ok: true };
       },
 
       // 检查弟子是否可以晋升到下一级（用于 UI 展示阈值提示）
@@ -4422,6 +5133,10 @@ export const useGameStore = create<GameState>()(
         // 补齐 trials（旧存档没有此字段）
         if (!state.trials) {
           state.trials = [];
+        }
+        // 补齐 autoTrialEnabled（旧存档没有此字段）
+        if (typeof state.autoTrialEnabled !== 'boolean') {
+          state.autoTrialEnabled = false;
         }
         // 关注弟子列表
         if (!state.followedDiscipleIds) {

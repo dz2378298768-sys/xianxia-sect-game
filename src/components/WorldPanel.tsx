@@ -312,8 +312,15 @@ const WorldSectCard: React.FC<{ sect: OtherSect; ourCombatPower: number }> = ({ 
               }`}
             >
               <SectIcon name="gem" size={11} strokeWidth={1.8} />
-              {sect.tradeActive ? '结束交易（获收益）' : '开启交易（-50灵石）'}
+              {sect.tradeActive
+                ? `结束交易（预估 +${Math.max(5, Math.floor(sect.combatPower * 0.003) + 5)} 灵石 / +1 声望）`
+                : '开启交易（-50灵石）'}
             </button>
+            <div className="text-[9px] text-[var(--ink-500)] mt-0.5 leading-tight">
+              {sect.tradeActive
+                ? `结束收益按对方当前战力结算：战力×0.3% + 5（最低5）+ 1 声望`
+                : `开通消耗 50 灵石，结束时一次性获得少量灵石与 1 点声望`}
+            </div>
           </div>
         </div>
       )}
@@ -458,7 +465,7 @@ type WorldTab = 'sects' | 'trials';
 
 export const WorldPanel: React.FC = () => {
   const store = useGameStore();
-  const { otherSects, trials, disciples, buildings } = store;
+  const { otherSects, trials, disciples, buildings, autoTrialEnabled, toggleAutoTrial } = store;
   const [activeTab, setActiveTab] = useState<WorldTab>('sects');
 
   // 本宗战力
@@ -669,11 +676,32 @@ export const WorldPanel: React.FC = () => {
                 <h2 className="font-display text-base text-gold-gradient">试炼任务</h2>
                 <Badge variant="default" size="sm">{trials.length} 项</Badge>
               </div>
+              {/* 自动试炼开关 */}
+              <button
+                onClick={() => toggleAutoTrial()}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs border transition-all ${
+                  autoTrialEnabled
+                    ? 'bg-[rgba(74,122,107,0.2)] border-[var(--jade-light)]/50 text-[var(--jade-light)]'
+                    : 'border-[var(--ink-400)]/30 text-[var(--ink-300)] hover:border-[var(--jade-light)]/30'
+                }`}
+                title={autoTrialEnabled ? '已开启：每月自动派遣空闲弟子执行可完成的试炼' : '点击开启：每月自动派遣空闲弟子执行可完成的试炼'}
+              >
+                <SectIcon name="talisman" size={12} strokeWidth={1.8} />
+                <span>自动试炼</span>
+                <span className={`ml-0.5 inline-block w-7 h-3.5 rounded-full relative transition-all ${
+                  autoTrialEnabled ? 'bg-[var(--jade-light)]/60' : 'bg-[var(--ink-400)]/30'
+                }`}>
+                  <span className={`absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white transition-all ${
+                    autoTrialEnabled ? 'left-4' : 'left-0.5'
+                  }`} />
+                </span>
+              </button>
             </div>
 
             <p className="text-sect-jade/50 text-xs mb-3 leading-relaxed">
               每年自动刷新适合本宗战力的试炼任务。派遣弟子执行可获取灵石、声望、原料、贡献等奖励。
               弟子战力越高成功率越大，失败可能受伤修为倒退。
+              {autoTrialEnabled && <span className="text-[var(--jade-light)]">已开启自动试炼：每月自动派遣空闲弟子执行可完成的试炼。</span>}
             </p>
 
             {trials.length === 0 ? (

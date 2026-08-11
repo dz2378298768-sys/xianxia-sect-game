@@ -170,7 +170,9 @@ export interface OtherSect {
   specialty: string;         // 特色（如：丹道、剑修、阵法）
   description: string;       // 简介
   image?: string;            // 图片路径
-  favorability: number;      // 好感度 0-100
+  favorability: number;      // 好感度 0-100（展示用 = baseFavorability + karmaFavorApplied，已钳制）
+  baseFavorability: number;  // 基础好感度（不含正邪度修正，来自赠送/侮辱/同盟/讨伐等手动互动与天然关系）
+  karmaFavorApplied: number; // 已因正邪度累计施加的好感修正（负数）。注意：是「总量一次性」而非每月累计
   diplomaticStatus: DiplomaticStatus;  // 外交状态
   tradeActive: boolean;      // 是否正在交易
   truceUntilYear: number | null; // 停战至哪一年（null 表示无停战）
@@ -289,4 +291,13 @@ export interface SectHistoryEntry {
   type: SectHistoryType;
   title: string;
   description: string;
+}
+
+// 仓库物品自动交易规则（按 ShopItem.id 存储，键对应 shop.ts 的 SHOP_ITEMS[i].id：'pill:qi_gathering_pill' / 'beast:spirit_fox' / 'material:shou_yuan_hua' 等）
+export interface AutoTradeRule {
+  enabled: boolean;        // 总开关
+  buyBelow: number;        // 库存 < 该值时每月尝试自动买入；填 0 或负数 = 关闭自动买
+  sellAbove: number;       // 库存 > 该值时每月尝试自动卖出；填 0 或负数 = 关闭自动卖
+  monthlyBuyQty: number;   // 每月自动买入数量上限（默认 1，不低于 1）
+  monthlySellQty: number;  // 每月自动卖出数量上限（默认 1，不低于 1）
 }
