@@ -1151,6 +1151,63 @@ body {
   border-radius: 8px !important;
   color: var(--ink-100) !important;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease !important;
+}
+
+/* 卡片悬停发光效果 */
+.card-hover-glow:hover, [class*="Card"].hover-glow:hover {
+  border-color: rgba(212, 168, 87, 0.5) !important;
+  box-shadow: 0 4px 24px rgba(212, 168, 87, 0.15), 0 0 0 1px rgba(212, 168, 87, 0.1) !important;
+}
+
+/* 统计卡片 */
+.stat-card {
+  border-left: 3px solid var(--gold-400) !important;
+}
+
+/* 交互元素基础过渡 */
+button, .clickable, [role="button"], a {
+  transition: all 0.2s ease;
+}
+
+button:active, .clickable:active {
+  transform: scale(0.97);
+}
+
+/* 数值变化动画 */
+@keyframes number-pop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+
+.number-change {
+  animation: number-pop 0.3s ease-out;
+}
+
+/* 淡入动画 */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.fade-in {
+  animation: fade-in 0.3s ease-out both;
+}
+
+/* 进度条统一样式 */
+.progress-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.5s ease;
+  background: linear-gradient(90deg, var(--gold-400), var(--gold-200));
 }
 
 .card-title, [class*="Card"] h1, [class*="Card"] h2, [class*="Card"] h3 {
@@ -1216,10 +1273,146 @@ button[class*="btn-"], [class*="Button"] {
 
 /* slide-in-up 动画 */
 @keyframes slide-in-up {
-  from { opacity: 0; transform: translateY(20px); }
+  from { opacity: 0; transform: translateY(24px); }
   to { opacity: 1; transform: translateY(0); }
 }
-.slide-in-up { animation: slide-in-up 0.5s ease-out both; }
+.slide-in-up { animation: slide-in-up 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* 面板打开动画（带轻微缩放） */
+@keyframes panel-enter {
+  from { opacity: 0; transform: translateY(28px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.panel-enter { animation: panel-enter 0.35s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* 面板关闭动画 */
+@keyframes panel-exit {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(16px) scale(0.98); }
+}
+.panel-exit { animation: panel-exit 0.25s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* 按下弹跳反馈 */
+@keyframes press-pop {
+  0% { transform: scale(1); }
+  40% { transform: scale(0.92); }
+  70% { transform: scale(1.04); }
+  100% { transform: scale(1); }
+}
+.press-pop { animation: press-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+
+/* 淡入 */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.fade-in { animation: fade-in 0.3s ease-out both; }
+
+/* 列表项依次出现（stagger） */
+@keyframes item-enter {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.item-enter { animation: item-enter 0.3s ease-out both; }
+
+/* 按钮按下效果 */
+.btn-press {
+  transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1),
+              box-shadow 0.15s ease;
+}
+.btn-press:active {
+  transform: scale(0.94);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3) !important;
+}
+
+/* 卡片/条目通用微交互 */
+.card-hover {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  cursor: pointer;
+}
+.card-hover:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  border-color: rgba(212, 168, 87, 0.3);
+}
+.card-hover:active {
+  transform: translateY(0) scale(0.98);
+}
+
+/* 自定义滚动条（面板内） */
+.panel-scrollbar::-webkit-scrollbar {
+  width: 3px;
+  height: 3px;
+}
+.panel-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.panel-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(212, 168, 87, 0.2);
+  border-radius: 4px;
+}
+.panel-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(212, 168, 87, 0.4);
+}
+
+/* 导航项点击涟漪 */
+.nav-ripple {
+  position: relative;
+  overflow: hidden;
+}
+.nav-ripple::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at var(--ripple-x, 50%) var(--ripple-y, 50%), rgba(255,255,255,0.15) 0%, transparent 60%);
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+}
+.nav-ripple:active::after {
+  opacity: 1;
+  transition: opacity 0s;
+}
+
+/* ===== 文字可读性修复：提高低透明度文本的对比度 ===== */
+/* 在深色背景上，text-sect-jade/60 等透明度太低，导致小字难以阅读 */
+.text-sect-jade\/60 { opacity: 0.85 !important; }
+.text-sect-jade\/70 { opacity: 0.9 !important; }
+.text-sect-jade\/50 { opacity: 0.75 !important; }
+.text-sect-jade\/40 { opacity: 0.65 !important; }
+.text-sect-jade\/80 { opacity: 0.95 !important; }
+
+/* 非 sect-jade 文本也提升可读性 */
+.text-sect-gold\/70 { opacity: 0.9 !important; }
+.text-sect-gold\/80 { opacity: 0.95 !important; }
+.text-sect-gold\/60 { opacity: 0.85 !important; }
+.text-sect-spirit { color: #b9a3e8 !important; }
+
+/* 面板内文字基础对比度提升 */
+.scroll-panel-dark .text-sect-jade {
+  color: #f0ece3 !important;
+}
+.scroll-panel-dark .text-sect-jade\/70,
+.scroll-panel-dark .text-sect-jade\/80 {
+  color: #e8e4d9 !important;
+}
+
+/* 按钮/可交互元素的文字保持可读 */
+.btn-ink { color: var(--gold-200) !important; }
+
+/* ===== 字体大小统一层级 =====
+ * 整个游戏使用统一的字体层级，避免不同面板间字体大小不一致
+ * font-hero → 面板/弹窗标题（16px bold）
+ * font-title → 区块标题/大按钮（13px）
+ * font-body → 正文内容（11px）
+ * font-caption → 辅助说明/标签（10px）
+ * font-tag → 角标/徽章（9px）
+ */
+.font-hero { font-size: 16px; font-weight: 700; }
+.font-title { font-size: 13px; font-weight: 600; }
+.font-body { font-size: 11px; font-weight: 400; }
+.font-caption { font-size: 10px; font-weight: 400; }
+.font-tag { font-size: 9px; font-weight: 500; }
 
 /* ========================================
    移动端适配（横屏）

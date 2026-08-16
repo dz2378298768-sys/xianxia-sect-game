@@ -652,6 +652,15 @@ export const IconPlay: React.FC<IconProps> = ({ size = 24, className = '', strok
   </svg>
 );
 
+// 列表/菜单 —— 三横线
+export const IconList: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <path d="M4 6 L20 6" />
+    <path d="M4 12 L20 12" />
+    <path d="M4 18 L20 18" />
+  </svg>
+);
+
 // 商店：摊位 + 布帘
 export const IconShop: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
   <svg {...baseProps(size, className, strokeWidth)}>
@@ -692,7 +701,7 @@ export const IconChevronDown: React.FC<IconProps> = ({ size = 24, className = ''
 );
 
 export type IconName =
-  | 'mountain' | 'building' | 'disciple' | 'cultivate' | 'warehouse'
+  | 'list' | 'mountain' | 'building' | 'disciple' | 'cultivate' | 'warehouse'
   | 'battle' | 'world' | 'nextMonth' | 'scroll' | 'talisman'
   | 'close' | 'arrowRight' | 'back' | 'eye' | 'gear'
   | 'gift' | 'play'
@@ -719,6 +728,7 @@ export type IconName =
   | 'beastEarthBear';
 
 const ICON_MAP: Record<IconName, React.FC<IconProps>> = {
+  list: IconList,
   mountain: IconMountain,
   building: IconBuilding,
   disciple: IconDisciple,

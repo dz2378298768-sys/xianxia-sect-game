@@ -1,19 +1,16 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useGameStore } from '@/store/gameStore';
 import { useUIStore } from '@/store/uiStore';
 import { MountainScene } from '@/components/MountainScene';
 import { TopBar } from '@/components/TopBar';
-import { SideNav } from '@/components/SideNav';
+import { BottomNav } from '@/components/BottomNav';
 import { MainMenu } from '@/components/MainMenu';
 import { MonthlyReportModal } from '@/components/MonthlyReportModal';
 import { VictoryModal } from '@/components/VictoryModal';
 import { BuildingsPanel } from '@/components/BuildingsPanel';
 import { DisciplesPanel } from '@/components/DisciplesPanel';
-import { EconomyPanel } from '@/components/EconomyPanel';
 import { WarehousePanel } from '@/components/WarehousePanel';
-import { EldersPanel } from '@/components/EldersPanel';
 import { OverviewPanel } from '@/components/OverviewPanel';
-import { AllocationPanel } from '@/components/AllocationPanel';
 import { RulesPanel } from '@/components/RulesPanel';
 import { SectInfoDrawer } from '@/components/SectInfoDrawer';
 import { WorldPanel } from '@/components/WorldPanel';
@@ -23,23 +20,119 @@ import { EventFeed } from '@/components/EventFeed';
 import { ShopPanel } from '@/components/ShopPanel';
 import { OpeningGuideModal } from '@/components/OpeningGuideModal';
 import { SiegeReportModal } from '@/components/SiegeReportModal';
+import { SectCombatPanel } from '@/components/SectCombatPanel';
+import { ChoiceEventModal } from '@/components/ChoiceEventModal';
+import { ExplorationEncounterModal } from '@/components/ExplorationModal';
+import { EconomyPanel } from '@/components/EconomyPanel';
+import { EldersPanel } from '@/components/EldersPanel';
+import { AllocationPanel } from '@/components/AllocationPanel';
+
+/**
+ * 合并面板容器：affairs = overview + economy + rules + elders + combat
+ * 使用标签页切换子面板
+ */
+const AffairsPanel: React.FC = () => {
+  const [tab, setTab] = React.useState<'overview' | 'economy' | 'rules' | 'elders' | 'combat'>('overview');
+  const tabs = [
+    { key: 'overview' as const, label: '总览' },
+    { key: 'economy' as const, label: '经济' },
+    { key: 'rules' as const, label: '门规' },
+    { key: 'elders' as const, label: '长老' },
+    { key: 'combat' as const, label: '战力' },
+  ];
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex gap-1 px-2 pt-2 pb-1 overflow-x-auto scrollbar-none">
+        {tabs.map(t => (
+          <button
+            key={t.key}
+            className={`text-[11px] px-2.5 py-1 rounded-full whitespace-nowrap transition-colors ${
+              tab === t.key
+                ? 'bg-sect-gold/20 text-sect-gold border border-sect-gold/30'
+                : 'text-sect-jade/60 hover:text-sect-jade/80 border border-transparent'
+            }`}
+            onClick={() => setTab(t.key)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
+        {tab === 'overview' && <OverviewPanel />}
+        {tab === 'economy' && <EconomyPanel />}
+        {tab === 'rules' && <RulesPanel />}
+        {tab === 'elders' && <EldersPanel />}
+        {tab === 'combat' && <SectCombatPanel />}
+      </div>
+    </div>
+  );
+};
+
+/**
+ * 建造面板合并容器：buildings + allocation
+ */
+const BuildingsPanelContainer: React.FC = () => {
+  const [tab, setTab] = React.useState<'buildings' | 'allocation'>('buildings');
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex gap-1 px-2 pt-2 pb-1">
+        <button
+          className={`text-[11px] px-2.5 py-1 rounded-full transition-colors ${
+            tab === 'buildings'
+              ? 'bg-sect-gold/20 text-sect-gold border border-sect-gold/30'
+              : 'text-sect-jade/60 hover:text-sect-jade/80 border border-transparent'
+          }`}
+          onClick={() => setTab('buildings')}
+        >建造</button>
+        <button
+          className={`text-[11px] px-2.5 py-1 rounded-full transition-colors ${
+            tab === 'allocation'
+              ? 'bg-sect-gold/20 text-sect-gold border border-sect-gold/30'
+              : 'text-sect-jade/60 hover:text-sect-jade/80 border border-transparent'
+          }`}
+          onClick={() => setTab('allocation')}
+        >分配</button>
+      </div>
+      <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
+        {tab === 'buildings' && <BuildingsPanel />}
+        {tab === 'allocation' && <AllocationPanel />}
+      </div>
+    </div>
+  );
+};
 
 const GameLayout: React.FC = () => {
   const { buildings, gameStarted, showMainMenu, startGame, newGame, showReport, loadFromSlot } = useGameStore();
   const { activePanel, setActivePanel, selectedBuildingId, setSelectedBuildingId } = useUIStore();
 
+  // 面板动画状态
+  const [panelAnim, setPanelAnim] = React.useState<'enter' | 'exit' | 'idle'>('idle');
+  const prevPanelRef = React.useRef<typeof activePanel>(null);
+  const panelRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (activePanel && activePanel !== prevPanelRef.current) {
+      // 新面板打开
+      setPanelAnim('enter');
+      const timer = setTimeout(() => setPanelAnim('idle'), 350);
+      prevPanelRef.current = activePanel;
+      return () => clearTimeout(timer);
+    } else if (!activePanel) {
+      setPanelAnim('idle');
+      prevPanelRef.current = null;
+    }
+  }, [activePanel]);
+
   const renderPanel = () => {
     switch (activePanel) {
-      case 'overview': return <OverviewPanel />;
+      case 'affairs': return <AffairsPanel />;
       case 'disciples': return <DisciplesPanel />;
-      case 'buildings': return <BuildingsPanel />;
-      case 'economy': return <EconomyPanel />;
-      case 'warehouse': return <WarehousePanel />;
-      case 'elders': return <EldersPanel />;
-      case 'allocation': return <AllocationPanel />;
-      case 'rules': return <RulesPanel />;
+      case 'buildings': return <BuildingsPanelContainer />;
       case 'world': return <WorldPanel />;
       case 'activities': return <ActivitiesPanel />;
+      case 'warehouse': return <WarehousePanel />;
       case null: return null;
       default: return null;
     }
@@ -50,7 +143,6 @@ const GameLayout: React.FC = () => {
       <MainMenu
         onStartNew={(name) => newGame(name)}
         onContinue={(slotIndex) => {
-          // 优先从存档槽位读取；读取失败则继续当前自动存档
           if (!loadFromSlot(slotIndex)) {
             startGame();
           }
@@ -61,12 +153,10 @@ const GameLayout: React.FC = () => {
 
   if (!gameStarted) return null;
 
-  // 统一使用手机端布局：左侧 SideNav + 全屏面板；底部导航已合并到 SideNav，去除重复入口
   return (
-    <div className="h-full w-full sect-bg flex flex-col overflow-hidden overflow-x-hidden">
+    <div className="h-full w-full sect-bg flex flex-col overflow-hidden">
       <OrientationOverlay />
       <TopBar />
-
       <SectInfoDrawer />
 
       {/* 核心内容区 */}
@@ -80,34 +170,74 @@ const GameLayout: React.FC = () => {
         {/* 山门右下角：宗门事件 feed */}
         <EventFeed />
 
-        {/* 左侧侧边栏导航（手机端导航） */}
-        <SideNav />
-
-        {/* 中央全屏面板：仅在有面板时渲染，避免遮挡山门主界面 */}
+        {/* 全屏面板：移动端底部导航触发 */}
         {activePanel !== null && (
           <div
-            className="absolute scroll-panel-dark compact-fullscreen-panel slide-in-up overflow-y-auto overflow-x-hidden"
-            style={{ left: 'var(--side-nav-width)', right: 0, top: '44px', bottom: '0', zIndex: 20 }}
+            ref={panelRef}
+            className={`absolute inset-0 z-20 bg-[var(--ink-900)]/95 backdrop-blur-sm flex flex-col overflow-hidden ${panelAnim === 'enter' ? 'panel-enter' : ''}`}
           >
-            {renderPanel()}
+            {/* 面板头部：标题 + 关闭按钮 */}
+            <div className="flex items-center justify-between px-3 py-2 border-b border-sect-ink-light/30">
+              <span className="text-sm font-display text-sect-gold">
+                {activePanel === 'affairs' && '宗务'}
+                {activePanel === 'disciples' && '弟子'}
+                {activePanel === 'buildings' && '建造'}
+                {activePanel === 'world' && '世界'}
+                {activePanel === 'activities' && '活动'}
+                {activePanel === 'warehouse' && '库房'}
+              </span>
+              <button
+                className="text-sect-jade/50 hover:text-sect-jade text-xs px-2 py-1"
+                onClick={() => setActivePanel(null)}
+              >
+                关闭
+              </button>
+            </div>
+            {/* 面板内容 */}
+            <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 panel-scrollbar">
+              {renderPanel()}
+            </div>
           </div>
         )}
       </div>
 
+      {/* 底部导航 */}
+      <BottomNav />
+
       {/* 模态框 */}
       {showReport && <MonthlyReportModal />}
-
-      {/* 飞升胜利弹窗 */}
       <VictoryModal />
-
-      {/* 坊市商店 */}
       <ShopPanel />
-
-      {/* 开局提醒：灵石获取途径（需求3） */}
       <OpeningGuideModal />
-
-      {/* 围攻战报：本宗被攻或击退来犯时弹出 */}
       <SiegeReportModal />
+      <ChoiceEventModal />
+      <ExplorationEncounterModal />
+      <SectCollapseModal />
+    </div>
+  );
+};
+
+/** 宗门灭亡弹窗 */
+const SectCollapseModal: React.FC = () => {
+  const { sectCollapsed, sectCollapseReason, sectName, newGame, returnToMenu } = useGameStore();
+  if (!sectCollapsed) return null;
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 px-4">
+      <div className="scroll-panel-dark slide-in-up max-w-sm w-full p-6 flex flex-col gap-4 text-center">
+        <div className="text-4xl">💀</div>
+        <h2 className="font-display text-xl" style={{ color: 'var(--gold-200)' }}>道统断绝</h2>
+        <div className="text-xs leading-relaxed" style={{ color: 'var(--ink-300)' }}>
+          {sectCollapseReason}
+        </div>
+        <div className="flex gap-2">
+          <button className="btn-ink flex-1 text-xs" onClick={() => newGame(sectName || '')}>
+            重新开局
+          </button>
+          <button className="btn-ink flex-1 text-xs" onClick={returnToMenu}>
+            返回主菜单
+          </button>
+        </div>
+      </div>
     </div>
   );
 };

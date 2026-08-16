@@ -195,19 +195,27 @@ export const SectRelationNames: Record<SectRelation, string> = {
 
 // ===== 试炼系统 =====
 
-// 试炼类型：驻扎凡人城镇 / 击杀妖物 / 探索秘境
-export type TrialType = 'town' | 'monster' | 'realm';
+// 试炼类型：驻扎凡人城镇 / 击杀妖物 / 探索秘境 / 探索游历
+export type TrialType = 'town' | 'monster' | 'realm' | 'explore_outer' | 'explore_forest' | 'explore_ruins' | 'explore_secret';
 
 export const TrialTypeNames: Record<TrialType, string> = {
   town: '驻扎城镇',
   monster: '击杀妖物',
   realm: '探索秘境',
+  explore_outer: '宗门周边',
+  explore_forest: '妖兽森林',
+  explore_ruins: '古战场遗迹',
+  explore_secret: '天外秘境',
 };
 
 export const TrialTypeIcons: Record<TrialType, string> = {
   town: 'temple',
   monster: 'sword',
   realm: 'crystal',
+  explore_outer: 'compass',
+  explore_forest: 'tree',
+  explore_ruins: 'landmark',
+  explore_secret: 'sparkles',
 };
 
 // 试炼难度
@@ -283,7 +291,108 @@ export type SectHistoryType =
   | 'building_upgrade'  // 建筑升级
   | 'sect_promote'      // 宗门晋升
   | 'war_victory'       // 战争胜利
-  | 'war_defeat';       // 战争战败
+  | 'war_defeat'        // 战争战败
+  | 'disciple_death'    // 弟子寿终正寝
+  | 'disciple_defect'   // 弟子叛逃
+  | 'building_event'    // 建筑随机事件
+  | 'disciple_choice';  // 分支选择事件
+
+/** 建筑随机事件定义 */
+export interface BuildingEvent {
+  id: string;
+  buildingType: string;
+  title: string;
+  description: string;
+  type: 'auspicious' | 'disaster';
+  effects: {
+    outputMultiplier?: number;  // 产出倍率（1.5=增产50%，0.5=减产50%）
+    satisfactionChange?: number; // 满意度变化
+    spiritStoneChange?: number;  // 灵石变化
+    reputationChange?: number;   // 声望变化
+    pillReward?: { type: string; quantity: number }[]; // 丹药奖励
+    cultivationBonus?: string; // 影响弟子
+  };
+  duration: number; // 持续月数
+}
+
+/** 分支选择事件 */
+export interface ChoiceEvent {
+  id: string;
+  title: string;
+  description: string;
+  choices: ChoiceEventOption[];
+}
+
+export interface ChoiceEventOption {
+  label: string;
+  description: string;
+  effects: {
+    spiritStoneChange?: number;
+    reputationChange?: number;
+    karmaChange?: number;
+    satisfactionChange?: number;
+    notificationText: string;
+  };
+}
+
+/** 连锁事件：选择事件后的后续延迟触发事件 */
+export interface ChainEvent {
+  id: string;
+  triggerEventId: string;   // 触发源事件 ID（如 'spring_planting'）
+  triggerChoice: string;    // 触发条件：玩家选择的 label 匹配
+  delayMonths: number;      // 延迟月数后触发
+  title: string;
+  description: string;
+  type: 'auspicious' | 'disaster';
+  effects: {
+    spiritStoneChange?: number;
+    reputationChange?: number;
+    karmaChange?: number;
+    satisfactionChange?: number;
+    notificationText: string;
+  };
+  /** 此连锁事件被触发后，是否从待触发队列中移除 */
+  oneTime?: boolean;
+}
+
+/** 待触发的连锁事件（已计入延迟，等待激活） */
+export interface PendingChainEvent {
+  chainId: string;
+  scheduledMonth: number;   // 计划触发月份（year * 12 + month）
+  event: ChainEvent;
+}
+
+/** 探索遭遇事件（试炼过程中触发的选择事件） */
+export interface ExplorationEncounter {
+  id: string;
+  trialId: string;
+  regionId: string;
+  name: string;
+  description: string;
+  choices: ExplorationEncounterChoice[];
+}
+
+export interface ExplorationEncounterChoice {
+  label: string;
+  description: string;
+  successChance: number;
+  effects: {
+    success: {
+      spiritStones?: number;
+      reputation?: number;
+      herb?: number;
+      iron?: number;
+      paper?: number;
+      specialMaterials?: { name: string; amount: number }[];
+      notificationText: string;
+    };
+    failure: {
+      discipleInjury?: boolean;
+      spiritStones?: number;
+      notificationText: string;
+    };
+  };
+}
 
 export interface SectHistoryEntry {
   id: string;
@@ -291,6 +400,142 @@ export interface SectHistoryEntry {
   type: SectHistoryType;
   title: string;
   description: string;
+}
+
+// ===== 宗门传承系统 =====
+
+/** 宗门流派 */
+export type SectSchool =
+  | 'sword'       // 剑修流派 - 弟子战力+10%
+  | 'pill'        // 丹修流派 - 炼丹产出+20%
+  | 'array'       // 阵修流派 - 防御+15%
+  | 'artifact'    // 器修流派 - 炼器产出+20%
+  | 'balance'     // 均衡流派 - 全属性+5%
+  ;
+
+export const SectSchoolNames: Record<SectSchool, string> = {
+  sword: '剑修流派',
+  pill: '丹修流派',
+  array: '阵修流派',
+  artifact: '器修流派',
+  balance: '均衡流派',
+};
+
+export const SectSchoolDescriptions: Record<SectSchool, string> = {
+  sword: '专注剑道，弟子战力+10%，但炼丹效率-5%',
+  pill: '精研丹道，炼丹产出+20%，丹药品质提升',
+  array: '精通阵法，宗门防御+15%，护山大阵维护费-20%',
+  artifact: '擅长炼器，炼器产出+20%，法器品质提升',
+  balance: '均衡发展，全属性+5%，无负面效果',
+};
+
+/** 宗门天赋树节点 */
+export interface SchoolTalent {
+  id: string;
+  name: string;
+  description: string;
+  /** 前置节点ID */
+  prerequisites: string[];
+  /** 消耗宗门贡献点 */
+  contributionCost: number;
+  /** 消耗灵石 */
+  spiritStoneCost: number;
+  /** 效果描述 */
+  effects: {
+    /** 战力加成（百分比） */
+    combatPowerBonus?: number;
+    /** 修炼速度加成（百分比） */
+    cultivationSpeedBonus?: number;
+    /** 灵石产出加成（百分比） */
+    spiritStoneOutputBonus?: number;
+    /** 炼丹产出加成（百分比） */
+    pillOutputBonus?: number;
+    /** 炼器产出加成（百分比） */
+    artifactOutputBonus?: number;
+    /** 制符产出加成（百分比） */
+    talismanOutputBonus?: number;
+    /** 满意度加成 */
+    satisfactionBonus?: number;
+    /** 护山大阵防御加成（百分比） */
+    defenseBonus?: number;
+    /** 特殊能力（如'auto_refine'自动炼丹） */
+    specialAbility?: string;
+  };
+}
+
+/** 流派天赋树（每个流派有自己的天赋树） */
+export const SCHOOL_TALENT_TREES: Record<SectSchool, SchoolTalent[]> = {
+  sword: [
+    { id: 'sword_1', name: '剑心通明', description: '弟子剑道悟性提升，战力+5%', prerequisites: [], contributionCost: 100, spiritStoneCost: 200, effects: { combatPowerBonus: 5 } },
+    { id: 'sword_2', name: '万剑归宗', description: '剑修弟子可施展群体剑技，战力+10%', prerequisites: ['sword_1'], contributionCost: 300, spiritStoneCost: 500, effects: { combatPowerBonus: 10 } },
+    { id: 'sword_3', name: '剑意冲霄', description: '剑修弟子战力+15%，且修炼速度+5%', prerequisites: ['sword_2'], contributionCost: 600, spiritStoneCost: 1000, effects: { combatPowerBonus: 15, cultivationSpeedBonus: 5 } },
+    { id: 'sword_4', name: '人剑合一', description: '剑修流派终极奥义，战力+25%', prerequisites: ['sword_3'], contributionCost: 1200, spiritStoneCost: 3000, effects: { combatPowerBonus: 25 } },
+  ],
+  pill: [
+    { id: 'pill_1', name: '草木知性', description: '炼丹基础提升，炼丹产出+10%', prerequisites: [], contributionCost: 100, spiritStoneCost: 200, effects: { pillOutputBonus: 10 } },
+    { id: 'pill_2', name: '丹火纯青', description: '炼丹技艺精进，炼丹产出+15%', prerequisites: ['pill_1'], contributionCost: 300, spiritStoneCost: 500, effects: { pillOutputBonus: 15 } },
+    { id: 'pill_3', name: '丹道宗师', description: '宗师级炼丹术，炼丹产出+25%', prerequisites: ['pill_2'], contributionCost: 600, spiritStoneCost: 1000, effects: { pillOutputBonus: 25 } },
+    { id: 'pill_4', name: '仙丹妙法', description: '可炼制仙品丹药，炼丹产出+40%', prerequisites: ['pill_3'], contributionCost: 1200, spiritStoneCost: 3000, effects: { pillOutputBonus: 40 } },
+  ],
+  array: [
+    { id: 'array_1', name: '阵基稳固', description: '阵法基础加固，防御+5%', prerequisites: [], contributionCost: 100, spiritStoneCost: 200, effects: { defenseBonus: 5 } },
+    { id: 'array_2', name: '八卦迷阵', description: '护山大阵增强，防御+10%', prerequisites: ['array_1'], contributionCost: 300, spiritStoneCost: 500, effects: { defenseBonus: 10 } },
+    { id: 'array_3', name: '周天星斗', description: '引星辰之力护宗，防御+20%', prerequisites: ['array_2'], contributionCost: 600, spiritStoneCost: 1000, effects: { defenseBonus: 20 } },
+    { id: 'array_4', name: '不灭仙阵', description: '护山大阵几乎不可攻破，防御+35%', prerequisites: ['array_3'], contributionCost: 1200, spiritStoneCost: 3000, effects: { defenseBonus: 35 } },
+  ],
+  artifact: [
+    { id: 'artifact_1', name: '百炼成钢', description: '炼器基础提升，炼器产出+10%', prerequisites: [], contributionCost: 100, spiritStoneCost: 200, effects: { artifactOutputBonus: 10 } },
+    { id: 'artifact_2', name: '器魂觉醒', description: '炼器品质提升，炼器产出+15%', prerequisites: ['artifact_1'], contributionCost: 300, spiritStoneCost: 500, effects: { artifactOutputBonus: 15 } },
+    { id: 'artifact_3', name: '天工开物', description: '炼器大师，炼器产出+25%', prerequisites: ['artifact_2'], contributionCost: 600, spiritStoneCost: 1000, effects: { artifactOutputBonus: 25 } },
+    { id: 'artifact_4', name: '神器锻造', description: '可锻造仙品法器，炼器产出+40%', prerequisites: ['artifact_3'], contributionCost: 1200, spiritStoneCost: 3000, effects: { artifactOutputBonus: 40 } },
+  ],
+  balance: [
+    { id: 'balance_1', name: '五行调和', description: '全属性+3%', prerequisites: [], contributionCost: 100, spiritStoneCost: 200, effects: { combatPowerBonus: 3, cultivationSpeedBonus: 3, spiritStoneOutputBonus: 3 } },
+    { id: 'balance_2', name: '阴阳相济', description: '全属性+5%', prerequisites: ['balance_1'], contributionCost: 300, spiritStoneCost: 500, effects: { combatPowerBonus: 5, cultivationSpeedBonus: 5, spiritStoneOutputBonus: 5 } },
+    { id: 'balance_3', name: '天人合一', description: '全属性+8%', prerequisites: ['balance_2'], contributionCost: 600, spiritStoneCost: 1000, effects: { combatPowerBonus: 8, cultivationSpeedBonus: 8, spiritStoneOutputBonus: 8 } },
+    { id: 'balance_4', name: '大道自然', description: '全属性+12%，且满意度+5', prerequisites: ['balance_3'], contributionCost: 1200, spiritStoneCost: 3000, effects: { combatPowerBonus: 12, cultivationSpeedBonus: 12, spiritStoneOutputBonus: 12, satisfactionBonus: 5 } },
+  ],
+};
+
+// ===== 宗门气运 =====
+
+/** 天灾类型 */
+export type CalamityType =
+  | 'heavenly_thunder'   // 天劫雷暴 - 弟子受伤
+  | 'beast_tide'         // 兽潮来袭 - 战斗事件
+  | 'spirit_vein_dry'    // 灵脉枯竭 - 产出减半
+  | 'secret_realm_open'  // 秘境开启 - 探索机遇
+  | 'demon_incursion'    // 魔道入侵 - 强制战斗
+  ;
+
+export const CalamityTypeNames: Record<CalamityType, string> = {
+  heavenly_thunder: '天劫雷暴',
+  beast_tide: '兽潮来袭',
+  spirit_vein_dry: '灵脉枯竭',
+  secret_realm_open: '秘境开启',
+  demon_incursion: '魔道入侵',
+};
+
+export interface CalamityEvent {
+  id: string;
+  type: CalamityType;
+  title: string;
+  description: string;
+  /** 预警事件（提前N个月触发，给玩家准备时间） */
+  warningMonths: number;
+  warningTitle: string;
+  warningDescription: string;
+  effects: {
+    spiritStoneChange?: number;
+    reputationChange?: number;
+    satisfactionChange?: number;
+    /** 产出减倍率（0.5=减半） */
+    outputMultiplier?: number;
+    /** 弟子受伤概率 */
+    discipleInjuryChance?: number;
+    /** 持续月数 */
+    durationMonths: number;
+  };
 }
 
 // 仓库物品自动交易规则（按 ShopItem.id 存储，键对应 shop.ts 的 SHOP_ITEMS[i].id：'pill:qi_gathering_pill' / 'beast:spirit_fox' / 'material:shou_yuan_hua' 等）

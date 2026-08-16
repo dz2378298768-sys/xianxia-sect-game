@@ -437,12 +437,17 @@ const TournamentResultView: React.FC<{ result: TournamentResult; current?: boole
           <summary className="text-sect-jade/50 cursor-pointer hover:text-sect-jade">关键对战</summary>
           <div className="mt-0.5 space-y-0.5 pl-2">
             {result.matches.map((m, i) => (
-              <div key={i} className="text-sect-jade/60">
-                第{m.round}轮：{m.ourName}
-                <span className={m.ourWin ? 'text-green-400' : 'text-red-400'}>
-                  {m.ourWin ? ' 胜 ' : ' 负 '}
+              <div key={i} className="text-sect-jade/60 flex items-center justify-between">
+                <span>
+                  第{m.round}轮：{m.ourName}
+                  <span className={m.ourWin ? 'text-green-400' : 'text-red-400'}>
+                    {m.ourWin ? ' 胜 ' : ' 负 '}
+                  </span>
+                  {m.opponentName}（{m.opponentSectName}）
                 </span>
-                {m.opponentName}（{m.opponentSectName}）
+                <span className="text-[9px] text-sect-jade/40 font-mono">
+                  {m.ourPower.toLocaleString()} vs {m.opponentPower.toLocaleString()}
+                </span>
               </div>
             ))}
           </div>

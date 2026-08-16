@@ -1,12 +1,21 @@
 import { create } from 'zustand';
 
-export type PanelType = 'overview' | 'disciples' | 'buildings' | 'economy' | 'warehouse' | 'rules' | 'elders' | 'allocation' | 'world' | 'activities';
+/**
+ * 精简后的面板类型（从11个合并到6个）
+ * affairs = overview + economy + rules + elders + combat
+ * disciples = 弟子管理
+ * buildings = 建造 + 分配
+ * world = 世界探索 + 外交 + 试炼
+ * activities = 活动
+ * warehouse = 库房 + 商店
+ */
+export type PanelType = 'affairs' | 'disciples' | 'buildings' | 'world' | 'activities' | 'warehouse';
 
-// 宗门信息抽屉的标签页：修炼（OverviewPanel）+ 宗门战（EldersPanel）
+// 宗门信息抽屉的标签页
 export type SectInfoTab = 'overview' | 'elders';
 
 interface UIState {
-  activePanel: PanelType | null;  // null 代表山景主视图（无中央面板覆盖）
+  activePanel: PanelType | null;  // null 代表山景主视图
   selectedDiscipleId: string | null;
   selectedBuildingId: string | null;
   showNotifications: boolean;
@@ -15,9 +24,7 @@ interface UIState {
   sectInfoOpen: boolean;
   sectInfoTab: SectInfoTab;
   showShop: boolean;
-  // 开局提醒弹窗（需求3）：新游戏开始时展示灵石获取途径
   showOpeningGuide: boolean;
-  // 围攻战报弹窗：本宗被攻时展示战斗详情与物资损失
   siegeReport: import('./siegeReport').SiegeReportData | null;
 
   setActivePanel: (panel: PanelType | null) => void;
@@ -35,7 +42,7 @@ interface UIState {
 }
 
 export const useUIStore = create<UIState>((set) => ({
-  activePanel: null,  // 初始显示山景主界面
+  activePanel: null,
   selectedDiscipleId: null,
   selectedBuildingId: null,
   showNotifications: false,

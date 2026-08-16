@@ -11,7 +11,6 @@ import type { Notification } from '@/types/game';
 export const EventFeed: React.FC = () => {
   const { notifications, markNotificationRead, followedDiscipleIds, disciples } = useGameStore();
   const [collapsed, setCollapsed] = useState(false);
-  const [followCollapsed, setFollowCollapsed] = useState(false);
 
   // 已关注弟子列表（按关注顺序，缺失弟子自动忽略）
   const followedDisciples = useMemo(
@@ -21,20 +20,12 @@ export const EventFeed: React.FC = () => {
     [followedDiscipleIds, disciples],
   );
 
-  // 过滤出宗门相关事件（剔除纯月报明细类），保留突破/晋升/大比/宗门升级/新弟子/弟子离去/灵石告急等
+  // 过滤出宗门相关事件
   const sectEvents = useMemo(() => {
     const IMPORTANT_TITLE_PREFIXES = [
-      '新弟子加入',
-      '突破成功',
-      '突破失败',
-      '弟子晋升',
-      '弟子分配',
-      '弟子离去',
-      '弟子不满',
-      '宗门晋升',
-      '山门',
-      '宗门',
-      '灵石告急',
+      '新弟子加入', '突破成功', '突破失败', '弟子晋升',
+      '弟子分配', '弟子离去', '弟子不满', '宗门晋升',
+      '山门', '宗门', '灵石告急',
     ];
     return notifications.filter(n =>
       IMPORTANT_TITLE_PREFIXES.some(p => n.title.startsWith(p)),
@@ -55,7 +46,7 @@ export const EventFeed: React.FC = () => {
 
   if (collapsed) {
     return (
-      <div className="event-feed event-feed-collapsed">
+      <div className="event-feed event-feed-collapsed fade-in">
         <button
           className="event-feed-header w-full"
           onClick={() => setCollapsed(false)}
@@ -75,7 +66,7 @@ export const EventFeed: React.FC = () => {
   }
 
   return (
-    <div className="event-feed">
+    <div className="event-feed slide-in-up">
       <div className="event-feed-header">
         <span className="event-feed-title">
           <SectIcon name="disciple" size={12} strokeWidth={2} />
@@ -85,7 +76,7 @@ export const EventFeed: React.FC = () => {
           )}
         </span>
         <button
-          className="event-feed-toggle"
+          className="event-feed-toggle btn-press"
           onClick={() => setCollapsed(true)}
           title="收起"
         >
@@ -93,57 +84,50 @@ export const EventFeed: React.FC = () => {
         </button>
       </div>
       <div className="event-feed-list">
-        {/* 已关注弟子区（可折叠） */}
-        <div className="event-feed-follow-section">
-          <button
-            className="event-feed-follow-header"
-            onClick={() => setFollowCollapsed(c => !c)}
-            title={followCollapsed ? '展开已关注弟子' : '收起已关注弟子'}
-          >
-            <span className="event-feed-follow-title">
-              <SectIcon name="disciple" size={12} strokeWidth={2} />
-              已关注弟子（{followedDisciples.length}）
-            </span>
-            <SectIcon name="arrowRight" size={12} strokeWidth={2} />
-          </button>
-          {!followCollapsed && (
-            followedDisciples.length === 0 ? (
-              <div className="event-feed-follow-empty">尚未关注弟子</div>
-            ) : (
-              <div className="event-feed-follow-list">
-                {followedDisciples.map(d => (
-                  <div key={d.id} className="event-feed-follow-card">
-                    <span className="event-feed-follow-name">{d.name}</span>
-                    <span className="event-feed-follow-realm">{getRealmDisplay(d)}</span>
-                    <span className="event-feed-follow-status">{DiscipleStatusNames[d.status]}</span>
-                    <span className={`event-feed-follow-sat ${d.satisfaction >= 60 ? 'ok' : d.satisfaction >= 30 ? 'mid' : 'low'}`}>
-                      满意{d.satisfaction}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )
-          )}
-        </div>
+        {/* 已关注弟子区（简化） */}
+        {followedDisciples.length > 0 && (
+          <div className="px-2 py-1.5 border-b border-sect-ink-light/20 mb-1">
+            <div className="flex items-center gap-1.5 text-[10px] text-sect-jade/60 mb-1">
+              <SectIcon name="disciple" size={10} strokeWidth={2} />
+              已关注
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {followedDisciples.map(d => (
+                <span
+                  key={d.id}
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-sect-ink-light/30 text-[9px] text-sect-jade/80"
+                >
+                  <span className="font-medium text-sect-gold/80">{d.name}</span>
+                  <span className="text-sect-jade/40">{DiscipleStatusNames[d.status]}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 事件列表 */}
         {recentEvents.length === 0 ? (
-          <div className="event-feed-empty">山门清平，暂无事件</div>
+          <div className="event-feed-empty fade-in">山门清平，暂无事件</div>
         ) : (
-          recentEvents.map(n => (
-            <div
-              key={n.id}
-              className={`event-feed-item ${!n.read ? 'event-feed-item-unread' : ''}`}
-              onClick={() => { if (!n.read) markNotificationRead(n.id); }}
-            >
-              <span className={`event-feed-dot ${dotClass(n.type)}`} />
-              <div className="event-feed-content">
-                <span className="event-feed-title-text">{n.title}</span>
-                <span className="event-feed-desc">{n.content}</span>
-                <div className="event-feed-time">
-                  第 {n.timestamp.year} 年 {n.timestamp.month} 月
+          <div className="divide-y divide-sect-ink-light/10">
+            {recentEvents.map((n, i) => (
+              <div
+                key={n.id}
+                className={`event-feed-item btn-press ${!n.read ? 'event-feed-item-unread' : ''}`}
+                style={{ animationDelay: `${i * 20}ms` }}
+                onClick={() => { if (!n.read) markNotificationRead(n.id); }}
+              >
+                <span className={`event-feed-dot ${dotClass(n.type)}`} />
+                <div className="event-feed-content min-w-0">
+                  <span className="event-feed-title-text">{n.title}</span>
+                  <span className="event-feed-desc">{n.content}</span>
+                  <div className="event-feed-time">
+                    第 {n.timestamp.year} 年 {n.timestamp.month} 月
+                  </div>
                 </div>
               </div>
-            </div>
-          ))
+            ))}
+          </div>
         )}
       </div>
     </div>

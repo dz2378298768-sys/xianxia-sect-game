@@ -4,38 +4,36 @@ import { SectIcon } from '@/components/icons/SectIcons';
 
 /**
  * 活动面板：聚合「山门大比」与「宗门大比」两类赛事
- *
- * 从原 DisciplesPanel（山门大比）与 WorldPanel（宗门大比）中抽出，
- * 统一放在左侧导航的「活动」入口下，避免遮挡弟子/世界主列表。
  */
 export const ActivitiesPanel: React.FC = () => {
   return (
-    <div className="space-y-5">
-      <div>
-        <h1 className="font-display text-xl text-gold-gradient flex items-center gap-2">
-          <SectIcon name="battle" size={20} strokeWidth={1.8} className="text-sect-gold" />
-          宗门活动
-        </h1>
-        <p className="text-sect-jade/60 text-xs mt-1">
-          管理山门大比与天下宗门大比两类赛事
-        </p>
+    <div className="space-y-5 p-3">
+      {/* 面板标题 */}
+      <div className="flex items-center gap-2 border-b border-sect-ink-light/20 pb-2">
+        <span className="p-1.5 rounded-lg bg-sect-gold/10">
+          <SectIcon name="battle" size={18} strokeWidth={1.8} className="text-sect-gold" />
+        </span>
+        <div>
+          <h1 className="font-display text-base text-gold-gradient">宗门活动</h1>
+          <p className="text-sect-jade/50 text-[10px]">管理山门大比与天下宗门大比</p>
+        </div>
       </div>
 
-      {/* 山门大比：本宗门内部弟子比试 */}
-      <div>
-        <h2 className="font-display text-lg text-gold-gradient mb-3 flex items-center gap-2">
-          <SectIcon name="battle" size={18} strokeWidth={1.8} className="text-sect-gold" />
-          山门大比
-        </h2>
+      {/* 山门大比 */}
+      <div className="scroll-panel-dark p-3">
+        <div className="flex items-center gap-2 mb-3">
+          <SectIcon name="battle" size={16} strokeWidth={1.8} className="text-sect-gold" />
+          <h2 className="font-display text-xs text-sect-gold tracking-wider">山门大比</h2>
+        </div>
         <TournamentPanel scope="sect" />
       </div>
 
-      {/* 宗门大比：天下宗门之间的比试 */}
-      <div>
-        <h2 className="font-display text-lg text-gold-gradient mb-3 flex items-center gap-2">
-          <SectIcon name="world" size={18} strokeWidth={1.8} className="text-sect-gold" />
-          宗门大比
-        </h2>
+      {/* 宗门大比 */}
+      <div className="scroll-panel-dark p-3">
+        <div className="flex items-center gap-2 mb-3">
+          <SectIcon name="world" size={16} strokeWidth={1.8} className="text-sect-gold" />
+          <h2 className="font-display text-xs text-sect-gold tracking-wider">宗门大比</h2>
+        </div>
         <TournamentPanel scope="inter-sect" />
       </div>
     </div>

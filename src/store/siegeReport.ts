@@ -21,4 +21,8 @@ export interface SiegeReportData {
   date: { year: number; month: number };
   /** 触发的源头，用于弹窗额外分支 */
   source: 'rival' | 'coalition';
+  /** 我方防守战力（用于战力对比展示） */
+  ourPower?: number;
+  /** 攻方总战力（用于战力对比展示） */
+  enemyPower?: number;
 }

@@ -20,13 +20,15 @@ import {
   SectLevelNames, SectLevelRequirementsMap, SectLevelOrder,
   SectLevelDiscipleCap, SectLevelReputationCap, ReputationGrowthConfig,
 } from '@/types/game';
-import type { Trial, ContributionLog, ContributionLogType, SectHistoryEntry, AutoTradeRule } from '@/types/game';
+import type { Trial, ContributionLog, ContributionLogType, SectHistoryEntry, AutoTradeRule, ChoiceEvent, BuildingEvent, ExplorationEncounter, TrialType, ChainEvent, PendingChainEvent, SectSchool, CalamityEvent } from '@/types/game';
 import {
   createInitialDisciple, createInitialBuildings, getDefaultPromotionRules, autoAssignBuilding,
   autoAssignResidence, getResidenceUpgradeCost, getResidenceCapacityByLevel, getCaveMansionUpgradeCost,
   monthlyReassign,
   autoAssignManagers, autoLearnTechniqueOnBreakthrough, pickUpgradeBook,
   getMaintenanceCostByLevel, calculateLectureBonus, SKYSCRAPER_TOWER_COMBAT_POWER,
+  processDiscipleDepartures, mergeDepartureInventories,
+  processMonthlyEmergentEvents, processMasterInheritance,
 } from '@/utils/gameLogic';
 import {
   calculateBuildingMaintenance,
@@ -65,6 +67,13 @@ import { PILL_CONFIGS } from '@/data/pills';
 import { ARTIFACT_CONFIGS } from '@/data/artifacts';
 import { TALISMAN_CONFIGS } from '@/data/talismans';
 import { BEAST_CONFIGS } from '@/data/beasts';
+import { EXPLORATION_REGIONS, getEncountersByRegion, getRegionById } from '@/data/exploration';
+import type { CraftingTask, CraftingResult } from '@/types/crafting';
+import { QualityNames } from '@/types/crafting';
+import { processMonthlyCrafting, createCraftingTask as createCraftingTaskLogic } from '@/utils/gameLogic';
+import { generateChainEvents, processPendingChainEvents, generatePriceFluctuations, calculateExpansionCost, calculateDiscipleWelfareCost, checkCalamityTrigger, generateCalamity } from '@/utils/gameLogic';
+import { SCHOOL_TALENT_TREES } from '@/types/game';
+import { RECIPE_MAP } from '@/data/recipes';
 
 interface GameState {
   year: number;
@@ -118,6 +127,29 @@ interface GameState {
   lastInterSectTournamentYears: Record<TournamentFrequency, number>;
   spiritStoneHistory: { year: number; month: number; spiritStones: number; netIncome: number }[]; // 近24月灵石收支历史
   autoAppointElder: boolean; // 是否每月自动任命符合条件核心弟子为长老
+  // 涌现事件系统
+  choiceEvent: ChoiceEvent | null;       // 当前待处理的分支选择事件
+  pendingChainEvents: PendingChainEvent[]; // 待触发的连锁事件队列
+  pendingEncounter: ExplorationEncounter | null; // 探索遭遇事件
+  unlockedExplorationRegions: string[];  // 已解锁的探索区域ID列表
+  monthsConsecutiveNegative: number;     // 连续灵石赤字月数
+  sectCollapsed: boolean;                // 宗门是否已灭亡
+  sectCollapseReason: string;            // 灭亡原因
+  // 经济系统
+  priceMultipliers: Record<string, number>; // 商店物品价格倍率（0.8 ~ 1.2）
+  // 宗门传承系统
+  sectSchool: SectSchool | null;          // 当前宗门流派（首次晋升时选择）
+  unlockedTalents: string[];              // 已解锁的天赋节点ID列表
+  // 宗门气运系统
+  sectFortune: number;                    // 宗门气运值（-100 ~ 100）
+  activeCalamity: CalamityEvent | null;   // 当前活跃的天灾事件
+  calamityWarnings: CalamityEvent[];      // 待触发的天灾预警
+  // 大额支出
+  expansionCount: number;                 // 宗门扩张次数
+  lastCalamityYear: number;               // 上次天灾触发年份
+  resolveChoiceEvent: (choiceIndex: number) => void; // 处理分支选择
+  initiateExploration: (regionId: string, discipleId: string) => { ok: boolean; reason?: string }; // 发起探索
+  resolveExplorationEncounter: (choiceIndex: number) => void; // 处理探索遭遇
   recruitCandidates: Disciple[];           // 招收弟子候选列表（一次招 3~5 人让玩家挑）
   recruitCostPerDisciple: number;          // 每个候选人的招收费用（统一费用，固定 50 灵石）
   recruitRefreshCost: number;              // 「换一批」刷新候选列表的费用（固定 50 灵石）
@@ -126,6 +158,11 @@ interface GameState {
   autoTrade: Record<string, AutoTradeRule>;
   setAutoTradeRule: (shopItemId: string, rule: Partial<AutoTradeRule>) => void;  // 设置/覆盖某物品的自动交易规则
   toggleAutoTrade: (shopItemId: string, enabled: boolean) => void;               // 某物品启用/停用自动交易
+  // 炼制系统
+  craftingTasks: CraftingTask[];
+  startCrafting: (recipeId: string, category: 'pill' | 'artifact' | 'talisman', itemType: string, discipleId: string | null, quantity: number) => { success: boolean; reason?: string };
+  cancelCrafting: (taskId: string) => void;
+  collectCraftingResult: (taskId: string) => void;
   nextMonth: () => void;
   dismissReport: () => void;
   dismissVictory: () => void;
@@ -235,6 +272,12 @@ interface GameState {
   challengeSkyscraperTower: (discipleId: string) => {
     success: boolean; reason?: string; ascended?: boolean;
   };
+  // 宗门传承系统
+  selectSchool: (school: SectSchool) => void;
+  unlockTalent: (talentId: string) => { ok: boolean; reason: string };
+  // 大额支出
+  expandSect: () => { ok: boolean; cost?: number; newCapacity?: number; reason?: string };
+  distributeWelfare: (generosityLevel: number) => { ok: boolean; cost?: number; satisfactionGain?: number; reason?: string };
 }
 
 // 库存累加辅助：找到同类型则 +1，否则新增条目
@@ -498,10 +541,29 @@ const createInitialState = () => {
     lastInterSectTournamentYears: { yearly: 0, every5years: 0, every10years: 0 },
     spiritStoneHistory: [],
     autoAppointElder: false,
+    choiceEvent: null,
+    pendingChainEvents: [],
+    monthsConsecutiveNegative: 0,
+    pendingEncounter: null,
+    unlockedExplorationRegions: ['outer'],
+    sectCollapsed: false,
+    sectCollapseReason: '',
+    priceMultipliers: {},
+    // 宗门传承系统
+    sectSchool: null,
+    unlockedTalents: [],
+    // 宗门气运系统
+    sectFortune: 0,
+    activeCalamity: null,
+    calamityWarnings: [],
+    // 大额支出
+    expansionCount: 0,
+    lastCalamityYear: 0,
     recruitCandidates: [],
     recruitCostPerDisciple: 50,
     recruitRefreshCost: 50,
     autoTrade: {},
+    craftingTasks: [],
   };
 };
 
@@ -621,6 +683,150 @@ export const useGameStore = create<GameState>()(
         set({ showMainMenu: true });
       },
 
+      resolveChoiceEvent: (choiceIndex: number) => {
+        const state = get();
+        if (!state.choiceEvent) return;
+        const choice = state.choiceEvent.choices[choiceIndex];
+        if (!choice) return;
+        const { spiritStoneChange, reputationChange, karmaChange, satisfactionChange, notificationText } = choice.effects;
+        const currentDate = { year: state.year, month: state.month };
+        const newNotifications: Notification[] = [
+          createNotification('info', state.choiceEvent.title, notificationText, currentDate),
+          ...state.notifications,
+        ].slice(0, 50);
+        // 满意度变化影响所有弟子
+        const satChange = satisfactionChange ?? 0;
+        const updatedDisciples = satChange !== 0
+          ? state.disciples.map(d => ({ ...d, satisfaction: Math.max(0, Math.min(100, d.satisfaction + satChange)) }))
+          : state.disciples;
+        // 生成连锁事件
+        const currentMonthTotal = state.year * 12 + state.month;
+        const newChainEvents = generateChainEvents(
+          state.choiceEvent.id,
+          choice.label,
+          currentMonthTotal,
+        );
+        const updatedChainEvents = [...state.pendingChainEvents, ...newChainEvents];
+        set({
+          spiritStones: state.spiritStones + (spiritStoneChange ?? 0),
+          reputation: state.reputation + (reputationChange ?? 0),
+          karma: Math.max(-100, Math.min(100, state.karma + (karmaChange ?? 0))),
+          disciples: updatedDisciples,
+          choiceEvent: null,
+          pendingChainEvents: updatedChainEvents,
+          notifications: newNotifications,
+        });
+      },
+
+      // 发起探索（创建探索试炼）
+      initiateExploration: (regionId: string, discipleId: string) => {
+        const state = get();
+        if (!state.unlockedExplorationRegions.includes(regionId)) {
+          return { ok: false, reason: '该区域尚未解锁' };
+        }
+        const region = getRegionById(regionId);
+        if (!region) return { ok: false, reason: '区域不存在' };
+        const disciple = state.disciples.find(d => d.id === discipleId);
+        if (!disciple) return { ok: false, reason: '弟子不存在' };
+        if (disciple.onTrialId) return { ok: false, reason: '该弟子已在执行任务' };
+        if (disciple.isBreakingThrough) return { ok: false, reason: '该弟子正在突破' };
+        if (disciple.status !== 'inner' && disciple.status !== 'core' && disciple.status !== 'elder') {
+          return { ok: false, reason: '该弟子不可派遣' };
+        }
+
+        // 创建探索试炼
+        const newTrial: Trial = {
+          id: generateId(),
+          type: region.trialType as TrialType,
+          name: `探索·${region.name}`,
+          description: `派遣弟子 ${disciple.name} 前往「${region.name}」探索游历，预计耗时 ${region.baseDurationMonths} 个月。`,
+          difficulty: 'normal',
+          requiredPower: region.minPower,
+          durationMonths: region.baseDurationMonths,
+          rewards: { description: '探索收获（含随机遭遇）' },
+          riskRate: region.riskRate,
+          injuryRate: region.riskRate * 0.5,
+          status: 'in_progress',
+          assignedDiscipleId: discipleId,
+          startYear: state.year,
+          startMonth: state.month,
+          progress: 0,
+          generatedYear: state.year,
+        };
+
+        const updatedDisciples = state.disciples.map(d =>
+          d.id === discipleId ? { ...d, onTrialId: newTrial.id } : d,
+        );
+
+        set({
+          trials: [...state.trials, newTrial],
+          disciples: updatedDisciples,
+          notifications: [
+            createNotification('info', '探索出发', `弟子 ${disciple.name} 启程前往「${region.name}」探索，预计 ${region.baseDurationMonths} 个月后返回。`, { year: state.year, month: state.month }),
+            ...state.notifications,
+          ].slice(0, 50),
+        });
+        return { ok: true };
+      },
+
+      // 处理探索遭遇选择
+      resolveExplorationEncounter: (choiceIndex: number) => {
+        const state = get();
+        if (!state.pendingEncounter) return;
+        const encounter = state.pendingEncounter;
+        const choice = encounter.choices[choiceIndex];
+        if (!choice) return;
+        const currentDate = { year: state.year, month: state.month };
+
+        const roll = Math.random();
+        const isSuccess = roll < choice.successChance;
+        const eff = isSuccess ? choice.effects.success : choice.effects.failure;
+
+        // 更新状态
+        const updates: Partial<GameState> = {
+          pendingEncounter: null,
+          notifications: [
+            createNotification(
+              isSuccess ? 'success' : 'warning',
+              encounter.name,
+              eff.notificationText,
+              currentDate,
+            ),
+            ...state.notifications,
+          ].slice(0, 50),
+        };
+
+        // 应用效果
+        const effAny = eff as any;
+        if (isSuccess) {
+          if (effAny.spiritStones) updates.spiritStones = state.spiritStones + (effAny.spiritStones ?? 0);
+          if (effAny.reputation) updates.reputation = state.reputation + (effAny.reputation ?? 0);
+          if (effAny.herb) updates.herbInventory = state.herbInventory + (effAny.herb ?? 0);
+          if (effAny.iron) updates.ironInventory = state.ironInventory + (effAny.iron ?? 0);
+          if (effAny.paper) updates.paperInventory = state.paperInventory + (effAny.paper ?? 0);
+          if (effAny.specialMaterials) {
+            const newSpec = { ...state.specialMaterials };
+            for (const mat of effAny.specialMaterials) {
+              newSpec[mat.name] = (newSpec[mat.name] ?? 0) + mat.amount;
+            }
+            updates.specialMaterials = newSpec;
+          }
+        } else {
+          if (effAny.spiritStones) updates.spiritStones = state.spiritStones + (effAny.spiritStones ?? 0);
+          if (effAny.discipleInjury && encounter.trialId) {
+            // 弟子受伤：扣除满意度
+            const updatedDisciples = state.disciples.map(d =>
+              d.onTrialId === encounter.trialId
+                ? { ...d, satisfaction: Math.max(0, d.satisfaction - 15) }
+                : d,
+            );
+            updates.disciples = updatedDisciples;
+          }
+        }
+
+        set(updates as any);
+      },
+
       useRedeemCode: (code: string) => {
         const state = get();
         if (!state.gameStarted) return { ok: false, reason: '游戏未开始' };
@@ -663,7 +869,7 @@ export const useGameStore = create<GameState>()(
         let { year, month, spiritStones, reputation, herbInventory } = state;
         const { disciples, buildings, promotionRules, pillInventory, libraryBooks, libraryCosts } = state;
         
-        const spiritStoneIncome: { source: string; amount: number }[] = [];
+        let spiritStoneIncome: { source: string; amount: number }[] = [];
         const spiritStoneExpense: { source: string; amount: number }[] = [];
         const breakthroughEvents: { discipleId: string; discipleName: string; from: string; to: string; success: boolean }[] = [];
         const promotionEvents: { discipleId: string; discipleName: string; from: string; to: string }[] = [];
@@ -937,6 +1143,8 @@ export const useGameStore = create<GameState>()(
                 deadDisciples: 0,
                 date: { year, month },
                 source: 'rival',
+                ourPower: totalDefense,
+                enemyPower: rivalCombat,
               };
               pendingSectHistory.push({
                 id: generateId(),
@@ -966,6 +1174,8 @@ export const useGameStore = create<GameState>()(
                 deadDisciples: 0,
                 date: { year, month },
                 source: 'rival',
+                ourPower: totalDefense,
+                enemyPower: rivalCombat,
               };
               pendingSectHistory.push({
                 id: generateId(),
@@ -1069,6 +1279,8 @@ export const useGameStore = create<GameState>()(
                   deadDisciples: 0,
                   date: { year, month },
                   source: 'coalition',
+                  ourPower: totalDefense,
+                  enemyPower: coalitionPower,
                 };
                 pendingSectHistory.push({
                   id: generateId(),
@@ -1571,10 +1783,36 @@ export const useGameStore = create<GameState>()(
 
           return d2;
         });
-        
-        // 过滤离开的弟子
-        const leftDisciples = updatedDisciples.filter(d => d.status === 'mortal');
-        const activeDisciples = updatedDisciples.filter(d => d.status !== 'mortal');
+
+        // ===== 自然流失：寿命死亡 + 叛逃（替代旧版 "status=mortal 粗暴离开"） =====
+        // processDiscipleDepartures 内部会：
+        //   · age >= maxAge 判定寿终；连续低满意度判定叛逃
+        //   · 死亡遗产：师傅→道侣→同门好友 → 其余归仓库（会 mutate 传人弟子的装备字段，返回浅拷贝对象）
+        //   · 叛逃带走 1–3 倍身份月收入灵石
+        //   · 生成 Notification 和 SectHistoryEntry
+        const depResult = processDiscipleDepartures(updatedDisciples, currentDate, createNotification);
+
+        // 合并遗产/装备回流到本月库存累加器（与生产扣减顺序不冲突，因为是纯加项）
+        mergeDepartureInventories(depResult.inventoryReport, {
+          pillInventory: accPillInventory,
+          artifactInventory: accArtifactInventory,
+          talismanInventory: accTalismanInventory,
+          beastInventory: newBeastInventory,
+          specialMaterials: accSpecialMaterials,
+          herbInventory: accHerbs,
+          ironInventory: accIron,
+          paperInventory: accPaper,
+        });
+        spiritStones -= depResult.stoneLossFromDefection;
+        if (depResult.stoneLossFromDefection > 0) {
+          spiritStoneExpense.push({ source: '叛逃弟子带走灵石', amount: depResult.stoneLossFromDefection });
+        }
+        newNotifications.push(...depResult.notifications);
+        pendingSectHistory.push(...depResult.sectHistories);
+
+        // 兼容旧代码：用新的幸存者替换 activeDisciples（leftDisciples 保留概念性字段避免后续 lint 报错）
+        const leftDisciples: Disciple[] = []; // 语义保留，不再使用旧的 status=mortal 粗暴标记
+        const activeDisciples = depResult.survivors;
 
         currentBuildings = [...buildings];
 
@@ -1794,6 +2032,16 @@ export const useGameStore = create<GameState>()(
         const managerResult = autoAssignManagers(finalDisciples, currentBuildings);
         finalDisciples = managerResult.disciples;
         currentBuildings = managerResult.buildings;
+
+        // 宗门扩张加成：每扩张一次 +5% 全局产出
+        const expansionMultiplier = 1 + state.expansionCount * 0.05;
+        totalSpiritStoneIncome = Math.floor(totalSpiritStoneIncome * expansionMultiplier);
+        totalHerbIncome = Math.floor(totalHerbIncome * expansionMultiplier);
+        // 同步更新收入明细中的产出项（附庸上贡和宿敌相关不翻倍，仅建筑产出翻倍）
+        spiritStoneIncome = spiritStoneIncome.map(entry => {
+          if (entry.source === '附庸上贡') return entry;
+          return { ...entry, amount: Math.floor(entry.amount * expansionMultiplier) };
+        });
 
         spiritStones += totalSpiritStoneIncome - totalMaintenance - rivalStoneLoss;
         reputation += reputationChange + buildingReputation + rivalRepGain - rivalRepLoss;
@@ -2223,6 +2471,45 @@ export const useGameStore = create<GameState>()(
           const progressInc = 100 / trial.durationMonths;
           const newProgress = Math.min(100, trial.progress + progressInc);
 
+          // 探索试炼：每月有概率触发遭遇事件
+          if (trial.type.startsWith('explore_') && !state.pendingEncounter) {
+            const region = getRegionById(trial.type.replace('explore_', ''));
+            if (region && Math.random() < region.encounterChance) {
+              const encounters = getEncountersByRegion(region.id);
+              if (encounters.length > 0) {
+                const encounter = encounters[Math.floor(Math.random() * encounters.length)];
+                state.pendingEncounter = {
+                  id: encounter.id,
+                  trialId: trial.id,
+                  regionId: region.id,
+                  name: encounter.name,
+                  description: encounter.description,
+                  choices: encounter.choices.map(c => ({
+                    label: c.label,
+                    description: `成功率 ${Math.round(c.successChance * 100)}%`,
+                    successChance: c.successChance,
+                    effects: {
+                      success: {
+                        spiritStones: c.effects.success.spiritStones,
+                        reputation: c.effects.success.reputation,
+                        herb: c.effects.success.herb,
+                        iron: c.effects.success.iron,
+                        paper: c.effects.success.paper,
+                        specialMaterials: c.effects.success.specialMaterials,
+                        notificationText: c.effects.success.notificationText,
+                      },
+                      failure: {
+                        discipleInjury: c.effects.failure.discipleInjury,
+                        spiritStones: c.effects.failure.spiritStones,
+                        notificationText: c.effects.failure.notificationText,
+                      },
+                    },
+                  })),
+                };
+              }
+            }
+          }
+
           if (newProgress >= 100) {
             // 试炼结束，结算
             const disciple = finalDisciples.find(d => d.id === trial.assignedDiscipleId);
@@ -2454,6 +2741,156 @@ export const useGameStore = create<GameState>()(
           { year, month, spiritStones: finalSpiritStones, netIncome },
         ].slice(-24);
 
+        // ===== 涌现事件系统：关系网 + 建筑随机事件 + 分支选择 + 灭亡检查 =====
+        const monthsNeg = netIncome < 0 ? state.monthsConsecutiveNegative + 1 : 0;
+        // 月度炼制进度推进
+        const { completedTasks, updatedTasks } = processMonthlyCrafting(
+          state.craftingTasks,
+          { herbInventory: accHerbs, ironInventory: accIron, paperInventory: accPaper, specialMaterials: accSpecialMaterials },
+          activeDisciples,
+          currentBuildings,
+          Math.random,
+        );
+        // 完成的炼制任务加入通知
+        for (const ct of completedTasks) {
+          const qualityName = QualityNames[ct.quality];
+          newNotifications.push(createNotification(
+            'success',
+            '炼制完成',
+            `${ct.category === 'pill' ? '丹药' : ct.category === 'artifact' ? '法器' : '符箓'}炼制完成：${RECIPE_MAP[ct.recipeId]?.name ?? ct.itemType} x${ct.quantity}（${qualityName}）${ct.isCritical ? '【暴击】' : ''}`,
+            { year, month },
+          ));
+          // 自动入库
+          if (ct.category === 'pill') {
+            const idx = finalPillInventory.findIndex(p => p.type === ct.itemType as any);
+            if (idx >= 0) finalPillInventory[idx] = { ...finalPillInventory[idx], quantity: finalPillInventory[idx].quantity + ct.quantity };
+            else finalPillInventory.push({ type: ct.itemType as any, quantity: ct.quantity });
+          } else if (ct.category === 'artifact') {
+            const idx = accArtifactInventory.findIndex(a => a.type === ct.itemType as any);
+            if (idx >= 0) accArtifactInventory[idx] = { ...accArtifactInventory[idx], quantity: accArtifactInventory[idx].quantity + ct.quantity };
+            else accArtifactInventory.push({ type: ct.itemType as any, quantity: ct.quantity });
+          } else if (ct.category === 'talisman') {
+            const idx = accTalismanInventory.findIndex(t => t.type === ct.itemType as any);
+            if (idx >= 0) accTalismanInventory[idx] = { ...accTalismanInventory[idx], quantity: accTalismanInventory[idx].quantity + ct.quantity };
+            else accTalismanInventory.push({ type: ct.itemType as any, quantity: ct.quantity });
+          }
+        }
+
+        const emergentResult = processMonthlyEmergentEvents(
+          activeDisciples, currentBuildings, finalSpiritStones, finalReputation, state.karma,
+          monthsNeg, { year, month }, createNotification, Math.random,
+        );
+        // 合并涌现事件通知
+        newNotifications.push(...emergentResult.notifications);
+        pendingSectHistory.push(...emergentResult.sectHistories);
+        // 更新灵石/声望/正邪度
+        finalSpiritStones += emergentResult.spiritStoneChange;
+        finalReputation += emergentResult.reputationChange;
+        // 更新受影响的弟子
+        for (const updated of emergentResult.updatedDisciples) {
+          const idx = activeDisciples.findIndex(d => d.id === updated.id);
+          if (idx >= 0) activeDisciples[idx] = updated;
+        }
+        // 存入分支选择事件（待处理）
+        const pendingChoiceEvent = emergentResult.choiceEvent;
+
+        // 处理连锁事件：检查到期的连锁事件
+        const currentMonthTotal = year * 12 + month;
+        const { activated: activatedChainEvents, remaining: remainingChainEvents } = processPendingChainEvents(
+          state.pendingChainEvents,
+          currentMonthTotal,
+        );
+        for (const chainEvent of activatedChainEvents) {
+          const chainNotif = createNotification(
+            chainEvent.type === 'auspicious' ? 'success' : 'danger',
+            `【连锁】${chainEvent.title}`,
+            chainEvent.description,
+            { year, month },
+          );
+          newNotifications.push(chainNotif);
+          pendingSectHistory.push({
+            id: generateId(),
+            date: { year, month },
+            type: 'building_event' as SectHistoryEntry['type'],
+            title: chainEvent.title,
+            description: chainEvent.description,
+          });
+          if (chainEvent.effects.spiritStoneChange) finalSpiritStones += chainEvent.effects.spiritStoneChange;
+          if (chainEvent.effects.reputationChange) finalReputation += chainEvent.effects.reputationChange;
+          if (chainEvent.effects.satisfactionChange) {
+            const target = activeDisciples[Math.floor(Math.random() * activeDisciples.length)];
+            if (target) {
+              target.satisfaction = Math.max(0, Math.min(100, target.satisfaction + (chainEvent.effects.satisfactionChange ?? 0)));
+            }
+          }
+        }
+
+        // 生成月度价格波动
+        const currentPriceMultipliers = Object.keys(state.priceMultipliers).length > 0
+          ? state.priceMultipliers
+          : (() => {
+              // 首次初始化所有商店物品的价格倍率为 1.0
+              const initial: Record<string, number> = {};
+              for (const item of SHOP_ITEMS) {
+                initial[item.id] = 1.0;
+              }
+              return initial;
+            })();
+        const newPriceMultipliers = generatePriceFluctuations(currentPriceMultipliers, finalReputation, Math.random);
+
+        // 宗门气运系统：月度更新
+        // 气运自然波动（随机微调 ±1）
+        const fortuneDrift = (Math.random() - 0.5) * 2;
+        let newSectFortune = Math.max(-100, Math.min(100, state.sectFortune + fortuneDrift));
+        // 检测天灾触发
+        const calamityTriggered = checkCalamityTrigger(year, state.lastCalamityYear, newSectFortune, Math.random);
+        let newActiveCalamity = state.activeCalamity;
+        let newCalamityWarnings = [...state.calamityWarnings];
+        let newLastCalamityYear = state.lastCalamityYear;
+        if (calamityTriggered && !state.activeCalamity) {
+          const calamity = generateCalamity(newSectFortune, Math.random);
+          if (calamity.warningMonths > 0) {
+            // 触发预警
+            newCalamityWarnings = [calamity];
+            newNotifications.push(createNotification(
+              'warning', `【天灾预警】${calamity.warningTitle}`, calamity.warningDescription, { year, month },
+            ));
+          } else {
+            // 直接触发天灾
+            newActiveCalamity = calamity;
+            newLastCalamityYear = year;
+            newNotifications.push(createNotification(
+              calamity.type === 'secret_realm_open' ? 'success' : 'danger',
+              `【天灾】${calamity.title}`, calamity.description, { year, month },
+            ));
+            // 应用效果
+            if (calamity.effects.spiritStoneChange) finalSpiritStones += calamity.effects.spiritStoneChange;
+            if (calamity.effects.reputationChange) finalReputation += calamity.effects.reputationChange;
+          }
+        }
+        // 处理待触发的天灾预警（预警到期后触发）
+        const resolvedWarnings: CalamityEvent[] = [];
+        for (const warning of newCalamityWarnings) {
+          // 预警到期：预警月数后触发
+          newNotifications.push(createNotification(
+            warning.type === 'secret_realm_open' ? 'success' : 'danger',
+            `【天灾降临】${warning.title}`, warning.description, { year, month },
+          ));
+          newActiveCalamity = warning;
+          newLastCalamityYear = year;
+          resolvedWarnings.push(warning);
+          // 应用效果
+          if (warning.effects.spiritStoneChange) finalSpiritStones += warning.effects.spiritStoneChange;
+          if (warning.effects.reputationChange) finalReputation += warning.effects.reputationChange;
+        }
+        newCalamityWarnings = newCalamityWarnings.filter(w => !resolvedWarnings.includes(w));
+
+        // 灭亡检查（暂不处理，存到状态中让 UI 展示）
+        const collapseState = {
+          collapsed: emergentResult.collapsed,
+          collapseReason: emergentResult.collapseReason,
+        };
+
         // 贡献值流水：将本月新记录合并到状态头部，最多保留 5000 条（避免存档无限膨胀）
         const mergedContributionLogs = [...pendingContributionLogs, ...state.contributionLogs].slice(0, 5000);
 
@@ -2495,6 +2932,22 @@ export const useGameStore = create<GameState>()(
           spiritStoneHistory: newSpiritStoneHistory,
           contributionLogs: mergedContributionLogs,
           sectHistory: [...pendingSectHistory, ...state.sectHistory].slice(0, 200),
+          // 炼制任务状态
+          craftingTasks: updatedTasks,
+          // 涌现事件状态
+          choiceEvent: pendingChoiceEvent,
+          pendingChainEvents: remainingChainEvents,
+          pendingEncounter: state.pendingEncounter,
+          monthsConsecutiveNegative: monthsNeg,
+          sectCollapsed: collapseState.collapsed,
+          sectCollapseReason: collapseState.collapseReason,
+          // 价格波动
+          priceMultipliers: newPriceMultipliers,
+          // 气运状态
+          sectFortune: newSectFortune,
+          activeCalamity: newActiveCalamity,
+          calamityWarnings: newCalamityWarnings,
+          lastCalamityYear: newLastCalamityYear,
           // 正邪度年度自然回复（每年+1，封顶+100）
           karma: Math.min(100, state.karma + karmaYearlyRecover),
         });
@@ -3587,6 +4040,17 @@ export const useGameStore = create<GameState>()(
           currentDate
         );
 
+        // 首次晋升时提示选择流派
+        let schoolNotification: Notification | null = null;
+        if (!state.sectSchool) {
+          schoolNotification = createNotification(
+            'info',
+            '选择宗门流派',
+            '宗门已晋升，可在宗务面板选择宗门流派（剑修/丹修/阵修/器修/均衡），获得流派专属加成！',
+            currentDate,
+          );
+        }
+
         const historyEntry: SectHistoryEntry = {
           id: generateId(),
           date: currentDate,
@@ -3599,7 +4063,11 @@ export const useGameStore = create<GameState>()(
           sectLevel: nextLevel,
           spiritStones: newSpiritStones,
           sectContribution: Math.max(0, newContribution),
-          notifications: [promotionNotification, ...state.notifications].slice(0, 50),
+          notifications: [
+            ...(schoolNotification ? [schoolNotification] : []),
+            promotionNotification,
+            ...state.notifications,
+          ].slice(0, 50),
           sectHistory: [historyEntry, ...state.sectHistory].slice(0, 200),
         });
         
@@ -4339,6 +4807,70 @@ export const useGameStore = create<GameState>()(
         return { success: true, gain };
       },
 
+      // 宗门传承：选择流派（首次晋升时触发）
+      selectSchool: (school: SectSchool) => {
+        const state = get();
+        if (state.sectSchool) return; // 已选择过流派，不可更改
+        set({ sectSchool: school });
+      },
+
+      // 宗门传承：解锁天赋节点
+      unlockTalent: (talentId: string) => {
+        const state = get();
+        if (!state.sectSchool) return { ok: false, reason: '请先选择宗门流派' };
+        if (state.unlockedTalents.includes(talentId)) return { ok: false, reason: '该天赋已解锁' };
+        const tree = SCHOOL_TALENT_TREES[state.sectSchool];
+        const talent = tree.find(t => t.id === talentId);
+        if (!talent) return { ok: false, reason: '天赋节点不存在' };
+        // 检查前置节点
+        for (const prereq of talent.prerequisites) {
+          if (!state.unlockedTalents.includes(prereq)) return { ok: false, reason: '前置天赋未解锁' };
+        }
+        // 检查消耗
+        if ((state.sectContribution || 0) < talent.contributionCost) return { ok: false, reason: '宗门贡献不足' };
+        if (state.spiritStones < talent.spiritStoneCost) return { ok: false, reason: '灵石不足' };
+        set({
+          sectContribution: (state.sectContribution || 0) - talent.contributionCost,
+          spiritStones: state.spiritStones - talent.spiritStoneCost,
+          unlockedTalents: [...state.unlockedTalents, talentId],
+        });
+        return { ok: true, reason: '' };
+      },
+
+      // 宗门扩张：每次扩张增加 5% 全局产出加成（含灵石、灵草、材料、声望等）
+      expandSect: () => {
+        const state = get();
+        const cost = calculateExpansionCost(state.expansionCount);
+        if (state.spiritStones < cost) return { ok: false, reason: `灵石不足，需要 ${cost} 灵石` };
+        const newCount = state.expansionCount + 1;
+        set({
+          spiritStones: state.spiritStones - cost,
+          expansionCount: newCount,
+        });
+        return { ok: true, cost, newCapacity: newCount };
+      },
+
+      // 发放弟子福利
+      distributeWelfare: (generosityLevel: number) => {
+        const state = get();
+        const activeCount = state.disciples.filter(d => d.status !== 'mortal').length;
+        const { cost, satisfactionGain } = calculateDiscipleWelfareCost(activeCount, generosityLevel);
+        if (state.spiritStones < cost) return { ok: false, reason: `灵石不足，需要 ${cost} 灵石` };
+        const updatedDisciples = state.disciples.map(d => ({
+          ...d,
+          satisfaction: Math.min(100, d.satisfaction + satisfactionGain),
+        }));
+        set({
+          spiritStones: state.spiritStones - cost,
+          disciples: updatedDisciples,
+          notifications: [
+            createNotification('success', '弟子福利', `发放了价值 ${cost} 灵石的福利，全体弟子满意度 +${satisfactionGain}。`, { year: state.year, month: state.month }),
+            ...state.notifications,
+          ].slice(0, 50),
+        });
+        return { ok: true, cost, satisfactionGain };
+      },
+
       // 设置某物品自动交易规则（buyBelow=0 表示关闭自动买，sellAbove=0 表示关闭自动卖，qty<1 会被钳制到 1）
       setAutoTradeRule: (shopItemId: string, rule: Partial<AutoTradeRule>) => {
         set(state => {
@@ -4362,6 +4894,70 @@ export const useGameStore = create<GameState>()(
             enabled: false, buyBelow: 0, sellAbove: 0, monthlyBuyQty: 1, monthlySellQty: 1,
           };
           return { autoTrade: { ...state.autoTrade, [shopItemId]: { ...prev, enabled } } };
+        });
+      },
+
+      // 炼制系统
+      startCrafting: (recipeId: string, category: 'pill' | 'artifact' | 'talisman', itemType: string, discipleId: string | null, quantity: number) => {
+        const state = get();
+        const recipe = RECIPE_MAP[recipeId];
+        if (!recipe) return { success: false, reason: '配方不存在' };
+        // 检查解锁状态
+        if (category === 'pill' && !state.unlockedPillRecipes.includes(itemType as any)) return { success: false, reason: '丹方未解锁' };
+        if (category === 'artifact' && !state.unlockedArtifactRecipes.includes(itemType as any)) return { success: false, reason: '图谱未解锁' };
+        if (category === 'talisman' && !state.unlockedTalismanRecipes.includes(itemType as any)) return { success: false, reason: '符谱未解锁' };
+
+        const task = createCraftingTaskLogic(recipeId, category, itemType, discipleId, quantity, {
+          herbInventory: state.herbInventory,
+          ironInventory: state.ironInventory,
+          paperInventory: state.paperInventory,
+          specialMaterials: { ...state.specialMaterials },
+        });
+
+        if (!task) return { success: false, reason: '材料不足' };
+
+        set({
+          craftingTasks: [...state.craftingTasks, task],
+          herbInventory: state.herbInventory,
+          ironInventory: state.ironInventory,
+          paperInventory: state.paperInventory,
+          specialMaterials: state.specialMaterials,
+        });
+        return { success: true };
+      },
+
+      cancelCrafting: (taskId: string) => {
+        set(state => ({
+          craftingTasks: state.craftingTasks.filter(t => t.id !== taskId),
+        }));
+      },
+
+      collectCraftingResult: (taskId: string) => {
+        set(state => {
+          const task = state.craftingTasks.find(t => t.id === taskId);
+          if (!task || task.status !== 'completed') return state;
+          // 将成品加入库存
+          const resultQuality = task.resultQuality ?? 'mortal';
+          if (task.category === 'pill') {
+            const inv = [...state.pillInventory];
+            const idx = inv.findIndex(p => p.type === task.itemType as any);
+            if (idx >= 0) inv[idx] = { ...inv[idx], quantity: inv[idx].quantity + task.quantity };
+            else inv.push({ type: task.itemType as any, quantity: task.quantity });
+            return { craftingTasks: state.craftingTasks.filter(t => t.id !== taskId), pillInventory: inv };
+          } else if (task.category === 'artifact') {
+            const inv = [...state.artifactInventory];
+            const idx = inv.findIndex(a => a.type === task.itemType as any);
+            if (idx >= 0) inv[idx] = { ...inv[idx], quantity: inv[idx].quantity + task.quantity };
+            else inv.push({ type: task.itemType as any, quantity: task.quantity });
+            return { craftingTasks: state.craftingTasks.filter(t => t.id !== taskId), artifactInventory: inv };
+          } else if (task.category === 'talisman') {
+            const inv = [...state.talismanInventory];
+            const idx = inv.findIndex(t => t.type === task.itemType as any);
+            if (idx >= 0) inv[idx] = { ...inv[idx], quantity: inv[idx].quantity + task.quantity };
+            else inv.push({ type: task.itemType as any, quantity: task.quantity });
+            return { craftingTasks: state.craftingTasks.filter(t => t.id !== taskId), talismanInventory: inv };
+          }
+          return { craftingTasks: state.craftingTasks.filter(t => t.id !== taskId) };
         });
       },
 

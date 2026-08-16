@@ -12,19 +12,15 @@ interface NavItem {
   label: string;
 }
 
-// 完整侧边导航列表：山门 + 所有面板 + 中央“下一月”按钮
+// 精简后的侧边导航列表：对应6个核心面板
 const NAV_ITEMS: NavItem[] = [
-  { key: 'overview',   icon: 'chart',      label: '总览' },
   { key: null,         icon: 'mountain',   label: '山门' },
+  { key: 'affairs',    icon: 'chart',      label: '宗务' },
   { key: 'disciples',  icon: 'disciple',   label: '弟子' },
-  { key: 'allocation', icon: 'group',      label: '分配' },
-  { key: 'elders',     icon: 'balance',    label: '长老' },
   { key: 'buildings',  icon: 'building',   label: '建造' },
-  { key: 'rules',      icon: 'scroll',     label: '门规' },
-  { key: 'warehouse',  icon: 'warehouse',  label: '库房' },
-  { key: 'economy',    icon: 'gem',        label: '经济' },
   { key: 'world',      icon: 'world',      label: '世界' },
   { key: 'activities', icon: 'battle',     label: '活动' },
+  { key: 'warehouse',  icon: 'warehouse',  label: '库房' },
 ];
 
 export const SideNav: React.FC = () => {

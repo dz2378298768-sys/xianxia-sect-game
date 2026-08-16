@@ -781,129 +781,117 @@ export const BuildingsPanel: React.FC = () => {
       >
         {selectedBuilding && (
           <div className="space-y-3">
-            {/* 顶部：头像缩略 + 标题 + 描述 —— 紧凑一行 */}
-            <div className="flex items-start gap-2">
-              <BuildingThumb type={selectedBuilding.type} size={44} />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <h2 className="font-display text-base text-sect-gold leading-none">
-                    {selectedBuilding.name}
-                  </h2>
-                  <Badge variant="gold" size="sm">Lv.{selectedBuilding.level}</Badge>
-                  <Badge
-                    size="sm"
-                    variant={selectedBuilding.category === 'production' ? 'herb' : selectedBuilding.category === 'special' ? 'pill' : 'default'}
-                  >
-                    {getCategoryName(selectedBuilding.category)}
-                  </Badge>
+            {/* 顶部：头像 + 标题 + 描述 —— 装饰性卡片 */}
+            <div className="relative overflow-hidden p-3 rounded-xl bg-gradient-to-br from-sect-gold/8 to-sect-ink-light/10 border border-sect-gold/20">
+              {/* 装饰性背景元素 */}
+              <div className="absolute -top-6 -right-6 w-24 h-24 rounded-full bg-sect-gold/5 blur-xl" />
+              <div className="absolute -bottom-4 -left-4 w-16 h-16 rounded-full bg-sect-herb/5 blur-lg" />
+              <div className="flex items-start gap-3 relative z-10">
+                <div className="relative shrink-0">
+                  <div className="absolute inset-0 rounded-full bg-sect-gold/15 blur-md" />
+                  <BuildingThumb type={selectedBuilding.type} size={56} />
+                  <div className="absolute -top-1 -right-1 min-w-[22px] h-[22px] rounded-full bg-gradient-to-br from-sect-gold to-yellow-600 flex items-center justify-center shadow-lg shadow-sect-gold/20">
+                    <span className="text-[9px] font-display text-ink-900 font-bold px-1">{selectedBuilding.level}</span>
+                  </div>
                 </div>
-                <p className="text-[11px] text-sect-jade/70 mt-1 leading-snug">
-                  {selectedBuilding.description}
-                </p>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <h2 className="font-display text-base text-gold-gradient leading-none tracking-wide">
+                      {selectedBuilding.name}
+                    </h2>
+                    <Badge
+                      size="sm"
+                      variant={selectedBuilding.category === 'production' ? 'herb' : selectedBuilding.category === 'special' ? 'pill' : 'default'}
+                    >
+                      {getCategoryName(selectedBuilding.category)}
+                    </Badge>
+                  </div>
+                  <p className="text-[11px] text-sect-jade/80 mt-1 leading-relaxed">
+                    {selectedBuilding.description}
+                  </p>
+                  {/* 建筑状态标签行 */}
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <span className="inline-flex items-center gap-1 text-[9px] text-sect-gold/60 bg-sect-gold/8 px-1.5 py-0.5 rounded-full">
+                      Lv.{selectedBuilding.level}/{selectedBuilding.maxLevel}
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-[9px] text-sect-jade/50">
+                      维护 {maintenance}/月
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-[9px] text-sect-jade/50">
+                      弟子 {assignedDisciples.length}/{selectedBuilding.discipleCapacity}
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div className="divider-gold !my-0" />
+            {/* 概览指标：2 列网格，每项更宽更清晰 */}
+            <div className="grid grid-cols-2 gap-2">
+              {(() => {
+                const items: { label: string; value: number | string; color: string; icon: string }[] = [];
+                if (output.spiritStones > 0) items.push({ label: '灵石/月', value: output.spiritStones, color: 'text-green-400', icon: '✦' });
+                if (output.herbs > 0) items.push({ label: '灵草/月', value: output.herbs, color: 'text-green-400', icon: '🌿' });
+                if (output.iron > 0) items.push({ label: '灵铁/月', value: output.iron, color: 'text-sect-jade', icon: '⛏' });
+                if (output.paper > 0) items.push({ label: '符纸/月', value: output.paper, color: 'text-sect-gold', icon: '📜' });
+                if (output.pills > 0) items.push({ label: '丹药/月', value: output.pills, color: 'text-sect-herb-light', icon: '💊' });
+                if (output.artifacts > 0) items.push({ label: '法器/月', value: output.artifacts, color: 'text-sect-jade', icon: '⚔' });
+                if (output.talismans > 0) items.push({ label: '符箓/月', value: output.talismans, color: 'text-sect-gold', icon: '🔮' });
+                if (output.reputation > 0) items.push({ label: '声望/月', value: output.reputation, color: 'text-yellow-400', icon: '⭐' });
+                if (maintenance > 0) items.push({ label: '维护/月', value: `-${maintenance}`, color: 'text-red-400', icon: '⚡' });
+                items.push({ label: '弟子', value: `${assignedDisciples.length}/${selectedBuilding.discipleCapacity}`, color: 'text-sect-jade', icon: '👤' });
+                if (selectedBuilding.minDiscipleStatus) {
+                  items.push({ label: '准入', value: DiscipleStatusDisplayNames[selectedBuilding.minDiscipleStatus], color: 'text-sect-gold', icon: '🔑' });
+                }
+                items.push({ label: '贡献/弟子', value: `+${BUILDING_CONTRIBUTION_BONUS[selectedBuilding.type] ?? 0}`, color: 'text-sect-herb-light', icon: '✨' });
 
-            {/* 概览指标：4 列紧凑网格（不再 md:grid-cols-4，横屏也塞得下） */}
-            <div className="grid grid-cols-4 gap-1.5">
-              {output.spiritStones > 0 && (
-                <div className="text-center px-1 py-1 rounded border border-sect-gold/10 bg-sect-ink-light/30">
-                  <div className="text-sm font-display text-green-400">+{output.spiritStones}</div>
-                  <div className="text-[10px] text-sect-jade/60 mt-0.5">灵石/月</div>
-                </div>
-              )}
-              {output.herbs > 0 && (
-                <div className="text-center px-1 py-1 rounded border border-sect-gold/10 bg-sect-ink-light/30">
-                  <div className="text-sm font-display text-green-400">+{output.herbs}</div>
-                  <div className="text-[10px] text-sect-jade/60 mt-0.5">灵草/月</div>
-                </div>
-              )}
-              {output.iron > 0 && (
-                <div className="text-center px-1 py-1 rounded border border-sect-gold/10 bg-sect-ink-light/30">
-                  <div className="text-sm font-display text-sect-jade">+{output.iron}</div>
-                  <div className="text-[10px] text-sect-jade/60 mt-0.5">灵铁/月</div>
-                </div>
-              )}
-              {output.paper > 0 && (
-                <div className="text-center px-1 py-1 rounded border border-sect-gold/10 bg-sect-ink-light/30">
-                  <div className="text-sm font-display text-sect-gold">+{output.paper}</div>
-                  <div className="text-[10px] text-sect-jade/60 mt-0.5">符纸/月</div>
-                </div>
-              )}
-              {output.pills > 0 && (
-                <div className="text-center px-1 py-1 rounded border border-sect-gold/10 bg-sect-ink-light/30">
-                  <div className="text-sm font-display text-sect-herb-light">+{output.pills}</div>
-                  <div className="text-[10px] text-sect-jade/60 mt-0.5">丹药/月</div>
-                </div>
-              )}
-              {output.artifacts > 0 && (
-                <div className="text-center px-1 py-1 rounded border border-sect-gold/10 bg-sect-ink-light/30">
-                  <div className="text-sm font-display text-sect-jade">+{output.artifacts}</div>
-                  <div className="text-[10px] text-sect-jade/60 mt-0.5">法器/月</div>
-                </div>
-              )}
-              {output.talismans > 0 && (
-                <div className="text-center px-1 py-1 rounded border border-sect-gold/10 bg-sect-ink-light/30">
-                  <div className="text-sm font-display text-sect-gold">+{output.talismans}</div>
-                  <div className="text-[10px] text-sect-jade/60 mt-0.5">符箓/月</div>
-                </div>
-              )}
-              {output.reputation > 0 && (
-                <div className="text-center px-1 py-1 rounded border border-sect-gold/10 bg-sect-ink-light/30">
-                  <div className="text-sm font-display text-yellow-400">+{output.reputation}</div>
-                  <div className="text-[10px] text-sect-jade/60 mt-0.5">声望/月</div>
-                </div>
-              )}
-              <div className="text-center px-1 py-1 rounded border border-sect-gold/10 bg-sect-ink-light/30">
-                <div className="text-sm font-display text-red-400">-{maintenance}</div>
-                <div className="text-[10px] text-sect-jade/60 mt-0.5">维护/月</div>
-              </div>
-              <div className="text-center px-1 py-1 rounded border border-sect-gold/10 bg-sect-ink-light/30">
-                <div className="text-sm font-display text-sect-jade">
-                  {assignedDisciples.length}/{selectedBuilding.discipleCapacity}
-                </div>
-                <div className="text-[10px] text-sect-jade/60 mt-0.5">弟子</div>
-              </div>
-              {selectedBuilding.minDiscipleStatus && (
-                <div className="text-center px-1 py-1 rounded border border-sect-gold/10 bg-sect-ink-light/30">
-                  <div className="text-xs font-display text-sect-gold leading-tight">
-                    {DiscipleStatusDisplayNames[selectedBuilding.minDiscipleStatus]}
-                  </div>
-                  <div className="text-[10px] text-sect-jade/60 mt-0.5">准入</div>
-                </div>
-              )}
-              <div className="text-center px-1 py-1 rounded border border-sect-gold/10 bg-sect-ink-light/30">
-                <div className="text-sm font-display text-sect-herb-light">
-                  +{BUILDING_CONTRIBUTION_BONUS[selectedBuilding.type] ?? 0}
-                </div>
-                <div className="text-[10px] text-sect-jade/60 mt-0.5">贡献/弟子</div>
-              </div>
-              {selectedBuilding.discipleEffect && selectedBuilding.discipleEffect.type !== 'none' && (
-                <div className="text-center px-1 py-1 rounded border border-sect-gold/40 bg-gradient-to-br from-sect-gold/20 to-sect-gold/5">
-                  <div className="text-[10px] text-sect-gold/70">
-                    {getEffectTypeName(selectedBuilding.discipleEffect.type)}
-                  </div>
-                  <div className="text-sm font-display text-sect-gold font-bold leading-tight">
-                    {selectedBuilding.discipleEffect.value}
-                  </div>
-                </div>
-              )}
+                const hasEffect = selectedBuilding.discipleEffect && selectedBuilding.discipleEffect.type !== 'none';
+
+                return (
+                  <>
+                    {items.map((item, i) => (
+                      <div key={i}
+                        className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-sect-gold/8 bg-gradient-to-br from-sect-ink-light/30 to-sect-ink-light/10 hover:border-sect-gold/25 hover:from-sect-ink-light/40 hover:to-sect-ink-light/20 transition-all duration-200"
+                      >
+                        <span className="text-[14px] leading-none">{item.icon}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className={`text-xs font-display ${item.color} font-bold leading-none`}>
+                            {item.value}
+                          </div>
+                          <div className="text-[9px] text-sect-jade/50 mt-0.5">{item.label}</div>
+                        </div>
+                      </div>
+                    ))}
+                    {hasEffect && (
+                      <div className="col-span-2 flex items-center gap-3 px-3 py-2.5 rounded-xl border border-sect-gold/30 bg-gradient-to-br from-sect-gold/12 to-sect-gold/5">
+                        <span className="text-[16px]">⭐</span>
+                        <div className="flex-1">
+                          <div className="text-[10px] text-sect-gold/70">{getEffectTypeName(selectedBuilding.discipleEffect!.type)}</div>
+                          <div className="text-sm font-display text-sect-gold font-bold">{selectedBuilding.discipleEffect!.value}</div>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
 
-            {/* 特殊建筑作用说明 —— 更紧凑 */}
+            {/* 特殊建筑作用说明 —— 装饰性卡片 */}
             {selectedBuilding.type === 'mountain_gate' && (
-              <div className="bg-blue-500/10 border border-blue-500/30 rounded p-2 space-y-1 text-[11px]">
-                <div className="font-display text-blue-300 flex items-center gap-1 mb-0.5">
-                  <Shield size={12} />山门作用
+              <div className="relative overflow-hidden rounded-xl border border-blue-500/25 bg-gradient-to-br from-blue-500/8 to-blue-500/2 p-3">
+                <div className="absolute -top-8 -right-8 w-20 h-20 rounded-full bg-blue-500/5 blur-xl" />
+                <div className="flex items-center gap-2 mb-2 relative z-10">
+                  <span className="p-1.5 rounded-lg bg-blue-500/15">
+                    <Shield size={14} className="text-blue-300" />
+                  </span>
+                  <span className="font-display text-blue-300 text-xs">山门作用</span>
                 </div>
-                <div className="space-y-0.5 text-sect-jade/80 leading-snug">
-                  <div>✓ 驻守弟子每月 +5 贡献点</div>
-                  <div>✓ 每级满员 +5% 防御战力</div>
-                  <div>★ 升至 10 级满员化为护山大阵，+50% 战力</div>
-                  <div>↑ 每级 +10 容量，最高 10 级</div>
+                <div className="space-y-1.5 text-[11px] text-sect-jade/80 leading-snug ml-1 relative z-10">
+                  <div className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span>驻守弟子每月 +5 贡献点</div>
+                  <div className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span>每级满员 +5% 防御战力</div>
+                  <div className="flex items-center gap-1.5"><span className="text-amber-400">★</span>升至 10 级满员化为护山大阵，+50% 战力</div>
+                  <div className="flex items-center gap-1.5"><span className="text-blue-400">↑</span>每级 +10 容量，最高 10 级</div>
                 </div>
-                <div className="text-[10px] text-blue-400/60">
+                <div className="mt-2 text-[10px] text-blue-400/60 bg-blue-500/5 rounded-lg px-2 py-1 relative z-10">
                   当前：Lv.{selectedBuilding.level} · 容量 {selectedBuilding.discipleCapacity} ·
                   {selectedBuilding.assignedDisciples.length >= selectedBuilding.discipleCapacity
                     ? <span className="text-emerald-400">已满员 +{(selectedBuilding.level * 5)}% 战力</span>
@@ -913,17 +901,21 @@ export const BuildingsPanel: React.FC = () => {
             )}
 
             {selectedBuilding.type === 'lecture_hall' && (
-              <div className="bg-purple-500/10 border border-purple-500/30 rounded p-2 space-y-1 text-[11px]">
-                <div className="font-display text-purple-300 flex items-center gap-1 mb-0.5">
-                  <BookOpen size={12} />讲经堂作用
+              <div className="relative overflow-hidden rounded-xl border border-purple-500/25 bg-gradient-to-br from-purple-500/8 to-purple-500/2 p-3">
+                <div className="absolute -top-8 -right-8 w-20 h-20 rounded-full bg-purple-500/5 blur-xl" />
+                <div className="flex items-center gap-2 mb-2 relative z-10">
+                  <span className="p-1.5 rounded-lg bg-purple-500/15">
+                    <BookOpen size={14} className="text-purple-300" />
+                  </span>
+                  <span className="font-display text-purple-300 text-xs">讲经堂作用</span>
                 </div>
-                <div className="space-y-0.5 text-sect-jade/80 leading-snug">
-                  <div>- 听讲弟子每月消耗 {Math.abs(BUILDING_CONTRIBUTION_BONUS['lecture_hall'] ?? -5)} 贡献</div>
-                  <div>✓ 听讲弟子修炼 +10%，讲师越强加成越高</div>
-                  <div>★ 讲师同享修炼加成</div>
+                <div className="space-y-1.5 text-[11px] text-sect-jade/80 leading-snug ml-1 relative z-10">
+                  <div className="flex items-center gap-1.5"><span className="text-orange-400">−</span>听讲弟子每月消耗 {Math.abs(BUILDING_CONTRIBUTION_BONUS['lecture_hall'] ?? -5)} 贡献</div>
+                  <div className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span>听讲弟子修炼 +10%，讲师越强加成越高</div>
+                  <div className="flex items-center gap-1.5"><span className="text-amber-400">★</span>讲师同享修炼加成</div>
                 </div>
                 {selectedBuilding.managerId && (
-                  <div className="text-[10px] text-purple-400/60">
+                  <div className="mt-2 text-[10px] text-purple-400/60 bg-purple-500/5 rounded-lg px-2 py-1 relative z-10">
                     当前讲师：{disciples.find(d => d.id === selectedBuilding.managerId)?.name || '未知'}
                   </div>
                 )}
@@ -931,30 +923,38 @@ export const BuildingsPanel: React.FC = () => {
             )}
 
             {selectedBuilding.type === 'servant_hall' && (
-              <div className="bg-green-500/10 border border-green-500/30 rounded p-2 space-y-1 text-[11px]">
-                <div className="font-display text-green-300 flex items-center gap-1 mb-0.5">
-                  <Wrench size={12} />杂役堂作用
+              <div className="relative overflow-hidden rounded-xl border border-green-500/25 bg-gradient-to-br from-green-500/8 to-green-500/2 p-3">
+                <div className="absolute -top-8 -right-8 w-20 h-20 rounded-full bg-green-500/5 blur-xl" />
+                <div className="flex items-center gap-2 mb-2 relative z-10">
+                  <span className="p-1.5 rounded-lg bg-green-500/15">
+                    <Wrench size={14} className="text-green-300" />
+                  </span>
+                  <span className="font-display text-green-300 text-xs">杂役堂作用</span>
                 </div>
-                <div className="space-y-0.5 text-sect-jade/80 leading-snug">
-                  <div>✓ 杂役弟子劳作赚取贡献点</div>
-                  <div>★ 每名弟子每月 +10 贡献</div>
-                  <div>↑ 每级 +10 容量；灵韵越高产出越多</div>
+                <div className="space-y-1.5 text-[11px] text-sect-jade/80 leading-snug ml-1 relative z-10">
+                  <div className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span>杂役弟子劳作赚取贡献点</div>
+                  <div className="flex items-center gap-1.5"><span className="text-amber-400">★</span>每名弟子每月 +10 贡献</div>
+                  <div className="flex items-center gap-1.5"><span className="text-blue-400">↑</span>每级 +10 容量；灵韵越高产出越多</div>
                 </div>
-                <div className="text-[10px] text-green-400/60">
+                <div className="mt-2 text-[10px] text-green-400/60 bg-green-500/5 rounded-lg px-2 py-1 relative z-10">
                   Lv.{selectedBuilding.level} · 容量 {selectedBuilding.discipleCapacity} · 最高 5 级
                 </div>
               </div>
             )}
 
             {selectedBuilding.type === 'spirit_beast_garden' && (
-              <div className="bg-emerald-500/10 border border-emerald-500/30 rounded p-2 space-y-2 text-[11px]">
-                <div className="font-display text-emerald-300 flex items-center gap-1">
-                  <TreePine size={12} />灵兽原
+              <div className="relative overflow-hidden rounded-xl border border-emerald-500/25 bg-gradient-to-br from-emerald-500/8 to-emerald-500/2 p-3">
+                <div className="absolute -top-8 -right-8 w-20 h-20 rounded-full bg-emerald-500/5 blur-xl" />
+                <div className="flex items-center gap-2 mb-2 relative z-10">
+                  <span className="p-1.5 rounded-lg bg-emerald-500/15">
+                    <TreePine size={14} className="text-emerald-300" />
+                  </span>
+                  <span className="font-display text-emerald-300 text-xs">灵兽原</span>
                 </div>
-                <div className="space-y-0.5 text-sect-jade/80 leading-snug">
-                  <div>✓ 弟子于灵兽原培养，每月 +{BUILDING_CONTRIBUTION_BONUS['spirit_beast_garden'] ?? 7} 贡献</div>
-                  <div>✓ 每只灵兽每月消耗 2 灵草维持</div>
-                  <div>★ 解锁条件：山门达到 2 级</div>
+                <div className="space-y-1.5 text-[11px] text-sect-jade/80 leading-snug ml-1 relative z-10">
+                  <div className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span>弟子于灵兽原培养，每月 +{BUILDING_CONTRIBUTION_BONUS['spirit_beast_garden'] ?? 7} 贡献</div>
+                  <div className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span>每只灵兽每月消耗 2 灵草维持</div>
+                  <div className="flex items-center gap-1.5"><span className="text-amber-400">★</span>解锁条件：山门达到 2 级</div>
                 </div>
 
                 {/* 购买 / 捕捉 */}
@@ -1036,31 +1036,39 @@ export const BuildingsPanel: React.FC = () => {
             )}
 
             {selectedBuilding.type === 'secret_library' && (
-              <div className="bg-amber-500/10 border border-amber-500/30 rounded p-2 space-y-1 text-[11px]">
-                <div className="font-display text-amber-300 flex items-center gap-1 mb-0.5">
-                  <BookOpen size={12} />藏经阁
+              <div className="relative overflow-hidden rounded-xl border border-amber-500/25 bg-gradient-to-br from-amber-500/8 to-amber-500/2 p-3">
+                <div className="absolute -top-8 -right-8 w-20 h-20 rounded-full bg-amber-500/5 blur-xl" />
+                <div className="flex items-center gap-2 mb-2 relative z-10">
+                  <span className="p-1.5 rounded-lg bg-amber-500/15">
+                    <BookOpen size={14} className="text-amber-300" />
+                  </span>
+                  <span className="font-display text-amber-300 text-xs">藏经阁</span>
                 </div>
-                <div className="space-y-0.5 text-sect-jade/80 leading-snug">
-                  <div>✓ 弟子于此学习功法，无额外基础贡献</div>
-                  <div>★ 金丹期以上弟子可推演功法，每月获取贡献</div>
-                  <div>↑ 推演贡献随道缘、藏经阁等级提升</div>
+                <div className="space-y-1.5 text-[11px] text-sect-jade/80 leading-snug ml-1 relative z-10">
+                  <div className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span>弟子于此学习功法，无额外基础贡献</div>
+                  <div className="flex items-center gap-1.5"><span className="text-amber-400">★</span>金丹期以上弟子可推演功法，每月获取贡献</div>
+                  <div className="flex items-center gap-1.5"><span className="text-blue-400">↑</span>推演贡献随道缘、藏经阁等级提升</div>
                 </div>
-                <div className="text-[10px] text-amber-400/60">
+                <div className="mt-2 text-[10px] text-amber-400/60 bg-amber-500/5 rounded-lg px-2 py-1 relative z-10">
                   Lv.{selectedBuilding.level} · 可推演弟子：
                   {assignedDisciples.filter(d => RealmOrder.indexOf(d.realm) >= RealmOrder.indexOf('golden')).length} 人
                 </div>
               </div>
             )}
 
-            {RESIDENCE_TYPES.includes(selectedBuilding.type) && (
-              <div className="bg-sect-gold/10 border border-sect-gold/30 rounded p-2 text-[11px]">
-                <div className="font-display text-sect-gold flex items-center gap-1 mb-0.5">
-                  <Building2 size={12} />居所升级
+            {RESIDENCE_TYPES.includes(selectedBuilding.type) && selectedBuilding.type !== 'cave_mansion' && (
+              <div className="relative overflow-hidden rounded-xl border border-sect-gold/25 bg-gradient-to-br from-sect-gold/8 to-sect-gold/2 p-3">
+                <div className="absolute -top-8 -right-8 w-20 h-20 rounded-full bg-sect-gold/5 blur-xl" />
+                <div className="flex items-center gap-2 mb-2 relative z-10">
+                  <span className="p-1.5 rounded-lg bg-sect-gold/15">
+                    <Building2 size={14} className="text-sect-gold" />
+                  </span>
+                  <span className="font-display text-sect-gold text-xs">居所升级</span>
                 </div>
-                <div className="space-y-0.5 text-sect-jade/80 leading-snug">
-                  <div>✓ 每级 +10 可居住弟子</div>
+                <div className="space-y-1.5 text-[11px] text-sect-jade/80 leading-snug ml-1 relative z-10">
+                  <div className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span>每级 +10 可居住弟子</div>
                 </div>
-                <div className="text-[10px] text-sect-jade/60 mt-1">
+                <div className="mt-2 text-[10px] text-sect-jade/60 bg-sect-ink-light/30 rounded-lg px-2 py-1 relative z-10">
                   Lv.{selectedBuilding.level} · 容量 {selectedBuilding.discipleCapacity}
                 </div>
               </div>
@@ -1336,22 +1344,22 @@ export const BuildingsPanel: React.FC = () => {
                   const atMaxLevel = !isResidenceBuilding(selectedBuilding.type) &&
                     selectedBuilding.level >= selectedBuilding.maxLevel;
                   return detailUpgradeCost && selectedBuilding.level < selectedBuilding.maxLevel ? (
-                    <div className="bg-sect-gold/10 border border-sect-gold/30 rounded p-2">
-                      <div className="flex items-center justify-between mb-1.5">
+                    <div className="rounded-lg border border-sect-gold/25 bg-gradient-to-br from-sect-gold/8 to-sect-gold/2 p-2.5">
+                      <div className="flex items-center justify-between mb-2">
                         <div className="min-w-0">
-                          <div className="font-display text-sect-gold flex items-center gap-1 text-xs">
-                            <ArrowUp size={12} />升级建筑
+                          <div className="font-display text-sect-gold flex items-center gap-1.5 text-xs">
+                            <ArrowUp size={13} />升级建筑
                           </div>
-                          <div className="text-[10px] text-sect-jade/60 mt-0.5">
+                          <div className="text-[10px] text-sect-jade/70 mt-0.5">
                             Lv.{selectedBuilding.level} → Lv.{selectedBuilding.level + 1}
                           </div>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
-                          <span className="flex items-center gap-1 text-[11px] text-sect-jade">
-                            <Gem size={12} /> {detailUpgradeCost.spiritStones}
+                          <span className="flex items-center gap-1 text-[11px] text-sect-jade/80">
+                            <Gem size={12} className="text-sect-gold" /> {detailUpgradeCost.spiritStones}
                           </span>
                           {detailUpgradeCost.reputation && detailUpgradeCost.reputation > 0 && (
-                            <span className="flex items-center gap-1 text-[11px] text-blue-300">
+                            <span className="flex items-center gap-1 text-[11px] text-blue-300/80">
                               <Star size={12} /> {detailUpgradeCost.reputation}
                             </span>
                           )}
@@ -1360,7 +1368,7 @@ export const BuildingsPanel: React.FC = () => {
                       <Button
                         variant="gold"
                         size="sm"
-                        className="w-full text-xs py-1"
+                        className="w-full text-xs py-1.5"
                         onClick={() => handleUpgrade(selectedBuilding.id)}
                         disabled={!detailCanUpgrade}
                       >
@@ -1388,13 +1396,13 @@ export const BuildingsPanel: React.FC = () => {
                   }
                   if (refundStones <= 0) return null;
                   return (
-                    <div className="bg-red-500/5 border border-red-500/30 rounded p-2">
-                      <div className="flex items-center justify-between mb-1.5">
+                    <div className="rounded-lg border border-red-500/20 bg-gradient-to-br from-red-500/5 to-transparent p-2.5">
+                      <div className="flex items-center justify-between mb-2">
                         <div className="min-w-0">
-                          <div className="font-display text-red-300 flex items-center gap-1 text-xs">
-                            <ArrowDown size={12} />降级建筑
+                          <div className="font-display text-red-300/90 flex items-center gap-1.5 text-xs">
+                            <ArrowDown size={13} />降级建筑
                           </div>
-                          <div className="text-[10px] text-sect-jade/60 mt-0.5">
+                          <div className="text-[10px] text-sect-jade/70 mt-0.5">
                             Lv.{selectedBuilding.level} → Lv.{selectedBuilding.level - 1}
                           </div>
                         </div>
@@ -1441,20 +1449,22 @@ export const BuildingsPanel: React.FC = () => {
                   const goldenIndex = RealmOrder.indexOf('golden');
                   const candidates = disciples.filter(d => RealmOrder.indexOf(d.realm) >= goldenIndex);
                   return (
-                    <div className="bg-purple-500/10 border border-purple-500/30 rounded p-2">
+                    <div className="rounded-lg border border-purple-500/25 bg-gradient-to-br from-purple-500/8 to-purple-500/2 p-2.5">
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5">
-                          <Crown size={12} className="text-sect-spirit" />
+                        <div className="flex items-center gap-2">
+                          <span className="p-1 rounded-md bg-purple-500/15">
+                            <Crown size={13} className="text-sect-spirit" />
+                          </span>
                           <span className="font-display text-sect-spirit text-xs">堂主</span>
                           {currentManager ? (
-                            <span className="text-[11px] text-sect-jade">{currentManager.name}</span>
+                            <span className="text-[11px] text-sect-jade/90 font-medium">{currentManager.name}</span>
                           ) : (
-                            <span className="text-[10px] text-yellow-400">空缺中</span>
+                            <span className="text-[10px] text-yellow-400/90 bg-yellow-500/10 px-1.5 py-0.5 rounded">空缺中</span>
                           )}
                         </div>
                         <Button variant="ghost" size="sm" className="text-[10px] py-0.5 px-2"
                           onClick={() => setShowManagerPicker(!showManagerPicker)}>
-                          {currentManager ? '撤换' : '任命堂主'}
+                          {currentManager ? '撤换' : '任命'}
                         </Button>
                       </div>
                       {showManagerPicker && (
@@ -1515,9 +1525,11 @@ export const BuildingsPanel: React.FC = () => {
 
                 {/* 在堂弟子 —— 再紧凑，头像小一点，行高差小 */}
                 <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <h3 className="font-display text-xs text-sect-gold flex items-center gap-1">
-                      <Users size={14} />
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="font-display text-xs text-sect-gold/90 flex items-center gap-1.5">
+                      <span className="p-1 rounded-md bg-sect-gold/10">
+                        <Users size={13} className="text-sect-gold" />
+                      </span>
                       在堂弟子 ({assignedDisciples.length}/{selectedBuilding.discipleCapacity})
                     </h3>
                     {!RESIDENCE_TYPES_FOR_VACANT.includes(selectedBuilding.type) && (
@@ -1527,7 +1539,7 @@ export const BuildingsPanel: React.FC = () => {
                             size="sm"
                             variant="ghost"
                             className="text-[10px] py-0.5 px-2 border border-sect-gold/30 text-sect-jade/80 hover:text-sect-gold hover:border-sect-gold/60"
-                            onClick={() => { setSelectedBuildingId(selectedBuilding.id); setActivePanel('allocation'); }}
+                            onClick={() => { setSelectedBuildingId(selectedBuilding.id); setActivePanel('buildings'); }}
                             title="跳转到「弟子分配」面板"
                           >
                             <Plus size={11} className="mr-0.5" />

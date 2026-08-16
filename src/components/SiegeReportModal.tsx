@@ -1,5 +1,6 @@
 import React from 'react';
 import { useUIStore } from '@/store/uiStore';
+import { Sword, Shield } from 'lucide-react';
 
 /**
  * 围攻战报：本宗被攻或击退来犯时由 gameStore 推入 uiStore.siegeReport。
@@ -28,6 +29,32 @@ export const SiegeReportModal: React.FC = () => {
     : report.repLoss > 0
       ? 'text-red-300'
       : 'text-[var(--ink-300)]';
+
+  // 战力对比条
+  const renderPowerBar = () => {
+    const our = report.ourPower ?? 0;
+    const enemy = report.enemyPower ?? 0;
+    const total = our + enemy || 1;
+    const ourPct = (our / total) * 100;
+    return (
+      <div className="space-y-1.5">
+        <div className="flex justify-between text-[10px]">
+          <span className="text-blue-400 font-medium">我方 {our.toLocaleString()}</span>
+          <span className="text-red-400 font-medium">敌方 {enemy.toLocaleString()}</span>
+        </div>
+        <div className="flex h-3 rounded-full overflow-hidden" style={{ background: 'rgba(13,17,23,0.5)' }}>
+          <div
+            className="h-full rounded-l-full transition-all"
+            style={{ width: `${ourPct}%`, background: 'linear-gradient(90deg, #3b82f6, #60a5fa)' }}
+          />
+          <div
+            className="h-full rounded-r-full transition-all"
+            style={{ width: `${100 - ourPct}%`, background: 'linear-gradient(90deg, #ef4444, #f87171)' }}
+          />
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div
@@ -64,6 +91,17 @@ export const SiegeReportModal: React.FC = () => {
         <div className="text-[11px] text-[var(--ink-300)]">
           第 {report.date.year} 年 {report.date.month} 月
         </div>
+
+        {/* 战力对比 */}
+        {(report.ourPower !== undefined || report.enemyPower !== undefined) && (
+          <div className="p-3 rounded border border-[var(--gold-400)]/15 bg-[rgba(13,17,23,0.6)]">
+            <div className="flex items-center gap-1.5 mb-2">
+              <Sword size={14} className="text-red-400/50" />
+              <span className="text-[10px] font-medium text-[var(--ink-300)]">战力对比</span>
+            </div>
+            {renderPowerBar()}
+          </div>
+        )}
 
         {/* 战斗详情 */}
         <div className="text-xs leading-relaxed text-[var(--ink-200)] bg-[rgba(13,17,23,0.6)] border border-[var(--gold-400)]/15 rounded p-3">

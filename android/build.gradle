@@ -28,7 +28,8 @@ allprojects {
         maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
         maven { url 'https://maven.aliyun.com/repository/central' }
         // 穿山甲（Pangle）广告 SDK Maven 仓库（Dirichlet 聚合 SDK 依赖）
-        maven { url 'https://artifact.bytedance.com/repository/pangle' }
+        // 使用阿里云镜像替代 artifact.bytedance.com（沙箱环境直连不稳定）
+        maven { url 'https://maven.aliyun.com/repository/public' }
     }
 }
 

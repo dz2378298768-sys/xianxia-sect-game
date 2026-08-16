@@ -6,10 +6,8 @@ import { SectIcon } from '@/components/icons/SectIcons';
 import { getSlots, SAVE_SLOT_COUNT, type SaveSlotMeta } from '@/utils/saveSlots';
 
 export const TopBar: React.FC = () => {
-  const { year, month, sectName, sectLevel, reputation, karma, spiritStones, disciples, herbInventory, ironInventory, paperInventory, returnToMenu, newGame, saveToSlot, redeemCodeUsed, useRedeemCode, grantAdReward, adRewardTotal } = useGameStore();
+  const { year, month, sectName, sectLevel, reputation, spiritStones, disciples, herbInventory, ironInventory, paperInventory, returnToMenu, newGame, saveToSlot, redeemCodeUsed, useRedeemCode, grantAdReward, adRewardTotal } = useGameStore();
   const { sectInfoOpen, toggleSectInfo } = useUIStore();
-  // 统一手机端：始终按紧凑布局渲染，去除桌面专属内容
-  const isCompact = true;
   const [menuOpen, setMenuOpen] = useState(false);
   const [showSavePicker, setShowSavePicker] = useState(false);
   const [slots, setSlots] = useState<(SaveSlotMeta | null)[]>(new Array(SAVE_SLOT_COUNT).fill(null));
@@ -32,299 +30,127 @@ export const TopBar: React.FC = () => {
 
   return (
     <div className="absolute top-0 left-0 right-0 z-30">
-      {/* 顶部渐变背板：提升在山景上的可读性 */}
       <div className="absolute inset-0 topbar-shade pointer-events-none" />
-      <div className="relative px-2 py-1.5">
-      <div className="flex items-center justify-between gap-2">
-        {/* 宗门名 — 可点击打开左上角抽屉 */}
-        <button
-          className={`flex items-center gap-2 slide-in-left sect-name-btn ${sectInfoOpen ? 'sect-name-btn-active' : ''}`}
-          onClick={toggleSectInfo}
-          title="点击查看修炼与宗门战"
-        >
-          <div className={`topbar-emblem ${isCompact ? 'topbar-emblem-compact' : ''} shrink-0`}>
-            <span className={`font-display ${isCompact ? 'text-sm' : 'text-xl'}`}>宗</span>
-          </div>
-          <div className="text-left">
-            <div className="flex items-center gap-1.5">
-              <h1 className={`font-display ${isCompact ? 'text-sm' : 'text-xl'} text-[var(--gold-200)] tracking-wider`}>{sectName || '修仙宗门'}</h1>
-              <span className="seal-badge">{SectLevelNames[sectLevel]}</span>
-              <span className={`sect-name-caret ${sectInfoOpen ? 'sect-name-caret-open' : ''}`}>
-                <SectIcon name="arrowRight" size={12} strokeWidth={2.2} />
-              </span>
+      <div className="relative px-1.5 py-1">
+        <div className="flex items-center justify-between gap-1">
+          {/* 宗门名 */}
+          <button
+            className={`flex items-center gap-1.5 sect-name-btn ${sectInfoOpen ? 'sect-name-btn-active' : ''}`}
+            onClick={toggleSectInfo}
+            title="点击查看宗门信息"
+          >
+            <div className="topbar-emblem topbar-emblem-compact shrink-0">
+              <span className="font-display text-xs">宗</span>
             </div>
-            <div className={`flex items-center gap-2 ${isCompact ? 'text-[10px]' : 'text-xs'} text-[var(--ink-300)] mt-0.5`}>
-              <span className="flex items-center gap-1">
+            <div className="text-left">
+              <div className="flex items-center gap-1">
+                <h1 className="font-display text-xs text-[var(--gold-200)] tracking-wider max-w-[80px] truncate">{sectName || '修仙宗门'}</h1>
+                <span className="seal-badge text-[9px] px-1">{SectLevelNames[sectLevel]}</span>
+              </div>
+              <div className="flex items-center gap-1.5 text-[9px] text-[var(--ink-300)] mt-0.5">
                 <span className="text-[var(--gold-300)]">声望</span>
                 <span className="font-bold text-[var(--gold-100)]">{Math.floor(reputation)}</span>
-              </span>
-              {!isCompact && <span className="text-[var(--ink-500)]">|</span>}
-              <span className="flex items-center gap-1">
-                <span className="text-[var(--ink-300)]">正邪</span>
-                <span className={`font-bold ${karma >= 30 ? 'text-emerald-300' : karma <= -30 ? 'text-rose-300' : 'text-[var(--ink-300)]'}`}>
-                  {karma >= 30 ? `正道(${karma})` : karma <= -30 ? `魔道(${karma})` : `中立(${karma})`}
-                </span>
-              </span>
-              {!isCompact && <span className="text-[var(--ink-500)]">|</span>}
-              <span>{year}年{month}月</span>
+                <span className="text-[var(--ink-400)]">|</span>
+                <span className="text-[var(--gold-300)]">灵石</span>
+                <span className="font-bold text-[var(--gold-100)]">{Math.floor(spiritStones)}</span>
+              </div>
             </div>
-          </div>
-        </button>
-
-        {/* 资源 */}
-        <div className="flex items-center gap-1.5 flex-wrap justify-end">
-          <div className="resource-chip" title="灵石">
-            <span className="icon resource-icon-gem">
-              <SectIcon name="cultivate" size={14} strokeWidth={2} />
-            </span>
-            {!isCompact && <span className="text-[var(--gold-300)] text-[11px]">灵石</span>}
-            <span>{Math.floor(spiritStones).toLocaleString()}</span>
-          </div>
-          <div className="resource-chip" title="弟子">
-            <span className="icon resource-icon-people">
-              <SectIcon name="disciple" size={14} strokeWidth={2} />
-            </span>
-            {!isCompact && <span className="text-[var(--gold-300)] text-[11px]">弟子</span>}
-            <span>{disciples.length}</span>
-          </div>
-
-          {/* 生产原材料：灵草/灵铁/符纸 */}
-          <div className="resource-chip" title="灵草（炼丹原料）">
-            <span className="icon" style={{ color: 'var(--herb-300, #7dd87d)' }}>
-              <SectIcon name="herb" size={14} strokeWidth={2} />
-            </span>
-            {!isCompact && <span className="text-[var(--gold-300)] text-[11px]">灵草</span>}
-            <span>{Math.floor(herbInventory || 0)}</span>
-          </div>
-          <div className="resource-chip" title="灵铁（炼器原料）">
-            <span className="icon" style={{ color: 'var(--ink-200, #c8c8d0)' }}>
-              <SectIcon name="sword" size={14} strokeWidth={2} />
-            </span>
-            {!isCompact && <span className="text-[var(--gold-300)] text-[11px]">灵铁</span>}
-            <span>{Math.floor(ironInventory || 0)}</span>
-          </div>
-          <div className="resource-chip" title="符纸（制符原料）">
-            <span className="icon" style={{ color: 'var(--gold-200, #e8d9a0)' }}>
-              <SectIcon name="scrollText" size={14} strokeWidth={2} />
-            </span>
-            {!isCompact && <span className="text-[var(--gold-300)] text-[11px]">符纸</span>}
-            <span>{Math.floor(paperInventory || 0)}</span>
-          </div>
-
-          {/* 交易入口 */}
-          <button
-            className="resource-chip cursor-pointer hover:border-[var(--gold-300)]/50"
-            onClick={() => useUIStore.getState().setShopOpen(true)}
-            title="坊市交易"
-          >
-            <SectIcon name="warehouse" size={14} strokeWidth={2} />
-            {!isCompact && <span className="text-[var(--gold-300)] text-[11px]">交易</span>}
           </button>
 
-          {/* 广告入口：暂时关闭，隐藏按钮 */}
-          {false && (
-            <button
-              className="resource-chip cursor-pointer hover:border-[var(--gold-300)]/50 !border-emerald-500/40"
-              onClick={() => {
-                const w = window as any;
-                if (w.Capacitor?.Plugins?.DirichletAd?.showRewardedVideo) {
-                  w.Capacitor.Plugins.DirichletAd.showRewardedVideo()
-                    .then((res: any) => {
-                      if (res?.rewarded) {
-                        grantAdReward();
-                        setSaveToast('广告奖励：获得 500 灵石');
-                        setTimeout(() => setSaveToast(null), 2500);
-                      } else {
-                        const errMsg = res?.error || '未完整观看广告';
-                        if (errMsg === '暂无广告') {
-                          setSaveToast('暂无广告');
-                        } else {
-                          setSaveToast(`${errMsg}，奖励未发放`);
-                        }
-                        setTimeout(() => setSaveToast(null), 2500);
-                      }
-                    })
-                    .catch(() => {
-                      setSaveToast('暂无广告');
-                      setTimeout(() => setSaveToast(null), 2500);
-                    });
-                } else {
-                  setSaveToast('暂无广告');
-                  setTimeout(() => setSaveToast(null), 2500);
-                }
-              }}
-              title="观看激励视频广告 · 领取 500 灵石"
-            >
-              <SectIcon name="play" size={14} strokeWidth={2} />
-              {!isCompact && <span className="text-emerald-300 text-[11px]">广告</span>}
-              {adRewardTotal > 0 && (
-                <span className="text-[10px] text-[var(--gold-300)]">+{adRewardTotal}</span>
-              )}
-            </button>
-          )}
+          {/* 中央：年份和弟子数 */}
+          <div className="flex items-center gap-2 text-[9px] text-[var(--ink-300)]">
+            <span>第{year}年{month}月</span>
+            <span className="text-[var(--ink-400)]">|</span>
+            <span className="flex items-center gap-0.5">
+              <SectIcon name="disciple" size={10} strokeWidth={1.6} />
+              {disciples.length}
+            </span>
+          </div>
 
-          {/* 设置菜单按钮 */}
+          {/* 右侧：菜单按钮 */}
           <div className="relative">
             <button
-              className="resource-chip cursor-pointer hover:border-[var(--gold-300)]/50"
+              className="text-[var(--ink-300)] hover:text-[var(--gold-200)] p-1"
               onClick={() => setMenuOpen(!menuOpen)}
-              title="设置"
+              title="菜单"
             >
-              <SectIcon name="gear" size={14} strokeWidth={2} />
-              {!isCompact && <span className="text-[var(--gold-300)] text-[11px]">设置</span>}
+              <SectIcon name="list" size={16} strokeWidth={1.8} />
             </button>
+
             {menuOpen && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
-                <div className="absolute right-0 top-full mt-1 z-50 w-40 scroll-panel-dark slide-in-up overflow-hidden">
-                  <button
-                    className="w-full px-4 py-2.5 text-left text-sm text-[var(--gold-200)] hover:bg-[var(--gold-300)]/10 transition-colors flex items-center gap-2"
-                    onClick={() => { setMenuOpen(false); setShowSavePicker(true); }}
-                  >
-                    <SectIcon name="cultivate" size={14} strokeWidth={1.8} />
-                    保存存档
-                  </button>
-                  <div className="h-px bg-[var(--gold-300)]/15" />
-                  <button
-                    className="w-full px-4 py-2.5 text-left text-sm text-[var(--gold-200)] hover:bg-[var(--gold-300)]/10 transition-colors flex items-center gap-2"
-                    onClick={() => { setMenuOpen(false); setShowRedeemCode(true); setRedeemInput(''); setRedeemResult(null); }}
-                  >
-                    <SectIcon name="gift" size={14} strokeWidth={1.8} />
-                    兑换码
-                    {redeemCodeUsed && <span className="text-[10px] text-emerald-400 ml-auto">已使用</span>}
-                  </button>
-                  <div className="h-px bg-[var(--gold-300)]/15" />
-                  <button
-                    className="w-full px-4 py-2.5 text-left text-sm text-[var(--gold-200)] hover:bg-[var(--gold-300)]/10 transition-colors flex items-center gap-2"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      const w = window as any;
-                      if (w.Capacitor?.Plugins?.TapUpdate?.checkForceUpdate) {
-                        w.Capacitor.Plugins.TapUpdate.checkForceUpdate()
-                          .then((res: any) => {
-                            if (res?.triggered) {
-                              setSaveToast('已发起更新检查，若有新版本将自动弹出 TapTap 更新页');
-                            } else {
-                              setSaveToast(res?.error || '已是最新版本');
-                            }
-                            setTimeout(() => setSaveToast(null), 2500);
-                          })
-                          .catch(() => {
-                            setSaveToast('检查更新失败，请稍后重试');
-                            setTimeout(() => setSaveToast(null), 2500);
-                          });
-                      } else {
-                        setSaveToast('当前环境不支持 TapTap 更新检查');
-                        setTimeout(() => setSaveToast(null), 2500);
-                      }
-                    }}
-                  >
-                    <SectIcon name="nextMonth" size={14} strokeWidth={1.8} />
-                    检查更新
-                  </button>
-                  <div className="h-px bg-[var(--gold-300)]/15" />
-                  <button
-                    className="w-full px-4 py-2.5 text-left text-sm text-[var(--gold-200)] hover:bg-[var(--gold-300)]/10 transition-colors flex items-center gap-2"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      if (confirm('开始新游戏将覆盖当前进度，确定吗？')) {
-                        newGame();
-                      }
-                    }}
-                  >
-                    <SectIcon name="nextMonth" size={14} strokeWidth={1.8} />
-                    开始新游戏
-                  </button>
-                  <div className="h-px bg-[var(--gold-300)]/15" />
-                  <button
-                    className="w-full px-4 py-2.5 text-left text-sm text-red-400/80 hover:bg-red-400/10 transition-colors flex items-center gap-2"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      returnToMenu();
-                    }}
-                  >
-                    <SectIcon name="close" size={14} strokeWidth={1.8} />
-                    退出游戏
-                  </button>
-                </div>
-              </>
+              <div className="absolute right-0 top-full mt-1 w-40 scroll-panel-dark p-1.5 flex flex-col gap-0.5 z-50 shadow-xl" style={{ borderRadius: '8px' }}>
+                <button className="text-[11px] text-left px-2 py-1.5 rounded hover:bg-sect-ink-light/50 text-sect-jade" onClick={() => { setMenuOpen(false); setShowSavePicker(true); }}>
+                  保存 / 读取
+                </button>
+                <button className="text-[11px] text-left px-2 py-1.5 rounded hover:bg-sect-ink-light/50 text-sect-jade" onClick={() => { setMenuOpen(false); setShowRedeemCode(true); }}>
+                  兑换码
+                </button>
+                <button className="text-[11px] text-left px-2 py-1.5 rounded hover:bg-sect-ink-light/50 text-sect-jade" onClick={() => { setMenuOpen(false); grantAdReward(); }} disabled={adRewardTotal <= 0}>
+                  广告奖励({adRewardTotal})
+                </button>
+                <div className="border-t border-sect-ink-light/30 my-1" />
+                <button className="text-[11px] text-left px-2 py-1.5 rounded hover:bg-red-500/10 text-red-400" onClick={() => { setMenuOpen(false); if (confirm('确定返回主菜单？当前进度不会自动保存。')) returnToMenu(); }}>
+                  返回主菜单
+                </button>
+              </div>
             )}
           </div>
         </div>
       </div>
 
-      {/* 等级进度 — 紧凑模式隐藏 */}
-      {!isCompact && (
-        <div className="mt-1.5 px-20">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="font-display text-[10px] text-[var(--gold-400)]/70 tracking-[0.2em]">宗门境界</span>
-            <div className="flex-1 h-px bg-gradient-to-r from-[var(--gold-400)]/30 to-transparent" />
-          </div>
-          <div className="flex items-center gap-1">
-            {SectLevelOrder.map((level, i) => (
-              <React.Fragment key={level}>
-                <div
-                  className={`topbar-level-dot ${i <= currentLevelIndex ? 'topbar-level-dot-on' : ''}`}
-                />
-                {i < SectLevelOrder.length - 1 && (
-                  <div
-                    className={`flex-1 h-px transition-colors ${
-                      i < currentLevelIndex ? 'bg-[var(--gold-300)]' : 'bg-[var(--ink-500)]/60'
-                    }`}
-                  />
-                )}
-              </React.Fragment>
+      {/* 保存/读取弹窗 */}
+      {showSavePicker && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 px-4" onClick={() => setShowSavePicker(false)}>
+          <div className="scroll-panel-dark slide-in-up max-w-sm w-full p-4 flex flex-col gap-3 max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="font-display text-sm" style={{ color: 'var(--gold-200)' }}>保存 / 读取</h3>
+              <button className="text-[var(--ink-300)] hover:text-[var(--gold-200)] text-xs" onClick={() => setShowSavePicker(false)}>关闭</button>
+            </div>
+            {slots.map((slot, i) => (
+              <div key={i} className="flex items-center justify-between p-2 rounded bg-sect-ink-light/30">
+                <div className="flex-1 min-w-0">
+                  <div className="text-[11px] text-sect-jade">存档位 {i + 1}</div>
+                  {slot ? (
+                    <div className="text-[10px] text-sect-jade/50 truncate">
+                      {slot.sectName} · 第{slot.year}年{slot.month}月 · {slot.sectLevel}
+                    </div>
+                  ) : (
+                    <div className="text-[10px] text-sect-jade/30">空</div>
+                  )}
+                </div>
+                <div className="flex gap-1 ml-2">
+                  <button className="btn-ink text-[10px] px-2 py-1" onClick={() => handleSave(i)}>保存</button>
+                  {slot && (
+                    <button className="btn-ink text-[10px] px-2 py-1" onClick={() => { setShowSavePicker(false); }}>读取</button>
+                  )}
+                </div>
+              </div>
             ))}
           </div>
         </div>
       )}
-      </div>
 
-      {/* 保存存档：槽位选择弹窗 */}
-      {showSavePicker && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] px-4">
-          <div className="max-w-md w-full scroll-panel-dark p-5 slide-in-up">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-display text-base text-[var(--gold-200)]">保存存档</h3>
-              <button
-                onClick={() => setShowSavePicker(false)}
-                className="text-[var(--ink-400)] hover:text-[var(--gold-300)] p-1"
-              >
-                <SectIcon name="close" size={16} strokeWidth={2} />
-              </button>
-            </div>
-            <p className="text-[10px] text-[var(--ink-400)] mb-3">
-              选择一个存档位保存当前进度（覆盖已有存档）
-            </p>
-            <div className="save-slot-picker">
-              {slots.map((slot, i) => (
-                <button
-                  key={i}
-                  className={`save-pick-slot ${slot ? 'save-pick-slot-filled' : 'save-pick-slot-empty'}`}
-                  onClick={() => {
-                    if (slot && !confirm(`将覆盖第 ${i + 1} 号「${slot.sectName}」存档，确定吗？`)) return;
-                    handleSave(i);
-                  }}
-                >
-                  {slot ? (
-                    <>
-                      <div className="flex items-center justify-between gap-1">
-                        <span className="font-display text-xs text-[var(--gold-200)] truncate">{slot.sectName}</span>
-                        <span className="seal-badge text-[8px] !px-1 !py-0 shrink-0">{SectLevelNames[slot.sectLevel]}</span>
-                      </div>
-                      <div className="text-[9px] text-[var(--ink-400)] mt-1">
-                        第 {slot.year} 年 {slot.month} 月 · {slot.discipleCount} 弟子
-                      </div>
-                      <div className="text-[9px] text-[var(--gold-300)] mt-1">点击覆盖保存</div>
-                    </>
-                  ) : (
-                    <>
-                      <span className="text-xs">第 {i + 1} 位</span>
-                      <span className="text-[9px] text-[var(--gold-300)] mt-1">空 · 点击保存</span>
-                    </>
-                  )}
-                </button>
-              ))}
+      {/* 兑换码弹窗 */}
+      {showRedeemCode && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 px-4" onClick={() => { setShowRedeemCode(false); setRedeemResult(null); }}>
+          <div className="scroll-panel-dark slide-in-up max-w-xs w-full p-4 flex flex-col gap-3" onClick={e => e.stopPropagation()}>
+            <h3 className="font-display text-sm" style={{ color: 'var(--gold-200)' }}>兑换码</h3>
+            <input
+              className="w-full bg-sect-ink-light/50 border border-sect-ink-light/50 rounded px-3 py-2 text-xs text-sect-jade outline-none focus:border-sect-gold/50"
+              placeholder="输入兑换码"
+              value={redeemInput}
+              onChange={e => setRedeemInput(e.target.value)}
+            />
+            {redeemResult && (
+              <div className={`text-[11px] ${redeemResult.ok ? 'text-green-400' : 'text-red-400'}`}>{redeemResult.msg}</div>
+            )}
+            <div className="flex gap-2">
+              <button className="btn-ink flex-1 text-xs" onClick={() => {
+                const result = useRedeemCode(redeemInput);
+                setRedeemResult({ ok: result.ok, msg: result.reason || (result.ok ? '兑换成功！' : '兑换失败') });
+                setRedeemInput('');
+              }}>兑换</button>
+              <button className="btn-ink flex-1 text-xs" onClick={() => { setShowRedeemCode(false); setRedeemResult(null); }}>取消</button>
             </div>
           </div>
         </div>
@@ -332,69 +158,8 @@ export const TopBar: React.FC = () => {
 
       {/* 保存成功提示 */}
       {saveToast && (
-        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[70] px-4 py-2 rounded-lg bg-green-600/90 text-white text-sm slide-in-up shadow-lg">
+        <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 bg-sect-gold/20 border border-sect-gold/30 px-3 py-1 rounded text-[10px] text-sect-gold whitespace-nowrap">
           {saveToast}
-        </div>
-      )}
-
-      {/* 兑换码弹窗 */}
-      {showRedeemCode && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] px-4">
-          <div className="max-w-sm w-full scroll-panel-dark p-5 slide-in-up">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-display text-base text-[var(--gold-200)] flex items-center gap-2">
-                <SectIcon name="gift" size={16} strokeWidth={1.8} />
-                兑换码
-              </h3>
-              <button
-                onClick={() => { setShowRedeemCode(false); setRedeemResult(null); }}
-                className="text-[var(--ink-400)] hover:text-[var(--gold-300)] p-1"
-              >
-                <SectIcon name="close" size={16} strokeWidth={2} />
-              </button>
-            </div>
-            <p className="text-[11px] text-[var(--ink-400)] mb-3">
-              输入兑换码获取奖励，每局游戏仅可使用一次。
-            </p>
-            <div className="flex items-center gap-2 mb-3">
-              <input
-                type="text"
-                value={redeemInput}
-                onChange={e => setRedeemInput(e.target.value)}
-                disabled={redeemCodeUsed}
-                placeholder="请输入兑换码"
-                className="flex-1 px-3 py-2 rounded bg-[var(--ink-500)]/40 border border-[var(--gold-300)]/20 text-sm text-[var(--gold-100)] placeholder-[var(--ink-400)] focus:outline-none focus:border-[var(--gold-300)]/60"
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && !redeemCodeUsed) {
-                    const r = useRedeemCode(redeemInput);
-                    if (r.ok) setRedeemResult({ ok: true, msg: `兑换成功！获得 ${r.reward} 灵石` });
-                    else setRedeemResult({ ok: false, msg: r.reason || '兑换失败' });
-                  }
-                }}
-              />
-              <button
-                disabled={redeemCodeUsed}
-                onClick={() => {
-                  const r = useRedeemCode(redeemInput);
-                  if (r.ok) setRedeemResult({ ok: true, msg: `兑换成功！获得 ${r.reward} 灵石` });
-                  else setRedeemResult({ ok: false, msg: r.reason || '兑换失败' });
-                }}
-                className="px-4 py-2 rounded bg-[var(--gold-300)]/20 border border-[var(--gold-300)]/50 text-sm text-[var(--gold-200)] hover:bg-[var(--gold-300)]/30 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                兑换
-              </button>
-            </div>
-            {redeemResult && (
-              <div className={`px-3 py-2 rounded text-sm ${redeemResult.ok ? 'bg-emerald-600/20 border border-emerald-500/40 text-emerald-300' : 'bg-red-500/20 border border-red-500/40 text-red-300'}`}>
-                {redeemResult.msg}
-              </div>
-            )}
-            {redeemCodeUsed && !redeemResult && (
-              <div className="px-3 py-2 rounded text-sm bg-emerald-600/10 border border-emerald-500/30 text-emerald-300/90">
-                本局兑换码已使用完毕
-              </div>
-            )}
-          </div>
         </div>
       )}
     </div>

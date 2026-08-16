@@ -10,9 +10,11 @@ import {
   TrialTypeNames, TrialTypeIcons, TrialDifficultyNames,
 } from '@/types/game';
 import type { OtherSect, SectAlignment, SectRelation, DiplomaticStatus, Trial, TrialDifficulty } from '@/types/game';
+import type { Disciple } from '@/types/disciple';
 import { calculateDiscipleCombatPower, calculateSectCombatPower } from '@/utils/gameLogic';
-import { getRealmDisplay } from '@/types/disciple';
-import { DiscipleStatusNames } from '@/types/disciple';
+import { getRealmDisplay, DiscipleStatusNames } from '@/types/disciple';
+import { EXPLORATION_REGIONS } from '@/data/exploration';
+import { Compass, Lock } from 'lucide-react';
 
 // 境界颜色
 function getRealmColor(realm: string): string {
@@ -460,8 +462,165 @@ const TrialCard: React.FC<{ trial: Trial }> = ({ trial }) => {
   );
 };
 
+// ===== 探索游历子组件 =====
+interface ExplorationSectionProps {
+  disciples: Disciple[];
+  trials: Trial[];
+  initiateExploration: (regionId: string, discipleId: string) => { ok: boolean; reason?: string };
+  unlockedRegions: string[];
+}
+
+const ExplorationSection: React.FC<ExplorationSectionProps> = ({
+  disciples, trials, initiateExploration, unlockedRegions,
+}) => {
+  const [selectedDisciple, setSelectedDisciple] = useState<string | null>(null);
+  const [dispatchMsg, setDispatchMsg] = useState<string | null>(null);
+
+  // 探索区域配置
+  const regions = EXPLORATION_REGIONS;
+
+  // 进行中的探索试炼
+  const activeExplorations = trials.filter(
+    t => t.type.startsWith('explore_') && t.status === 'in_progress'
+  );
+
+  // 可派遣的弟子
+  const availableDisciples = disciples.filter(
+    d => !d.onTrialId && !d.isBreakingThrough && (d.status === 'inner' || d.status === 'core' || d.status === 'elder')
+  );
+
+  const handleDispatch = (regionId: string) => {
+    if (!selectedDisciple) {
+      setDispatchMsg('请先选择弟子');
+      return;
+    }
+    const result = initiateExploration(regionId, selectedDisciple);
+    setDispatchMsg(result.ok ? '探索队伍已出发！' : (result.reason ?? '派遣失败'));
+    if (result.ok) setSelectedDisciple(null);
+    setTimeout(() => setDispatchMsg(null), 3000);
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* 进行中的探索 */}
+      {activeExplorations.length > 0 && (
+        <Card className="p-4">
+          <h2 className="font-display text-base text-sky-400 mb-3 flex items-center gap-2">
+            <Compass size={16} />
+            探索进行中
+          </h2>
+          <div className="space-y-2">
+            {activeExplorations.map(t => {
+              const disciple = disciples.find(d => d.id === t.assignedDiscipleId);
+              const progress = t.progress;
+              return (
+                <div key={t.id} className="flex items-center gap-3 p-2 rounded bg-white/5">
+                  <div className="w-8 h-8 rounded-full bg-sky-500/20 flex items-center justify-center">
+                    <Compass size={14} className="text-sky-400" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-sm text-sect-jade">{t.name}</div>
+                    <div className="text-xs text-sect-jade/60">
+                      弟子: {disciple?.name ?? '未知'} | 已进行 {t.durationMonths} 个月
+                    </div>
+                  </div>
+                  <div className="text-xs text-sky-400">
+                    {Math.round(progress)}%
+                  </div>
+                  <div className="w-16 h-1.5 rounded-full bg-gray-700">
+                    <div className="h-full rounded-full bg-gradient-to-r from-sky-500 to-sky-400" style={{ width: `${Math.min(100, progress)}%` }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+
+      {/* 探索区域 */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {regions.map(region => {
+          const isUnlocked = unlockedRegions.includes(region.id);
+          const isActive = activeExplorations.some(t => t.type === region.trialType);
+          return (
+            <Card key={region.id} className={`p-4 ${!isUnlocked ? 'opacity-50' : ''}`}>
+              <div className="flex items-start justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
+                    !isUnlocked ? 'bg-gray-500/20' : 'bg-sky-500/20'
+                  }`}>
+                    {!isUnlocked ? (
+                      <Lock size={20} className="text-gray-500" />
+                    ) : (
+                      <Compass size={20} className="text-sky-400" />
+                    )}
+                  </div>
+                  <div>
+                    <h3 className="font-display text-sect-jade">{region.name}</h3>
+                    <div className="text-[10px] text-sect-jade/60 flex items-center gap-2">
+                      <span>建议战力 ≥{region.minPower.toLocaleString()}</span>
+                      <span>耗时 {region.baseDurationMonths}月</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <p className="text-xs text-sect-jade/60 mb-3 leading-relaxed">
+                {region.description}
+              </p>
+
+              {isUnlocked && !isActive ? (
+                <div className="space-y-2">
+                  <select
+                    value={selectedDisciple ?? ''}
+                    onChange={e => setSelectedDisciple(e.target.value || null)}
+                    className="w-full text-xs px-2 py-1.5 rounded bg-white/10 border border-white/20 text-sect-jade"
+                  >
+                    <option value="">选择派遣弟子...</option>
+                    {availableDisciples.map(d => (
+                      <option key={d.id} value={d.id}>
+                        {d.name}（{DiscipleStatusNames[d.status]} | 战力 {(calculateDiscipleCombatPower(d)).toLocaleString()}）
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => handleDispatch(region.id)}
+                    disabled={!selectedDisciple}
+                    className="w-full text-xs py-1.5 rounded transition-all"
+                    style={{
+                      background: selectedDisciple ? 'rgba(56,189,248,0.2)' : 'rgba(255,255,255,0.05)',
+                      border: `1px solid ${selectedDisciple ? 'rgba(56,189,248,0.4)' : 'rgba(255,255,255,0.1)'}`,
+                      color: selectedDisciple ? 'var(--gold-200)' : 'var(--ink-400)',
+                    }}
+                  >
+                    派遣探索
+                  </button>
+                  {dispatchMsg && (
+                    <div className={`text-xs text-center ${dispatchMsg.includes('失败') ? 'text-red-400' : 'text-green-400'}`}>
+                      {dispatchMsg}
+                    </div>
+                  )}
+                </div>
+              ) : !isUnlocked ? (
+                <div className="text-xs text-sect-jade/40 text-center py-2">
+                  <Lock size={12} className="inline mr-1" />
+                  {region.unlockHint}
+                </div>
+              ) : (
+                <div className="text-xs text-sky-400 text-center py-2 animate-pulse">
+                  探索中...
+                </div>
+              )}
+            </Card>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
 // ===== 主面板 =====
-type WorldTab = 'sects' | 'trials';
+type WorldTab = 'sects' | 'trials' | 'exploration';
 
 export const WorldPanel: React.FC = () => {
   const store = useGameStore();
@@ -495,11 +654,11 @@ export const WorldPanel: React.FC = () => {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="font-display text-2xl text-gold-gradient flex items-center gap-2">
-            <SectIcon name="world" size={24} strokeWidth={1.8} className="text-sect-gold" />
+          <h1 className="font-display text-base text-gold-gradient flex items-center gap-2">
+            <SectIcon name="world" size={20} strokeWidth={1.8} className="text-sect-gold" />
             天下大势
           </h1>
-          <p className="text-sect-jade/60 text-sm mt-1">
+          <p className="text-sect-jade/60 text-xs mt-0.5">
             本宗战力 <span className="text-[var(--cinnabar)] font-bold">{ourCombatPower.toLocaleString()}</span>
           </p>
         </div>
@@ -531,6 +690,17 @@ export const WorldPanel: React.FC = () => {
           {availableTrials.length > 0 && (
             <span className="text-[9px] bg-[var(--cinnabar)] text-white rounded-full px-1.5 py-0.5">{availableTrials.length}</span>
           )}
+        </button>
+        <button
+          onClick={() => setActiveTab('exploration')}
+          className={`px-4 py-2 rounded-lg text-sm font-display flex items-center gap-1.5 transition-all ${
+            activeTab === 'exploration'
+              ? 'bg-[var(--gold-300)]/15 text-[var(--gold-300)] border border-[var(--gold-300)]/40'
+              : 'text-[var(--ink-300)] border border-[var(--ink-400)]/20 hover:border-[var(--gold-300)]/30'
+          }`}
+        >
+          <Compass size={14} className="text-sky-400" />
+          探索游历
         </button>
       </div>
 
@@ -623,7 +793,7 @@ export const WorldPanel: React.FC = () => {
           <Card>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <h2 className="font-display text-base text-gold-gradient">天下宗门</h2>
+                <h2 className="font-display text-sm text-gold-gradient">天下宗门</h2>
                 <Badge variant="default" size="sm">{otherSects.length} 个</Badge>
               </div>
             </div>
@@ -673,7 +843,7 @@ export const WorldPanel: React.FC = () => {
           <Card>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <h2 className="font-display text-base text-gold-gradient">试炼任务</h2>
+                <h2 className="font-display text-sm text-gold-gradient">试炼任务</h2>
                 <Badge variant="default" size="sm">{trials.length} 项</Badge>
               </div>
               {/* 自动试炼开关 */}
@@ -718,6 +888,16 @@ export const WorldPanel: React.FC = () => {
             )}
           </Card>
         </>
+      )}
+
+      {/* ===== 探索游历页签 ===== */}
+      {activeTab === 'exploration' && (
+        <ExplorationSection
+          disciples={disciples}
+          trials={trials}
+          initiateExploration={store.initiateExploration}
+          unlockedRegions={store.unlockedExplorationRegions}
+        />
       )}
     </div>
   );

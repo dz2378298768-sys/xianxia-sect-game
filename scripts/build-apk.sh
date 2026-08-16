@@ -28,7 +28,7 @@ echo "[2/5] 构建 Web 资源 (vite build)..."
 npm run build
 
 echo "[3/5] Capacitor 同步资源到 android 工程..."
-npx cap sync android --no-deployment
+npx cap sync android
 
 # -------- 版本号注入 --------
 EXTRA_GRADLE_ARGS=("--no-daemon")
@@ -41,11 +41,15 @@ fi
 
 echo "[4/5] Gradle 构建 release APK  args=(${EXTRA_GRADLE_ARGS[*]})..."
 cd "$ROOT_DIR/android"
-if [ -f ./gradlew ]; then
+# 优先使用系统 gradle（避免 wrapper 下载超时），无则回退到 gradlew
+if command -v gradle >/dev/null 2>&1; then
+  echo "使用系统 gradle: $(gradle --version 2>/dev/null | grep -m1 Gradle)"
+  gradle assembleRelease "${EXTRA_GRADLE_ARGS[@]}"
+elif [ -f ./gradlew ]; then
   chmod +x ./gradlew
   ./gradlew assembleRelease "${EXTRA_GRADLE_ARGS[@]}"
 else
-  echo "ERROR: 未找到 android/gradlew，请先执行 npx cap add android" >&2
+  echo "ERROR: 未找到 gradle 或 android/gradlew，请先安装 gradle 或执行 npx cap add android" >&2
   exit 1
 fi
 

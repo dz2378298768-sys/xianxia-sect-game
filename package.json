@@ -2,13 +2,14 @@
   "name": "xianxia-sect-game",
   "productName": "修仙宗门管理",
   "private": true,
-  "version": "1.8.2",
+  "version": "1.9.0",
   "description": "修仙宗门管理游戏",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && node scripts/patch-h5-index.cjs",
+    "build:h5-zip": "npm run build && node scripts/pack-h5-zip.cjs",
     "lint": "eslint .",
     "preview": "vite preview",
     "check": "tsc -b --noEmit",
@@ -17,7 +18,7 @@
     "electron": "electron .",
     "electron:build": "npm run build && electron-builder --win --x64",
     "apk": "bash ./scripts/build-apk.sh",
-    "apk:1.8.2": "bash ./scripts/build-apk.sh 1.8.2 9"
+    "apk:1.9.0": "bash ./scripts/build-apk.sh 1.9.0 11"
   },
   "build": {
     "appId": "com.xianxia.sectgame",

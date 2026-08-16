@@ -259,6 +259,10 @@ const TRIAL_NAMES: Record<TrialType, string[]> = {
     '探索古修洞府', '秘境寻宝', '上古遗迹探险', '仙人洞府探秘',
     '幽冥秘境', '天火秘境', '星辰秘境', '混沌秘境',
   ],
+  explore_outer: ['宗门周边探索'],
+  explore_forest: ['妖兽森林探索'],
+  explore_ruins: ['古战场遗迹探索'],
+  explore_secret: ['天外秘境探索'],
 };
 
 const TRIAL_DESCS: Record<TrialType, string[]> = {
@@ -280,6 +284,10 @@ const TRIAL_DESCS: Record<TrialType, string[]> = {
     '天地异象引出未知秘境，机遇与危险并存。',
     '上古宗门遗迹浮现，蕴藏大量宝物与传承。',
   ],
+  explore_outer: ['宗门周边区域，适合历练。'],
+  explore_forest: ['妖兽森林，危机与机遇并存。'],
+  explore_ruins: ['古战场遗迹，危险重重。'],
+  explore_secret: ['天外秘境，福祸难料。'],
 };
 
 // 难度配置：建议战力倍率、持续时间、失败/受伤概率、奖励倍率

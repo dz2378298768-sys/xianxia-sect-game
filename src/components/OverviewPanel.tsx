@@ -3,9 +3,10 @@ import { useGameStore } from '@/store/gameStore';
 import { calculateSectCombatPower, calculateDiscipleCombatPower, calculateBuildingMaintenance, calculateBuildingOutput } from '@/utils/gameLogic';
 import {
   SectLevelNames, SectLevelDescriptions, SectLevelOrder,
-  SectLevelRequirementsMap,
+  SectLevelRequirementsMap, SectSchoolNames, SectSchoolDescriptions,
+  SCHOOL_TALENT_TREES, CalamityTypeNames,
 } from '@/types/game';
-import type { SectHistoryEntry } from '@/types/game';
+import type { SectHistoryEntry, SectSchool } from '@/types/game';
 import { BuildingTypeNames } from '@/types/building';
 
 const HISTORY_TYPE_STYLES: Record<SectHistoryEntry['type'], { icon: string; color: string }> = {
@@ -13,6 +14,10 @@ const HISTORY_TYPE_STYLES: Record<SectHistoryEntry['type'], { icon: string; colo
   sect_promote: { icon: '★', color: 'text-amber-400' },
   war_victory: { icon: '✦', color: 'text-green-400' },
   war_defeat: { icon: '✖', color: 'text-red-400' },
+  disciple_death: { icon: '☼', color: 'text-stone-400' },
+  disciple_defect: { icon: '⚠', color: 'text-orange-500' },
+  building_event: { icon: '◇', color: 'text-cyan-400' },
+  disciple_choice: { icon: '◆', color: 'text-amber-300' },
 };
 
 export const OverviewPanel: React.FC = () => {
@@ -21,6 +26,10 @@ export const OverviewPanel: React.FC = () => {
     disciples, buildings, nextMonth,
     canPromoteSect, promoteSect,
     sectHistory,
+    sectSchool, unlockedTalents, selectSchool, unlockTalent,
+    sectFortune, activeCalamity, calamityWarnings,
+    priceMultipliers,
+    expansionCount, expandSect, distributeWelfare,
   } = useGameStore();
 
   const { canPromote, nextLevel, reasons } = canPromoteSect();
@@ -234,6 +243,60 @@ export const OverviewPanel: React.FC = () => {
         )}
       </div>
 
+      {/* 宗门传承 */}
+      <div className="scroll-title">
+        <span className="text-lg">承</span>
+        <span>宗门传承</span>
+      </div>
+      <div className="p-3">
+        {!sectSchool ? (
+          <div className="scroll-panel-dark p-3">
+            <div className="text-xs text-sect-jade/60 mb-2">选择宗门流派（首次晋升时解锁）</div>
+            <div className="grid grid-cols-2 gap-2">
+              {(['sword', 'pill', 'array', 'artifact', 'balance'] as SectSchool[]).map(school => (
+                <button
+                  key={school}
+                  className="p-2 rounded bg-sect-ink-light/50 hover:bg-sect-ink-light/80 text-left transition-colors border border-transparent hover:border-sect-gold/30"
+                  onClick={() => selectSchool(school)}
+                >
+                  <div className="text-xs font-medium text-sect-gold">{SectSchoolNames[school]}</div>
+                  <div className="text-[10px] text-sect-jade/60 mt-0.5 leading-relaxed">{SectSchoolDescriptions[school]}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="scroll-panel-dark p-3">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs font-medium text-sect-gold">{SectSchoolNames[sectSchool]}</span>
+              <span className="text-[10px] text-sect-jade/60">{SectSchoolDescriptions[sectSchool]}</span>
+            </div>
+            {/* 天赋树 */}
+            <div className="text-xs text-sect-jade/60 mb-2">天赋树</div>
+            <div className="grid grid-cols-2 gap-2">
+              {SCHOOL_TALENT_TREES[sectSchool].map(talent => {
+                const isUnlocked = unlockedTalents.includes(talent.id);
+                const canUnlock = !isUnlocked && talent.prerequisites.every(p => unlockedTalents.includes(p));
+                return (
+                  <div key={talent.id} className={`p-2 rounded text-xs ${isUnlocked ? 'bg-green-500/10 border border-green-500/30' : canUnlock ? 'bg-sect-ink-light/50 border border-sect-gold/20 cursor-pointer hover:bg-sect-ink-light/80' : 'bg-sect-ink-light/30 opacity-50'}`}
+                    onClick={() => canUnlock && unlockTalent(talent.id)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className={`font-medium ${isUnlocked ? 'text-green-400' : 'text-sect-jade'}`}>{talent.name}</span>
+                      {isUnlocked && <span className="text-green-400">✓</span>}
+                    </div>
+                    <div className="text-sect-jade/50 mt-0.5">{talent.description}</div>
+                    {canUnlock && (
+                      <div className="text-amber-400/70 mt-1">贡献{talent.contributionCost} + 灵石{talent.spiritStoneCost}</div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* 经济概览 */}
       <div className="scroll-title">
         <span className="text-lg">财</span>
@@ -252,6 +315,103 @@ export const OverviewPanel: React.FC = () => {
         </div>
         <div className={`text-center font-display text-lg mt-3 ${netIncome >= 0 ? 'text-green-400' : 'text-red-400'}`}>
           月净收益 {netIncome >= 0 ? '+' : ''}{netIncome}
+        </div>
+      </div>
+
+      {/* 宗门气运 + 物价波动 */}
+      <div className="scroll-title">
+        <span className="text-lg">运</span>
+        <span>宗门气运 & 物价</span>
+      </div>
+      <div className="p-3">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="scroll-panel-dark p-3">
+            <div className="text-xs text-sect-jade/60 mb-1">宗门气运</div>
+            <div className="flex items-center gap-2">
+              <div className="flex-1 h-2 bg-sect-ink-light rounded-full overflow-hidden">
+                <div className="h-full rounded-full transition-all" style={{
+                  width: `${(sectFortune + 100) / 2}%`,
+                  background: sectFortune > 0 ? 'linear-gradient(90deg, #84cc16, #22c55e)' : 'linear-gradient(90deg, #ef4444, #f97316)',
+                }} />
+              </div>
+              <span className={`text-xs font-mono ${sectFortune > 0 ? 'text-green-400' : sectFortune < 0 ? 'text-red-400' : 'text-sect-jade/60'}`}>
+                {sectFortune > 0 ? '+' : ''}{sectFortune}
+              </span>
+            </div>
+            {activeCalamity && (
+              <div className="mt-2 p-2 rounded bg-red-500/10 border border-red-500/30">
+                <div className="text-[10px] text-red-400 font-medium">{CalamityTypeNames[activeCalamity.type]}</div>
+                <div className="text-[10px] text-sect-jade/60">{activeCalamity.description}</div>
+              </div>
+            )}
+            {calamityWarnings.length > 0 && (
+              <div className="mt-2 p-2 rounded bg-amber-500/10 border border-amber-500/30">
+                <div className="text-[10px] text-amber-400 font-medium">天灾预警</div>
+                <div className="text-[10px] text-sect-jade/60">{calamityWarnings[0].warningDescription}</div>
+              </div>
+            )}
+          </div>
+          <div className="scroll-panel-dark p-3">
+            <div className="text-xs text-sect-jade/60 mb-1">物价波动</div>
+            <div className="text-[10px] text-sect-jade/50">
+              {Object.keys(priceMultipliers).length === 0 ? (
+                <span>暂无数据</span>
+              ) : (
+                <div className="space-y-1">
+                  {Object.entries(priceMultipliers).slice(0, 6).map(([id, mult]) => (
+                    <div key={id} className="flex justify-between">
+                      <span className="text-sect-jade/60">{id}</span>
+                      <span className={mult > 1 ? 'text-red-400' : mult < 1 ? 'text-green-400' : 'text-sect-jade/60'}>
+                        {mult > 1 ? `+${Math.round((mult - 1) * 100)}%` : mult < 1 ? `${Math.round((mult - 1) * 100)}%` : '基准价'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 宗门扩张与福利 */}
+      <div className="scroll-title">
+        <span className="text-lg">扩</span>
+        <span>宗门扩张 & 福利</span>
+      </div>
+      <div className="p-3">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="scroll-panel-dark p-3">
+            <div className="text-xs text-sect-jade/60 mb-1">宗门扩张</div>
+            <div className="text-[10px] text-sect-jade/50 mb-1">已扩张 {expansionCount} 次，下次需 {500 + expansionCount * 300} 灵石</div>
+            <div className="text-[10px] text-emerald-400/80 mb-2">当前加成：全局产出 +{expansionCount * 5}%</div>
+            <button
+              className="btn-ink text-xs px-3 py-1 w-full"
+              onClick={() => {
+                const result = expandSect();
+                if (!result.ok) alert(result.reason);
+              }}
+            >
+              扩张宗门（{500 + expansionCount * 300}灵石）
+            </button>
+          </div>
+          <div className="scroll-panel-dark p-3">
+            <div className="text-xs text-sect-jade/60 mb-1">弟子福利</div>
+            <div className="text-[10px] text-sect-jade/50 mb-2">发放福利提升全体弟子满意度</div>
+            <div className="flex gap-1">
+              {[1, 2, 3].map(level => (
+                <button
+                  key={level}
+                  className="btn-ink text-[10px] px-2 py-1 flex-1"
+                  onClick={() => {
+                    const result = distributeWelfare(level);
+                    if (!result.ok) alert(result.reason);
+                  }}
+                >
+                  {level === 1 ? '普通' : level === 2 ? '丰厚' : '优厚'}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 

@@ -1,5 +1,6 @@
-import type { Disciple, HiddenTalents, Realm, DiscipleStatus, PromotionRules, RealmStage, DeducingBook } from '@/types/disciple';
-import { RealmOrder, RealmStageOrder, DiscipleStatusNames, BreakthroughData } from '@/types/disciple';
+import type { Disciple, HiddenTalents, Realm, DiscipleStatus, PromotionRules, RealmStage, DeducingBook, DiscipleBackpackItem, Personality, BackgroundStory, DisciplePreference } from '@/types/disciple';
+import type { CombatPowerBreakdown, SectCombatSummary } from '@/types/combat';
+import { RealmOrder, RealmStageOrder, DiscipleStatusNames, BreakthroughData, RealmNames, PersonalityNames, PersonalityDescriptions, PERSONALITY_CULTIVATION_MULT, PERSONALITY_SATISFACTION_MOD, PERSONALITY_DEFECTION_MULT, PERSONALITY_FRIEND_MULT, BackgroundStoryNames, BackgroundStoryDescriptions, BACKGROUND_EFFECTS } from '@/types/disciple';
 import type { Building, BuildingType } from '@/types/building';
 import { RESIDENCE_TYPES_WITH_CAVE } from '@/types/building';
 import { BUILDING_CONFIGS, INITIAL_BUILDING_TYPES, getRootBoneEffectiveness, BookTierNames, BOOK_TIER_BONUSES } from '@/data/buildings';
@@ -8,11 +9,20 @@ import { getRandomConstitution } from '@/data/constitutions';
 import { generateId, generateDiscipleName, randomInt, randomFloat, clamp } from '@/utils/random';
 import { generateTalentDisplay, calculateLifespan, calculateCultivationSpeed, generateSpiritRoots, calculateSpiritRootBonus } from '@/utils/calculations';
 import { canLearnBook, generateRandomBook } from '@/utils/bookGenerator';
-import type { MonthlyReport, GameDate, Notification } from '@/types/game';
+import type { MonthlyReport, GameDate, Notification, SectHistoryEntry, SectHistoryType, BuildingEvent, ChoiceEvent, ChainEvent, PendingChainEvent, CalamityEvent } from '@/types/game';
 import { computeBuildingOutput, computeMaintenance, recomputeCultivationSpeed, computeMonthlyContribution } from '@/domain/balance';
 import { ARTIFACT_CONFIGS } from '@/data/artifacts';
 import { TALISMAN_CONFIGS } from '@/data/talismans';
 import { BEAST_CONFIGS } from '@/data/beasts';
+import { PILL_CONFIGS } from '@/data/pills';
+import type { PillInventory, PillType } from '@/types/pill';
+import type { ArtifactInventory, ArtifactType } from '@/types/artifact';
+import type { TalismanInventory, TalismanType } from '@/types/talisman';
+import type { BeastInventory, BeastType } from '@/types/beast';
+import { SPECIAL_MATERIALS, BASIC_MATERIALS } from '@/data/specialMaterials';
+import type { CraftingTask, CraftingResult, ItemQuality, Recipe } from '@/types/crafting';
+import { QualityMultipliers, QualityDifficulty } from '@/types/crafting';
+import { RECIPE_MAP } from '@/data/recipes';
 
 export function autoAssignBuilding(disciple: Disciple, buildings: Building[]): { buildingId: string | null; newBuildings: Building[] } {
   const statusOrder: DiscipleStatus[] = ['mortal', 'servant', 'outer', 'inner', 'core', 'elder'];
@@ -486,6 +496,37 @@ export function getResidenceLevelForStatus(status: DiscipleStatus): number {
   return map[status] || 0;
 }
 
+const ALL_PERSONALITIES: Personality[] = ['diligent', 'lazy', 'aggressive', 'peaceful', 'greedy', 'generous', 'loner', 'friendly'];
+const ALL_BACKGROUNDS: BackgroundStory[] = ['common_folk', 'cultivation_family', 'wandering_scholar', 'sect_orphan', 'fallen_noble', 'ancient_heritage', 'beast_tamer', 'artifact_artisan'];
+
+/** 随机生成弟子性格 */
+export function generatePersonality(random: () => number = Math.random): Personality {
+  return ALL_PERSONALITIES[Math.floor(random() * ALL_PERSONALITIES.length)];
+}
+
+/** 随机生成弟子背景故事 */
+export function generateBackground(random: () => number = Math.random): BackgroundStory {
+  return ALL_BACKGROUNDS[Math.floor(random() * ALL_BACKGROUNDS.length)];
+}
+
+/** 生成弟子喜好（基于背景和性格推荐） */
+export function generatePreferences(personality: Personality, background: BackgroundStory): DisciplePreference {
+  const prefs: DisciplePreference = {};
+  // 炼器世家出身的弟子喜欢法器
+  if (background === 'artifact_artisan') {
+    prefs.likedTechniqueTypes = ['artifact'];
+  }
+  // 远古传承的弟子对丹药更敏感
+  if (background === 'ancient_heritage') {
+    prefs.likedPillTypes = ['qi_gathering_pill', 'foundation_pill'];
+  }
+  // 贪婪弟子喜欢高价值丹药
+  if (personality === 'greedy') {
+    prefs.likedPillTypes = [...(prefs.likedPillTypes || []), 'golden_pill', 'nascent_pill'];
+  }
+  return prefs;
+}
+
 export function createInitialDisciple(status: DiscipleStatus = 'servant', realm: Realm = 'mortal'): Disciple {
   const spiritRoots = generateSpiritRoots();
   const constitution = getRandomConstitution();
@@ -550,8 +591,18 @@ export function createInitialDisciple(status: DiscipleStatus = 'servant', realm:
     // 人物经历
     master: null,
     friends: [],
+    daoPartner: null,
+    rival: null,
+    apprenticeIds: [],
     tournamentHistory: [],
   };
+
+  // 生成弟子个性化数据
+  const personality = generatePersonality();
+  const background = generateBackground();
+  disciple.personality = personality;
+  disciple.background = background;
+  disciple.preferences = generatePreferences(personality, background);
 
   // 凡人基础速度由 0 改为 30（在引擎内），使其能累积修为突破到炼气。
   disciple.cultivationSpeed = recomputeCultivationSpeed(disciple);
@@ -1182,6 +1233,170 @@ export function calculateDiscipleCombatPower(disciple: Disciple): number {
   return Math.floor(basePower * (1 + totalBookBonus / 100) + equipmentBonus);
 }
 
+// ===== 战力构成明细（带回源） =====
+
+/** 计算弟子战力构成明细 */
+export function calculateDiscipleCombatPowerBreakdown(disciple: Disciple): CombatPowerBreakdown {
+  const realmPower = RealmCombatPower[disciple.realm] || 10;
+
+  const talentBonus =
+    disciple.hiddenTalents.rootBone * 0.5 +
+    disciple.hiddenTalents.spiritRhythm * 0.3 +
+    disciple.hiddenTalents.daoFate * 0.2;
+
+  const statusBonusMap: Record<string, number> = {
+    mortal: 0, servant: 0.5, outer: 1.0, inner: 1.5, core: 2.0, elder: 3.0,
+  };
+  const statusMultiplier = 1 + (statusBonusMap[disciple.status] || 0);
+  const basePower = realmPower * (1 + talentBonus / 100) * statusMultiplier;
+
+  // 秘籍（旧系统）
+  let secretBonus = 0;
+  for (const secret of disciple.learnedSecrets) {
+    secretBonus += secret.cultivationBonus * 0.5;
+  }
+
+  // 功法
+  const combatRootBoneEff = getRootBoneEffectiveness(disciple.hiddenTalents.rootBone);
+  let techniqueBonus = 0;
+  if (disciple.learnedTechnique && disciple.learnedTechnique.isLearned) {
+    techniqueBonus += disciple.learnedTechnique.combatBonus * combatRootBoneEff;
+  } else if (disciple.learnedTechnique) {
+    techniqueBonus += disciple.learnedTechnique.combatBonus * (disciple.learnedTechnique.progress / 100) * combatRootBoneEff;
+  }
+
+  // 战技
+  let battleBonus = 0;
+  for (const battle of disciple.learnedBattles) {
+    if (battle.isLearned) {
+      battleBonus += battle.combatBonus * combatRootBoneEff;
+    } else {
+      battleBonus += battle.combatBonus * (battle.progress / 100) * combatRootBoneEff;
+    }
+  }
+  const bookBonusTotal = secretBonus + techniqueBonus + battleBonus;
+
+  // 装备
+  let artifactBonus = 0;
+  if (disciple.equippedArtifact) {
+    const cfg = ARTIFACT_CONFIGS[disciple.equippedArtifact];
+    if (cfg?.combatPowerBonus) artifactBonus = cfg.combatPowerBonus;
+  }
+  let talismanBonus = 0;
+  if (disciple.equippedTalisman) {
+    const cfg = TALISMAN_CONFIGS[disciple.equippedTalisman];
+    if (cfg?.defenseBonus) talismanBonus = cfg.defenseBonus * 0.5;
+  }
+  let beastBonus = 0;
+  if (disciple.equippedBeast) {
+    const cfg = BEAST_CONFIGS[disciple.equippedBeast];
+    if (cfg?.combatPowerBonus) beastBonus = cfg.combatPowerBonus;
+  }
+  const equipmentBonus = artifactBonus + talismanBonus + beastBonus;
+  const total = Math.floor(basePower * (1 + bookBonusTotal / 100) + equipmentBonus);
+
+  return {
+    realmBase: realmPower,
+    talentBonus,
+    statusMultiplier,
+    basePower,
+    secretBonus,
+    techniqueBonus,
+    battleBonus,
+    bookBonusTotal,
+    artifactBonus,
+    talismanBonus,
+    beastBonus,
+    equipmentBonus,
+    total,
+  };
+}
+
+/** 计算宗门战力汇总 */
+export function computeSectCombatSummary(
+  disciples: Disciple[],
+  buildings: Building[],
+): SectCombatSummary {
+  // 弟子战力
+  const disciplePowers = disciples.map(d => ({
+    disciple: d,
+    power: calculateDiscipleCombatPower(d),
+  }));
+  const basePower = disciplePowers.reduce((s, x) => s + x.power, 0);
+
+  // 建筑加成
+  const bonuses: { name: string; multiplier: number; description: string }[] = [];
+  const mountainGate = buildings.find(b => b.type === 'mountain_gate' && b.status === 'active');
+  const isMountainGateFull = mountainGate && mountainGate.assignedDisciples.length >= mountainGate.discipleCapacity;
+  if (isMountainGateFull && mountainGate) {
+    const gateBonus = mountainGate.level * 0.05;
+    bonuses.push({
+      name: mountainGate.level >= 10 ? '护山大阵' : '山门满员',
+      multiplier: gateBonus,
+      description: `山门Lv.${mountainGate.level}，战力+${(gateBonus * 100).toFixed(0)}%`,
+    });
+  }
+  const skyscraperTower = buildings.find(b => b.type === 'skyscraper_tower' && b.status === 'active');
+  if (skyscraperTower) {
+    const levelBonus = skyscraperTower.level * 0.02;
+    bonuses.push({
+      name: '通天塔',
+      multiplier: levelBonus,
+      description: `通天塔Lv.${skyscraperTower.level}，战力+${(levelBonus * 100).toFixed(0)}%`,
+    });
+  }
+  const totalBonus = bonuses.reduce((s, b) => s + b.multiplier, 0);
+  const totalPower = Math.floor(basePower * (1 + totalBonus));
+
+  // 按身份分组
+  const statusGroups = new Map<string, { count: number; power: number }>();
+  for (const { disciple: d, power: p } of disciplePowers) {
+    const key = DiscipleStatusNames[d.status] || d.status;
+    const g = statusGroups.get(key) || { count: 0, power: 0 };
+    g.count++;
+    g.power += p;
+    statusGroups.set(key, g);
+  }
+  const byStatus = [...statusGroups.entries()]
+    .map(([status, v]) => ({ status, count: v.count, power: Math.floor(v.power) }))
+    .sort((a, b) => b.power - a.power);
+
+  // 按境界分组
+  const realmGroups = new Map<string, { count: number; power: number }>();
+  for (const { disciple: d, power: p } of disciplePowers) {
+    const key = RealmNames[d.realm] || d.realm;
+    const g = realmGroups.get(key) || { count: 0, power: 0 };
+    g.count++;
+    g.power += p;
+    realmGroups.set(key, g);
+  }
+  const byRealm = [...realmGroups.entries()]
+    .map(([realm, v]) => ({ realm, count: v.count, power: Math.floor(v.power) }))
+    .sort((a, b) => b.power - a.power);
+
+  // 最强弟子 Top5
+  const topDisciples = disciplePowers
+    .sort((a, b) => b.power - a.power)
+    .slice(0, 5)
+    .map(({ disciple: d, power }) => ({
+      id: d.id,
+      name: d.name,
+      status: DiscipleStatusNames[d.status],
+      realm: RealmNames[d.realm],
+      power,
+    }));
+
+  return {
+    totalPower,
+    basePower,
+    discipleCount: disciples.length,
+    byStatus,
+    byRealm,
+    buildingBonuses: bonuses,
+    topDisciples,
+  };
+}
+
 // 计算宗门总战力
 export function calculateSectCombatPower(disciples: Disciple[], buildings: Building[]): {
   totalPower: number;
@@ -1365,3 +1580,1320 @@ export function calculateMonthlyDeductionProgress(
   return base * talentFactor * levelFactor;
 }
 
+
+// ============================================================================
+// 弟子自然流失：寿命死亡 + 叛逃
+// ============================================================================
+
+/** 身份→月灵石收入（用于叛逃带走"1-3倍月收入"的计算，与维护费成比例） */
+const STATUS_MONTHLY_INCOME_LS: Record<DiscipleStatus, number> = {
+  mortal: 0,
+  servant: 3,
+  outer: 10,
+  inner: 25,
+  core: 60,
+  elder: 120,
+};
+
+/** 单次叛逃/死亡事件汇总结果：给调用方（nextMonth）统一合并库存、通知、历史 */
+export interface DiscipleDepartureResult {
+  /** 仍然存活的弟子（过滤掉已故/叛逃） */
+  survivors: Disciple[];
+  /** 寿终正寝数量 */
+  deadCount: number;
+  /** 叛逃/还俗数量 */
+  defectedCount: number;
+  /** 叛逃弟子合计带走的灵石（直接从 spiritStones 扣） */
+  stoneLossFromDefection: number;
+  /** 累计需要写入宗门事件 feed 的通知 */
+  notifications: Notification[];
+  /** 累计需要写入宗门历史的条目 */
+  sectHistories: SectHistoryEntry[];
+  /** 处理遗产/离职时，对仓库的修改（mutate 传入的库存累加器，也返回一份报告便于排错） */
+  inventoryReport: {
+    /** 归还法器库存变动 {type: qty增量} */
+    artifacts: Record<string, number>;
+    /** 归还符箓 */
+    talismans: Record<string, number>;
+    /** 归还灵兽 */
+    beasts: Record<string, number>;
+    /** 归还丹药 */
+    pills: Record<string, number>;
+    /** 归还原材料 material:xxx */
+    specialMaterials: Record<string, number>;
+    herbs: number;
+    iron: number;
+    paper: number;
+  };
+}
+
+/** 为 depart 事件创建一条宗门历史记录 */
+function makeDepartureHistory(
+  type: SectHistoryType, date: GameDate, disciple: Disciple, detail: string,
+): SectHistoryEntry {
+  const title = type === 'disciple_death'
+    ? `${disciple.name}·寿终正寝`
+    : `${disciple.name}·叛出山门`;
+  return {
+    id: generateId(),
+    date,
+    type,
+    title,
+    description: `${disciple.name}（${DiscipleStatusNames[disciple.status]}·${RealmNames[disciple.realm]}）${detail}。享年 ${Math.floor(disciple.age)} 岁。`,
+  };
+}
+
+/**
+ * 寻找继承候选人（优先级：师傅→道侣→同门好友→无继承人）
+ * 注意：师傅/好友/道侣现在用的是「名字」字段，通过 name 反查弟子 id；
+ *       这与当前 Disciple 类型定义一致（master: string|null, friends: string[]）。
+ */
+function findHeirId(decedent: Disciple, survivors: Disciple[]): string | null {
+  const byName = (n: string | null | undefined): Disciple | undefined =>
+    n ? survivors.find(d => d.name === n) : undefined;
+  // 1) 师傅
+  const master = byName(decedent.master);
+  if (master) return master.id;
+  // 2) 同门好友（取第一个能找到的）
+  for (const fn of decedent.friends || []) {
+    const f = byName(fn);
+    if (f) return f.id;
+  }
+  return null;
+}
+
+/**
+ * 给一个弟子（继承人 or 仓库 if null）装上一件装备/物品。
+ * 继承人优先空槽位；继承人槽位满 or 无继承人 → 归还宗门仓库。
+ * 返回对仓库/库存的修改量（正数=加，负数=扣；最终由调用方合并）。
+ */
+function transferEquipToHeirOrWarehouse(
+  heir: Disciple | undefined,
+  inventoryReport: DiscipleDepartureResult['inventoryReport'],
+) {
+  // 注：这是一个 closure 工厂。内部会在真正给物品时决定给继承人 or 仓库。
+  return {
+    equipArtifact(type: ArtifactType | null | undefined) {
+      if (!type) return;
+      if (heir && !heir.equippedArtifact) {
+        heir.equippedArtifact = type;
+        return;
+      }
+      inventoryReport.artifacts[type] = (inventoryReport.artifacts[type] || 0) + 1;
+    },
+    equipTalisman(type: TalismanType | null | undefined) {
+      if (!type) return;
+      if (heir && !heir.equippedTalisman) {
+        heir.equippedTalisman = type;
+        return;
+      }
+      inventoryReport.talismans[type] = (inventoryReport.talismans[type] || 0) + 1;
+    },
+    equipBeast(type: BeastType | null | undefined) {
+      if (!type) return;
+      if (heir && !heir.equippedBeast) {
+        heir.equippedBeast = type;
+        return;
+      }
+      inventoryReport.beasts[type] = (inventoryReport.beasts[type] || 0) + 1;
+    },
+    /** 处理弟子背包（pill/artifact/talisman/beast 及特殊原材料） */
+    backpackItem(item: DiscipleBackpackItem) {
+      if (heir && item.kind === 'pill') {
+        // 丹药直接加进继承人突破加成（不进背包，简单处理避免背包爆仓）
+        heir.breakthroughBonus = (heir.breakthroughBonus || 0) + item.quantity * 2;
+        return;
+      }
+      // 其余全归仓库
+      if (item.kind === 'pill') {
+        inventoryReport.pills[item.itemType] = (inventoryReport.pills[item.itemType] || 0) + item.quantity;
+      } else if (item.kind === 'artifact') {
+        inventoryReport.artifacts[item.itemType] = (inventoryReport.artifacts[item.itemType] || 0) + item.quantity;
+      } else if (item.kind === 'talisman') {
+        inventoryReport.talismans[item.itemType] = (inventoryReport.talismans[item.itemType] || 0) + item.quantity;
+      } else if (item.kind === 'beast') {
+        inventoryReport.beasts[item.itemType] = (inventoryReport.beasts[item.itemType] || 0) + item.quantity;
+      }
+    },
+    /** 处理 material:前缀的特殊原材料条目（backpack 里也可能用前缀写法） */
+    rawMaterial(materialKey: string, qty: number) {
+      // 三种基础材料
+      if (materialKey === 'herb' || materialKey === 'spirit_herb') {
+        inventoryReport.herbs += qty; return;
+      }
+      if (materialKey === 'iron' || materialKey === 'spirit_iron') {
+        inventoryReport.iron += qty; return;
+      }
+      if (materialKey === 'paper' || materialKey === 'spirit_paper') {
+        inventoryReport.paper += qty; return;
+      }
+      // 特殊材料：支持 material:xxx 写法和裸写 xxx
+      const key = materialKey.startsWith('material:') ? materialKey.slice(9) : materialKey;
+      if (SPECIAL_MATERIALS[key]) {
+        inventoryReport.specialMaterials[key] = (inventoryReport.specialMaterials[key] || 0) + qty;
+      } else {
+        // 未知材料 → 当作灵草兜底
+        inventoryReport.herbs += qty;
+      }
+    },
+  };
+}
+
+/**
+ * 计算师徒修炼加成
+ */
+export function getMasterDiscipleCultivationBonus(disciple: Disciple, allDisciples: Disciple[]): number {
+  if (!disciple.master) return 0;
+  const master = allDisciples.find(d => d.name === disciple.master);
+  if (!master) return 0;
+  const bonusMap: Record<string, number> = {
+    qi: 0.05, foundation: 0.10, golden: 0.15, nascent: 0.20, spirit: 0.30,
+  };
+  return bonusMap[master.realm] || 0;
+}
+
+/**
+ * 每月生成弟子关系网
+ */
+export function generateDiscipleRelationships(
+  disciples: Disciple[],
+  random: () => number = Math.random,
+): { type: 'friend' | 'dao_partner' | 'rival'; a: Disciple; b: Disciple }[] {
+  const results: { type: 'friend' | 'dao_partner' | 'rival'; a: Disciple; b: Disciple }[] = [];
+  const active = disciples.filter(d => d.status !== 'mortal');
+  for (let i = 0; i < active.length; i++) {
+    for (let j = i + 1; j < active.length; j++) {
+      const a = active[i]; const b = active[j];
+      if (a.friends.includes(b.name) || a.rival === b.name || a.daoPartner === b.name) continue;
+      if (random() > 0.03) continue;
+      const realmGap = Math.abs(RealmOrder.indexOf(a.realm) - RealmOrder.indexOf(b.realm));
+      if (realmGap <= 1 && random() < 0.5) {
+        if (random() < 0.2 && !a.daoPartner && !b.daoPartner) {
+          results.push({ type: 'dao_partner', a, b });
+        } else {
+          results.push({ type: 'friend', a, b });
+        }
+      } else if (realmGap >= 2 && random() < 0.3) {
+        results.push({ type: 'rival', a, b });
+      }
+    }
+  }
+  return results;
+}
+
+/**
+ * 生成建筑随机事件
+ */
+export function generateBuildingEvents(
+  buildings: Building[],
+  random: () => number = Math.random,
+): BuildingEvent[] {
+  const events: BuildingEvent[] = [];
+  const BUILDING_EVENT_POOL: Record<string, BuildingEvent[]> = {
+    pill_refining: [
+      { id: 'pill_vision', buildingType: 'pill_refining', type: 'auspicious',
+        title: '丹成异象', description: '丹堂炉火通明，一颗丹药生出霞光异象，品质大幅提升！',
+        effects: { outputMultiplier: 2.0, satisfactionChange: 3, spiritStoneChange: 50 }, duration: 1 },
+      { id: 'pill_explosion', buildingType: 'pill_refining', type: 'disaster',
+        title: '丹炉炸裂', description: '丹堂火候失控，炉鼎炸裂，药材损失惨重。',
+        effects: { outputMultiplier: 0.3, satisfactionChange: -5, spiritStoneChange: -30 }, duration: 1 },
+      { id: 'pill_recipe_discovery', buildingType: 'pill_refining', type: 'auspicious',
+        title: '古方重现', description: '炼丹长老翻阅古籍，发现一张失传的古丹方，尝试炼制后惊喜连连！',
+        effects: { outputMultiplier: 1.5, satisfactionChange: 4, reputationChange: 5 }, duration: 2 },
+      { id: 'pill_toxin', buildingType: 'pill_refining', type: 'disaster',
+        title: '丹毒泄露', description: '一批丹药中含有剧毒杂质，多名弟子中毒，需紧急处理。',
+        effects: { satisfactionChange: -8, spiritStoneChange: -50, reputationChange: -5 }, duration: 1 },
+    ],
+    spiritual_field: [
+      { id: 'field_bloom', buildingType: 'spiritual_field', type: 'auspicious',
+        title: '灵草疯长', description: '灵田灵气充沛，灵草一夜之间疯长，产量大增！',
+        effects: { outputMultiplier: 1.8, satisfactionChange: 2 }, duration: 2 },
+      { id: 'field_wilt', buildingType: 'spiritual_field', type: 'disaster',
+        title: '灵草枯萎', description: '灵田灵气紊乱，大片灵草枯萎，损失惨重。',
+        effects: { outputMultiplier: 0.4, satisfactionChange: -4, spiritStoneChange: -20 }, duration: 2 },
+      { id: 'field_rain', buildingType: 'spiritual_field', type: 'auspicious',
+        title: '灵雨降瑞', description: '天降灵雨，灵田中的灵草沐浴甘霖，生机勃勃。',
+        effects: { outputMultiplier: 1.4, satisfactionChange: 3, spiritStoneChange: 20 }, duration: 1 },
+      { id: 'field_pest', buildingType: 'spiritual_field', type: 'disaster',
+        title: '虫灾肆虐', description: '灵田中突然出现大量噬灵虫，疯狂啃食灵草根系。',
+        effects: { outputMultiplier: 0.5, satisfactionChange: -6, spiritStoneChange: -40 }, duration: 2 },
+    ],
+    secret_library: [
+      { id: 'library_epiphany', buildingType: 'secret_library', type: 'auspicious',
+        title: '藏经阁顿悟', description: '藏经阁灵光闪烁，一名弟子在翻阅古籍时顿悟，修炼进度大增！',
+        effects: { satisfactionChange: 5 }, duration: 1 },
+      { id: 'library_mold', buildingType: 'secret_library', type: 'disaster',
+        title: '古籍受潮', description: '雨季连绵，藏经阁部分古籍受潮损坏，修复需耗灵石。',
+        effects: { spiritStoneChange: -50, satisfactionChange: -2 }, duration: 1 },
+      { id: 'library_discovery', buildingType: 'secret_library', type: 'auspicious',
+        title: '暗格发现', description: '弟子在整理书架时发现一处暗格，里面藏有一卷上古功法残篇！',
+        effects: { satisfactionChange: 8, reputationChange: 10 }, duration: 1 },
+      { id: 'library_bookworm', buildingType: 'secret_library', type: 'disaster',
+        title: '书虫为患', description: '藏经阁中发现大量噬书虫，啃食了不少珍贵典籍。',
+        effects: { spiritStoneChange: -30, satisfactionChange: -3, reputationChange: -3 }, duration: 1 },
+    ],
+    outer_residence: [
+      { id: 'residence_peace', buildingType: 'outer_residence', type: 'auspicious',
+        title: '居所祥和', description: '弟子居所灵气环绕，众人心境平和，满意度上升。',
+        effects: { satisfactionChange: 5 }, duration: 1 },
+      { id: 'residence_demon', buildingType: 'outer_residence', type: 'disaster',
+        title: '走火入魔', description: '一名弟子修炼时走火入魔，居所受损，其他弟子受惊。',
+        effects: { satisfactionChange: -8, spiritStoneChange: -20 }, duration: 1 },
+      { id: 'residence_feast', buildingType: 'outer_residence', type: 'auspicious',
+        title: '同门联谊', description: '外门弟子自发组织了一场联谊会，众人关系融洽，士气高涨。',
+        effects: { satisfactionChange: 6, spiritStoneChange: -10 }, duration: 1 },
+      { id: 'residence_quarrel', buildingType: 'outer_residence', type: 'disaster',
+        title: '矛盾激化', description: '两名外门弟子因琐事大打出手，多人受伤，居所一片狼藉。',
+        effects: { satisfactionChange: -10, spiritStoneChange: -25 }, duration: 1 },
+    ],
+    // 也支持 inner_residence / core_residence 共用居所事件
+    inner_residence: [
+      { id: 'inner_peace', buildingType: 'inner_residence', type: 'auspicious',
+        title: '内门祥和', description: '内门居所灵气充沛，弟子修炼效率提升。',
+        effects: { satisfactionChange: 5 }, duration: 1 },
+      { id: 'inner_conflict', buildingType: 'inner_residence', type: 'disaster',
+        title: '内门争执', description: '两名内门弟子因修炼资源争执，居所氛围紧张。',
+        effects: { satisfactionChange: -6, spiritStoneChange: -15 }, duration: 1 },
+      { id: 'inner_insight', buildingType: 'inner_residence', type: 'auspicious',
+        title: '论道悟道', description: '内门弟子夜间论道，互相切磋印证，多人在讨论中有所领悟。',
+        effects: { satisfactionChange: 7, cultivationBonus: 'inner', spiritStoneChange: 10 }, duration: 1 },
+    ],
+    core_residence: [
+      { id: 'core_breakthrough', buildingType: 'core_residence', type: 'auspicious',
+        title: '核心突破', description: '一名核心弟子在居所闭关多日后成功突破境界，宗门上下欢欣鼓舞！',
+        effects: { satisfactionChange: 8, reputationChange: 8 }, duration: 1 },
+      { id: 'core_departure', buildingType: 'core_residence', type: 'disaster',
+        title: '核心出走', description: '一名核心弟子因不满宗门待遇，留下一封信后悄然离去。',
+        effects: { satisfactionChange: -10, reputationChange: -5 }, duration: 1 },
+    ],
+    cave_mansion: [
+      { id: 'cave_epiphany', buildingType: 'cave_mansion', type: 'auspicious',
+        title: '洞府顿悟', description: '长老在洞府闭关时触动天地法则，修为大进！',
+        effects: { satisfactionChange: 5, reputationChange: 8 }, duration: 1 },
+      { id: 'cave_visitor', buildingType: 'cave_mansion', type: 'disaster',
+        title: '不速之客', description: '一名散修误闯长老洞府，引发阵法反击，洞府受损。',
+        effects: { spiritStoneChange: -30, satisfactionChange: -3 }, duration: 1 },
+    ],
+    mountain_gate: [
+      { id: 'gate_guard', buildingType: 'mountain_gate', type: 'auspicious',
+        title: '山门显威', description: '山门阵法灵光闪耀，震慑宵小，宗门威望提升。',
+        effects: { reputationChange: 10, satisfactionChange: 2 }, duration: 1 },
+      { id: 'gate_intrusion', buildingType: 'mountain_gate', type: 'disaster',
+        title: '山门被袭', description: '一伙散修趁夜偷袭山门，守门弟子受伤，山门受损。',
+        effects: { spiritStoneChange: -40, satisfactionChange: -4 }, duration: 1 },
+      { id: 'gate_guest', buildingType: 'mountain_gate', type: 'auspicious',
+        title: '贵客临门', description: '一位德高望重的前辈路过山门，对宗门赞赏有加，留下指点。',
+        effects: { reputationChange: 15, satisfactionChange: 5 }, duration: 1 },
+      { id: 'gate_escape', buildingType: 'mountain_gate', type: 'disaster',
+        title: '囚犯脱逃', description: '一名被囚禁的妖修趁守卫松懈时挣脱束缚，打伤守卫后逃窜。',
+        effects: { spiritStoneChange: -30, satisfactionChange: -6, reputationChange: -5 }, duration: 1 },
+    ],
+    servant_hall: [
+      { id: 'servant_diligent', buildingType: 'servant_hall', type: 'auspicious',
+        title: '杂役勤勉', description: '杂役弟子们勤勉工作，杂役堂产出大幅提升！',
+        effects: { outputMultiplier: 1.5, satisfactionChange: 3, spiritStoneChange: 30 }, duration: 2 },
+      { id: 'servant_lazy', buildingType: 'servant_hall', type: 'disaster',
+        title: '杂役怠工', description: '杂役弟子们懈怠懒散，产出下降，需加强管理。',
+        effects: { outputMultiplier: 0.5, satisfactionChange: -5, spiritStoneChange: -15 }, duration: 2 },
+      { id: 'servant_talent', buildingType: 'servant_hall', type: 'auspicious',
+        title: '璞玉发现', description: '一名杂役弟子在劳作时无意中展露惊人天赋，是可造之材！',
+        effects: { satisfactionChange: 4, spiritStoneChange: 10 }, duration: 1 },
+      { id: 'servant_injury', buildingType: 'servant_hall', type: 'disaster',
+        title: '劳作事故', description: '杂役堂搬运重物时发生事故，多名杂役弟子受伤。',
+        effects: { satisfactionChange: -7, spiritStoneChange: -20 }, duration: 1 },
+    ],
+    lecture_hall: [
+      { id: 'lecture_inspire', buildingType: 'lecture_hall', type: 'auspicious',
+        title: '讲经入神', description: '讲经堂长老讲道深入浅出，众弟子如痴如醉，修炼进度大增。',
+        effects: { satisfactionChange: 6, cultivationBonus: 'all' }, duration: 1 },
+      { id: 'lecture_dispute', buildingType: 'lecture_hall', type: 'disaster',
+        title: '讲经争执', description: '两名弟子在讲经堂因功法见解不同发生争执，扰乱秩序。',
+        effects: { satisfactionChange: -4, spiritStoneChange: -10 }, duration: 1 },
+      { id: 'lecture_master', buildingType: 'lecture_hall', type: 'auspicious',
+        title: '名师出山', description: '一位隐居多年的宗门前辈突然现身讲经堂，亲自开坛讲法！',
+        effects: { satisfactionChange: 10, reputationChange: 12, spiritStoneChange: 30 }, duration: 1 },
+    ],
+    formation_hall: [
+      { id: 'formation_breakthrough', buildingType: 'formation_hall', type: 'auspicious',
+        title: '阵法突破', description: '阵堂长老在阵法研究中取得突破，宗门护山大阵威力大增！',
+        effects: { reputationChange: 10, satisfactionChange: 3, spiritStoneChange: 20 }, duration: 2 },
+      { id: 'formation_collapse', buildingType: 'formation_hall', type: 'disaster',
+        title: '阵法反噬', description: '阵堂试验新阵法时失控，灵气暴走，阵堂受损严重。',
+        effects: { spiritStoneChange: -60, satisfactionChange: -5, reputationChange: -3 }, duration: 2 },
+    ],
+    artifact_hall: [
+      { id: 'artifact_masterpiece', buildingType: 'artifact_hall', type: 'auspicious',
+        title: '神兵出世', description: '炼器堂成功炼制出一件极品法器，器成之日霞光万丈！',
+        effects: { reputationChange: 15, satisfactionChange: 5, spiritStoneChange: 50 }, duration: 1 },
+      { id: 'artifact_failure', buildingType: 'artifact_hall', type: 'disaster',
+        title: '炼器失败', description: '炼器堂在炼制高阶法器时失败，材料尽毁，炉鼎受损。',
+        effects: { spiritStoneChange: -50, satisfactionChange: -4 }, duration: 1 },
+    ],
+    talisman_hall: [
+      { id: 'talisman_inspire', buildingType: 'talisman_hall', type: 'auspicious',
+        title: '符道灵感', description: '符堂弟子在绘制符箓时灵光一闪，创出一种新的符箓画法！',
+        effects: { outputMultiplier: 1.6, satisfactionChange: 4, spiritStoneChange: 25 }, duration: 1 },
+      { id: 'talisman_backfire', buildingType: 'talisman_hall', type: 'disaster',
+        title: '符箓反噬', description: '符堂弟子绘制高阶符箓时灵力失控，符箓爆炸，多人受伤。',
+        effects: { spiritStoneChange: -35, satisfactionChange: -6 }, duration: 1 },
+    ],
+    beast_ground: [
+      { id: 'beast_evolve', buildingType: 'beast_ground', type: 'auspicious',
+        title: '灵兽进阶', description: '灵兽园中的一只灵兽突然进阶，血脉觉醒，实力大增！',
+        effects: { satisfactionChange: 5, reputationChange: 8 }, duration: 1 },
+      { id: 'beast_rampage', buildingType: 'beast_ground', type: 'disaster',
+        title: '灵兽暴走', description: '灵兽园中的灵兽受惊暴走，冲破围栏，造成混乱。',
+        effects: { spiritStoneChange: -30, satisfactionChange: -7 }, duration: 1 },
+      { id: 'beast_birth', buildingType: 'beast_ground', type: 'auspicious',
+        title: '灵兽繁衍', description: '灵兽园中的灵兽产下幼崽，新生命带来勃勃生机。',
+        effects: { satisfactionChange: 6, spiritStoneChange: 20 }, duration: 1 },
+    ],
+    skyscraper_tower: [
+      { id: 'tower_vision', buildingType: 'skyscraper_tower', type: 'auspicious',
+        title: '通天显兆', description: '通天塔顶霞光万道，隐隐有天音传来，预示着飞升之路即将开启。',
+        effects: { reputationChange: 20, satisfactionChange: 8 }, duration: 1 },
+      { id: 'tower_tremor', buildingType: 'skyscraper_tower', type: 'disaster',
+        title: '通天震动', description: '通天塔突然剧烈震动，塔身出现裂纹，似有封印松动。',
+        effects: { spiritStoneChange: -100, satisfactionChange: -5, reputationChange: -5 }, duration: 2 },
+    ],
+  };
+  for (const building of buildings) {
+    if (building.status !== 'active') continue;
+    const pool = BUILDING_EVENT_POOL[building.type];
+    if (!pool) continue;
+    if (random() > 0.08) continue;
+    const event = pool[Math.floor(random() * pool.length)];
+    events.push({ ...event, id: `${event.id}_${building.id}` });
+  }
+  return events;
+}
+
+/**
+ * 生成分支选择事件
+ */
+export function generateChoiceEvent(
+  gameDate: GameDate, reputation: number, spiritStones: number,
+  random: () => number = Math.random,
+): ChoiceEvent | null {
+  if (random() > 0.35) return null;
+
+  // 季节事件（春季/夏季/秋季/冬季各有特色）
+  const month = gameDate.month;
+  const seasonalEvents: ChoiceEvent[] = [
+    { id: 'spring_planting', title: '春耕大典',
+      description: '春回大地，灵田即将播种。长老建议举办一场春耕大典，祈求今年灵草丰收。',
+      choices: [
+        { label: '举办大典', description: '耗费灵石举办典礼，提振士气。',
+          effects: { spiritStoneChange: -80, satisfactionChange: 5, notificationText: '春耕大典顺利举行，弟子们干劲十足，满意度+5。' } },
+        { label: '一切从简', description: '不搞形式，直接播种。',
+          effects: { notificationText: '灵田完成播种，一切如常。' } },
+      ] },
+    { id: 'summer_tournament', title: '夏日论武',
+      description: '盛夏酷暑，弟子们提议举办一场夏日论武大会，切磋技艺，活跃气氛。',
+      choices: [
+        { label: '举办论武', description: '组织弟子比试，胜者有奖。',
+          effects: { spiritStoneChange: -50, satisfactionChange: 6, notificationText: '夏日论武热闹非凡，胜者获得奖励，满意度+6。' } },
+        { label: '静心修炼', description: '夏日正适合闭关静修，不宜喧哗。',
+          effects: { satisfactionChange: 2, notificationText: '弟子们静心修炼，进步平稳。' } },
+      ] },
+    { id: 'autumn_harvest', title: '秋收祭典',
+      description: '金秋时节，灵草丰收在即。有弟子提议举办秋收祭典感谢天地。',
+      choices: [
+        { label: '隆重祭典', description: '大办祭典，宴请周边宗门。',
+          effects: { spiritStoneChange: -100, reputationChange: 15, satisfactionChange: 4, notificationText: '秋收祭典宾客满堂，宗门声望+15。' } },
+        { label: '低调庆祝', description: '宗门内部简单庆祝即可。',
+          effects: { satisfactionChange: 3, notificationText: '内部庆祝温馨融洽，满意+3。' } },
+      ] },
+    { id: 'winter_defense', title: '冬防部署',
+      description: '寒冬将至，山门需要加固防御、储备物资，以应对可能出现的妖兽袭扰。',
+      choices: [
+        { label: '全面加固', description: '投入灵石加固防御，储备物资。',
+          effects: { spiritStoneChange: -120, satisfactionChange: 3, notificationText: '宗门防御加固完成，弟子们安心过冬。' } },
+        { label: '维持现状', description: '现有防御足以应对一般威胁。',
+          effects: { notificationText: '冬季安然度过，未发生重大事件。' } },
+      ] },
+  ];
+
+  // 根据月份加权选择季节事件
+  const seasonPool: ChoiceEvent[] = [];
+  if (month >= 3 && month <= 5) seasonPool.push(seasonalEvents[0]); // 春季
+  if (month >= 6 && month <= 8) seasonPool.push(seasonalEvents[1]); // 夏季
+  if (month >= 9 && month <= 11) seasonPool.push(seasonalEvents[2]); // 秋季
+  if (month <= 2 || month === 12) seasonPool.push(seasonalEvents[3]); // 冬季
+
+  const pool: ChoiceEvent[] = [
+    ...seasonPool,
+    { id: 'treasure_fall', title: '天降异宝',
+      description: '一道流星划过天际，落在宗门后山。弟子来报，疑似天外陨铁或某种异宝。你打算如何处理？',
+      choices: [
+        { label: '据为己有', description: '将此宝收入宗门仓库，提升宗门底蕴。',
+          effects: { spiritStoneChange: 200, karmaChange: -5, notificationText: '你将异宝收入宗门，宗门灵石+200，但正邪度-5。' } },
+        { label: '拱手让出', description: '大方展示此宝，广邀周边修士共赏，博取名声。',
+          effects: { reputationChange: 30, karmaChange: 5, notificationText: '你公开展示异宝，名声大振，声望+30，正邪度+5。' } },
+      ] },
+    { id: 'wandering_monk', title: '云游散修',
+      description: '一名衣衫褴褛的散修前来投靠，自称曾是一方大能，但因仇家追杀流落至此。',
+      choices: [
+        { label: '收留庇护', description: '广结善缘，收留这位散修。',
+          effects: { reputationChange: 15, karmaChange: 5, notificationText: '你收留了散修，他感激不尽，宗门声望+15。' } },
+        { label: '婉言谢绝', description: '多一事不如少一事，赠予盘缠让其离去。',
+          effects: { spiritStoneChange: -50, notificationText: '你赠予散修50灵石盘缠，对方叹息离去。' } },
+      ] },
+    { id: 'demon_attack', title: '邪修滋事',
+      description: '一群邪修在宗门附近滋事，劫掠过往凡人。弟子们请示是否出手干预。',
+      choices: [
+        { label: '出手除魔', description: '派出弟子剿灭邪修，维护一方平安。',
+          effects: { reputationChange: 25, karmaChange: 8, satisfactionChange: 3, notificationText: '你派出弟子剿灭邪修，百姓赞颂，声望+25。' } },
+        { label: '明哲保身', description: '宗门事务繁忙，不宜多生事端。',
+          effects: { karmaChange: -3, satisfactionChange: -2, notificationText: '你选择袖手旁观，弟子略有微词。' } },
+      ] },
+    { id: 'spirit_vein', title: '灵脉异动',
+      description: '在矿洞深处发现一条新的灵脉分支，但开采需要大量灵石投入。',
+      choices: [
+        { label: '全力开采', description: '投入灵石开辟新矿脉，长期收益可观。',
+          effects: { spiritStoneChange: -200, reputationChange: 10, notificationText: '你投入200灵石开辟新矿脉，未来收益可期。' } },
+        { label: '暂缓开发', description: '当前资源紧张，先标记位置以后再说。',
+          effects: { notificationText: '你命人记录了灵脉位置，留待日后开发。' } },
+      ] },
+    { id: 'disaster_aid', title: '灾民求助',
+      description: '附近城镇遭遇妖灾，大量难民逃到山门前求助。弟子们等待你的决断。',
+      choices: [
+        { label: '开仓赈济', description: '打开粮仓，收留难民。',
+          effects: { spiritStoneChange: -100, reputationChange: 20, karmaChange: 8, satisfactionChange: 3, notificationText: '你收留难民，善名远播，声望+20。' } },
+        { label: '遣散难民', description: '宗门资源有限，赠予一些干粮后请他们另寻他处。',
+          effects: { spiritStoneChange: -20, karmaChange: -3, notificationText: '你分发了一些干粮后遣散了难民。' } },
+      ] },
+    { id: 'inner_competition', title: '弟子内卷',
+      description: '内门弟子之间竞争日益激烈，有长老提议完善弟子排名制度，激励修炼。',
+      choices: [
+        { label: '设立排名榜', description: '公开排名，奖励优秀弟子。',
+          effects: { spiritStoneChange: -60, satisfactionChange: 4, notificationText: '排名榜设立后，弟子修炼热情高涨，满意度+4。' } },
+        { label: '保持现状', description: '修炼之道贵在自觉，不宜过度竞争。',
+          effects: { satisfactionChange: -1, notificationText: '弟子们略微失望，修炼氛围维持原状。' } },
+      ] },
+  ];
+  return pool[Math.floor(random() * pool.length)];
+}
+
+/**
+ * 连锁事件配置表：定义哪些选择事件的分支会触发后续连锁事件
+ */
+const CHAIN_EVENT_CONFIGS: ChainEvent[] = [
+  // 春耕大典 → 灵草丰收
+  { id: 'chain_spring_harvest', triggerEventId: 'spring_planting', triggerChoice: '举办大典', delayMonths: 3,
+    title: '灵草丰收', description: '春耕大典的祈福灵验了！今年灵田的灵草长势喜人，收成远超预期。',
+    type: 'auspicious', effects: { spiritStoneChange: 150, reputationChange: 8, satisfactionChange: 3, notificationText: '灵草大丰收，宗门获得额外灵石+150，声望+8。' }, oneTime: true },
+  // 夏日论武 → 发现天才弟子
+  { id: 'chain_tournament_talent', triggerEventId: 'summer_tournament', triggerChoice: '举办论武', delayMonths: 1,
+    title: '论武发现天才', description: '夏日论武中，一名外门弟子表现出色，竟是隐藏的练武奇才！',
+    type: 'auspicious', effects: { satisfactionChange: 8, reputationChange: 5, notificationText: '你在论武中发现一名天才弟子，满意度+8，声望+5。' }, oneTime: true },
+  // 秋收祭典 → 邻宗结盟
+  { id: 'chain_autumn_alliance', triggerEventId: 'autumn_harvest', triggerChoice: '隆重祭典', delayMonths: 2,
+    title: '邻宗结盟意向', description: '秋收祭典上宴请的宗门对你印象极佳，派使者前来商议结盟事宜。',
+    type: 'auspicious', effects: { reputationChange: 20, karmaChange: 3, notificationText: '邻宗主动示好，声望+20，正邪度+3。' }, oneTime: true },
+  // 冬防部署 → 发现遗迹
+  { id: 'chain_winter_ruins', triggerEventId: 'winter_defense', triggerChoice: '全面加固', delayMonths: 2,
+    title: '防御工事发现遗迹', description: '弟子们在加固山门防御时，意外挖出一处古代遗迹入口！',
+    type: 'auspicious', effects: { reputationChange: 10, satisfactionChange: 5, notificationText: '发现古代遗迹，声望+10，满意度+5。' }, oneTime: true },
+  // 天降异宝（据为己有）→ 引来觊觎
+  { id: 'chain_treasure_covet', triggerEventId: 'treasure_fall', triggerChoice: '据为己有', delayMonths: 2,
+    title: '异宝消息走漏', description: '宗门得到异宝的消息走漏，引来各方觊觎，周边开始出现可疑修士。',
+    type: 'disaster', effects: { reputationChange: -5, satisfactionChange: -3, notificationText: '异宝消息走漏，声望-5，满意度-3，需警惕觊觎者。' }, oneTime: true },
+  // 天降异宝（拱手让出）→ 名望大涨
+  { id: 'chain_treasure_fame', triggerEventId: 'treasure_fall', triggerChoice: '拱手让出', delayMonths: 1,
+    title: '仁义之名远播', description: '你慷慨展示异宝的举动传遍四方，天下修士称赞你的仁义之风。',
+    type: 'auspicious', effects: { reputationChange: 25, karmaChange: 5, notificationText: '仁义之名远播，声望+25，正邪度+5。' }, oneTime: true },
+  // 云游散修（收留）→ 贡献秘法
+  { id: 'chain_wanderer_secret', triggerEventId: 'wandering_monk', triggerChoice: '收留庇护', delayMonths: 3,
+    title: '散修献上秘法', description: '被你收留的散修伤势痊愈，为表感激献上一部失传的秘法功法。',
+    type: 'auspicious', effects: { reputationChange: 10, satisfactionChange: 5, notificationText: '散修献上秘法，宗门底蕴增加，声望+10，满意度+5。' }, oneTime: true },
+  // 邪修滋事（出手除魔）→ 邪修报复
+  { id: 'chain_demon_retaliation', triggerEventId: 'demon_attack', triggerChoice: '出手除魔', delayMonths: 2,
+    title: '邪修报复', description: '上次剿灭的邪修同伙前来报复，趁夜袭击了宗门的外围设施。',
+    type: 'disaster', effects: { spiritStoneChange: -60, satisfactionChange: -5, notificationText: '邪修报复袭击，灵石损失60，满意度-5。' }, oneTime: true },
+  // 灵脉异动（全力开采）→ 矿难
+  { id: 'chain_mine_collapse', triggerEventId: 'spirit_vein', triggerChoice: '全力开采', delayMonths: 1,
+    title: '矿洞塌方', description: '新矿脉开采过于急进，矿洞结构不稳发生塌方，几名矿工受伤。',
+    type: 'disaster', effects: { spiritStoneChange: -40, satisfactionChange: -4, notificationText: '矿洞塌方，灵石损失40，满意度-4。' }, oneTime: true },
+  // 灾民求助（开仓赈济）→ 感恩来投
+  { id: 'chain_refugee_grateful', triggerEventId: 'disaster_aid', triggerChoice: '开仓赈济', delayMonths: 2,
+    title: '灾民感恩来投', description: '被你收留的灾民中，有几个拥有修炼天赋的年轻人恳请加入宗门。',
+    type: 'auspicious', effects: { satisfactionChange: 5, reputationChange: 10, notificationText: '有天赋的灾民请求加入宗门，满意度+5，声望+10。' }, oneTime: true },
+  // 弟子内卷（设立排名榜）→ 修炼热潮
+  { id: 'chain_ranking_boost', triggerEventId: 'inner_competition', triggerChoice: '设立排名榜', delayMonths: 1,
+    title: '修炼热潮', description: '排名榜设立后，弟子们修炼热情空前高涨，宗门上下掀起一股修炼热潮。',
+    type: 'auspicious', effects: { satisfactionChange: 5, reputationChange: 3, notificationText: '修炼热潮席卷宗门，满意度+5，声望+3。' }, oneTime: true },
+];
+
+/**
+ * 根据已解决的分支选择事件，生成待触发的连锁事件
+ */
+export function generateChainEvents(
+  resolvedChoiceEventId: string,
+  chosenLabel: string,
+  currentMonth: number, // year * 12 + month
+): PendingChainEvent[] {
+  const pending: PendingChainEvent[] = [];
+  for (const cfg of CHAIN_EVENT_CONFIGS) {
+    if (cfg.triggerEventId === resolvedChoiceEventId && cfg.triggerChoice === chosenLabel) {
+      pending.push({
+        chainId: cfg.id,
+        scheduledMonth: currentMonth + cfg.delayMonths,
+        event: { ...cfg },
+      });
+    }
+  }
+  return pending;
+}
+
+/**
+ * 检查并激活到期的连锁事件
+ */
+export function processPendingChainEvents(
+  pendingEvents: PendingChainEvent[],
+  currentMonth: number,
+): { activated: ChainEvent[]; remaining: PendingChainEvent[] } {
+  const activated: ChainEvent[] = [];
+  const remaining: PendingChainEvent[] = [];
+  for (const pe of pendingEvents) {
+    if (pe.scheduledMonth <= currentMonth) {
+      activated.push(pe.event);
+    } else {
+      remaining.push(pe);
+    }
+  }
+  return { activated, remaining };
+}
+
+/**
+ * 市场物价波动系统
+ * 
+ * 每月自动微调商店物品价格，波动范围 ±20%
+ * 受以下因素影响：
+ *   - 基准价格（shop.ts 中的 price）
+ *   - 上次波动值（平滑过渡）
+ *   - 随机因子
+ *   - 宗门声望影响（高声望→折扣）
+ *   - 随机事件影响（如"灵草丰收季"降价）
+ */
+
+/** 价格波动配置 */
+export interface PriceFluctuationConfig {
+  basePrice: number;
+  currentMultiplier: number;   // 当前价格倍率（0.8 ~ 1.2）
+  trend: number;               // 趋势方向（-0.02 ~ 0.02，每月微调）
+}
+
+/** 生成新的月度价格波动 */
+export function generatePriceFluctuations(
+  currentMultipliers: Record<string, number>,
+  reputation: number,
+  random: () => number = Math.random,
+): Record<string, number> {
+  const newMultipliers: Record<string, number> = {};
+  
+  for (const [itemId, currentMult] of Object.entries(currentMultipliers)) {
+    // 随机漂移
+    const drift = (random() - 0.5) * 0.06; // -0.03 ~ 0.03
+    
+    // 均值回归：向 1.0 缓慢回归
+    const reversion = (1.0 - currentMult) * 0.1;
+    
+    // 声望影响：高声望享折扣（最高 -5%）
+    const reputationBonus = Math.max(-0.05, Math.min(0, reputation * 0.0001));
+    
+    // 合成新倍率
+    let newMult = currentMult + drift + reversion + reputationBonus;
+    
+    // 钳制到 [0.8, 1.2]
+    newMult = Math.max(0.8, Math.min(1.2, newMult));
+    
+    newMultipliers[itemId] = Math.round(newMult * 1000) / 1000;
+  }
+  
+  return newMultipliers;
+}
+
+/**
+ * 商店物品最终价格计算
+ */
+export function calculateShopPrice(
+  basePrice: number,
+  priceMultiplier: number,
+): number {
+  return Math.floor(basePrice * priceMultiplier);
+}
+
+/**
+ * 宗门气运系统
+ */
+
+/** 气运变化事件配置 */
+const FORTUNE_EVENTS: { id: string; delta: number; condition: string }[] = [
+  { id: 'fortune_good_deed', delta: 5, condition: '行善' },
+  { id: 'fortune_evil_deed', delta: -5, condition: '作恶' },
+  { id: 'fortune_tournament_win', delta: 10, condition: '大比夺冠' },
+  { id: 'fortune_disciple_defect', delta: -8, condition: '弟子叛逃' },
+  { id: 'fortune_disciple_death', delta: -3, condition: '弟子寿终' },
+  { id: 'fortune_building_upgrade', delta: 2, condition: '建筑升级' },
+  { id: 'fortune_sect_promote', delta: 15, condition: '宗门晋升' },
+];
+
+/**
+ * 更新宗门气运
+ */
+export function updateSectFortune(
+  currentFortune: number,
+  events: { type: string; delta: number }[],
+): number {
+  let newFortune = currentFortune;
+  for (const evt of events) {
+    newFortune += evt.delta;
+  }
+  return Math.max(-100, Math.min(100, newFortune));
+}
+
+/**
+ * 检查是否触发天灾
+ * 每10-20年触发一次，气运越低概率越高
+ */
+export function checkCalamityTrigger(
+  year: number,
+  lastCalamityYear: number,
+  sectFortune: number,
+  random: () => number = Math.random,
+): boolean {
+  const yearsSinceLastCalamity = year - lastCalamityYear;
+  if (yearsSinceLastCalamity < 10) return false;
+  // 基础概率 + 气运影响（气运越低越容易触发）
+  const baseChance = 0.08;
+  const fortuneModifier = (50 - sectFortune) / 500; // 气运-100时+30%，+100时-10%
+  const chance = baseChance + fortuneModifier;
+  return random() < chance;
+}
+
+/**
+ * 生成天灾事件
+ */
+const CALAMITY_CONFIGS: CalamityEvent[] = [
+  { id: 'calamity_thunder', type: 'heavenly_thunder', title: '天劫雷暴', description: '九天神雷降临，宗门建筑受损，多名弟子被雷击受伤。', warningMonths: 3, warningTitle: '天象异变', warningDescription: '天空中乌云密布，隐隐有雷光闪烁，似有天劫将至。', effects: { spiritStoneChange: -200, satisfactionChange: -10, discipleInjuryChance: 0.3, durationMonths: 1 } },
+  { id: 'calamity_beast', type: 'beast_tide', title: '兽潮来袭', description: '大量妖兽从山林中涌出，疯狂冲击宗门防线！', warningMonths: 2, warningTitle: '妖兽异动', warningDescription: '探子来报，附近山林中妖兽活动异常频繁，恐有兽潮。', effects: { spiritStoneChange: -300, reputationChange: -15, satisfactionChange: -8, discipleInjuryChance: 0.2, durationMonths: 2 } },
+  { id: 'calamity_vein', type: 'spirit_vein_dry', title: '灵脉枯竭', description: '宗门地下的灵脉突然枯竭，所有建筑产出大幅下降。', warningMonths: 4, warningTitle: '灵脉异动', warningDescription: '宗门灵脉灵气波动异常，似乎有枯竭的征兆。', effects: { outputMultiplier: 0.5, satisfactionChange: -15, durationMonths: 6 } },
+  { id: 'calamity_secret', type: 'secret_realm_open', title: '秘境开启', description: '宗门附近突然出现一座上古秘境入口，蕴含无数机缘！', warningMonths: 1, warningTitle: '地动山摇', warningDescription: '宗门附近大地震动，隐隐有霞光从地底透出。', effects: { reputationChange: 20, spiritStoneChange: 500, satisfactionChange: 10, durationMonths: 3 } },
+  { id: 'calamity_demon', type: 'demon_incursion', title: '魔道入侵', description: '一群魔道修士大举入侵，宗门上下陷入苦战！', warningMonths: 2, warningTitle: '魔道集结', warningDescription: '探子发现大量魔道修士在宗门附近集结，意图不轨。', effects: { spiritStoneChange: -500, reputationChange: -20, satisfactionChange: -12, discipleInjuryChance: 0.4, durationMonths: 2 } },
+];
+
+export function generateCalamity(sectFortune: number, random: () => number = Math.random): CalamityEvent {
+  // 气运低时偏向负面天灾，气运高时偏向正面机遇
+  const negativeChance = 0.5 + (50 - sectFortune) / 200; // -100时100%, +100时25%
+  const calamities = CALAMITY_CONFIGS.filter(c => {
+    if (c.type === 'secret_realm_open') return random() > negativeChance;
+    return true;
+  });
+  return calamities[Math.floor(random() * calamities.length)];
+}
+
+/**
+ * 大额支出途径：护山大阵维护费
+ * 按山门等级和宗门等级计算
+ */
+export function calculateMountainGuardCost(
+  mountainGateLevel: number,
+  sectLevelIndex: number, // 0=founding, 1=known, etc.
+): number {
+  return Math.floor(50 + mountainGateLevel * 20 + sectLevelIndex * 30);
+}
+
+/**
+ * 大额支出途径：宗门扩张费用
+ * 每次扩张消耗灵石，扩张后增加建筑位
+ */
+export function calculateExpansionCost(
+  currentExpansionCount: number,
+): number {
+  // 首次扩张500，后续每次递增
+  return 500 + currentExpansionCount * 300;
+}
+
+/**
+ * 大额支出途径：弟子福利发放
+ * 按弟子身份发放灵石，提升满意度
+ */
+export function calculateDiscipleWelfareCost(
+  discipleCount: number,
+  generosityLevel: number, // 1=普通, 2=丰厚, 3=优厚
+): { cost: number; satisfactionGain: number } {
+  const costPerDisciple = generosityLevel * 10;
+  const satisfactionGain = generosityLevel * 2;
+  return {
+    cost: discipleCount * costPerDisciple,
+    satisfactionGain,
+  };
+}
+
+/**
+ * 检查宗门灭亡条件
+ */
+export function checkSectCollapse(
+  spiritStones: number, disciples: Disciple[], reputation: number,
+  monthsConsecutiveNegative: number,
+): { collapsed: boolean; reason: string } {
+  if (disciples.filter(d => d.status !== 'mortal').length === 0)
+    return { collapsed: true, reason: '宗门弟子全数离去，道统断绝。' };
+  if (monthsConsecutiveNegative >= 12 && spiritStones < -5000)
+    return { collapsed: true, reason: `宗门连续 ${monthsConsecutiveNegative} 个月灵石赤字，负债累累，宗门解散。` };
+  if (reputation <= -500)
+    return { collapsed: true, reason: '宗门声名狼藉，为正道所不容，被联合剿灭。' };
+  return { collapsed: false, reason: '' };
+}
+
+/**
+ * 师徒传承系统：师傅寿终时触发衣钵继承
+ */
+export function processMasterInheritance(
+  master: Disciple, allDisciples: Disciple[],
+  createNotification: (type: 'info' | 'success' | 'warning' | 'danger', title: string, content: string, date: GameDate) => Notification,
+  date: GameDate, random: () => number = Math.random,
+): { notifications: Notification[]; updatedDisciples: Disciple[] } {
+  const notifications: Notification[] = [];
+  const updatedDisciples: Disciple[] = [];
+  const apprentices = allDisciples.filter(d => d.master === master.name);
+  if (apprentices.length === 0) return { notifications, updatedDisciples };
+  const apprentice = apprentices.reduce((best, d) => d.contributionPoints > best.contributionPoints ? d : best);
+  if (master.learnedTechnique && random() < 0.5) {
+    apprentice.learnedTechnique = master.learnedTechnique;
+    notifications.push(createNotification('success', '衣钵传承', `${apprentice.name}继承了师傅${master.name}的功法「${master.learnedTechnique.name}」。`, date));
+  }
+  if (master.equippedArtifact && random() < 0.4) {
+    apprentice.equippedArtifact = master.equippedArtifact;
+    notifications.push(createNotification('success', '衣钵传承', `${apprentice.name}继承了师傅${master.name}的法器。`, date));
+  }
+  const inheritedContribution = Math.floor(master.contributionPoints * 0.5);
+  if (inheritedContribution > 0) {
+    apprentice.contributionPoints += inheritedContribution;
+    notifications.push(createNotification('info', '衣钵传承', `${apprentice.name}继承了师傅${master.name}的 ${inheritedContribution} 点贡献。`, date));
+  }
+  updatedDisciples.push(apprentice);
+  return { notifications, updatedDisciples };
+}
+
+/**
+ * 每月涌现事件统一入口
+ */
+export interface MonthlyProcessResult {
+  notifications: Notification[];
+  sectHistories: SectHistoryEntry[];
+  spiritStoneChange: number;
+  reputationChange: number;
+  karmaChange: number;
+  buildingEvents: BuildingEvent[];
+  choiceEvent: ChoiceEvent | null;
+  collapsed: boolean;
+  collapseReason: string;
+  updatedDisciples: Disciple[];
+}
+
+export function processMonthlyEmergentEvents(
+  disciples: Disciple[], buildings: Building[],
+  spiritStones: number, reputation: number, karma: number,
+  monthsConsecutiveNegative: number, gameDate: GameDate,
+  createNotification: (type: 'info' | 'success' | 'warning' | 'danger', title: string, content: string, date: GameDate) => Notification,
+  random: () => number = Math.random,
+): MonthlyProcessResult {
+  const notifications: Notification[] = [];
+  const sectHistories: SectHistoryEntry[] = [];
+  let spiritStoneChange = 0, reputationChange = 0, karmaChange = 0;
+  let updatedDisciples: Disciple[] = [];
+
+  // 1. 关系网生成
+  const newRelations = generateDiscipleRelationships(disciples, random);
+  for (const rel of newRelations) {
+    const a = rel.a; const b = rel.b;
+    if (rel.type === 'friend') {
+      a.friends.push(b.name); b.friends.push(a.name);
+      notifications.push(createNotification('info', '结交好友', `${a.name}与${b.name}结为好友。`, gameDate));
+    } else if (rel.type === 'dao_partner') {
+      a.daoPartner = b.name; b.daoPartner = a.name;
+      notifications.push(createNotification('success', '喜结道侣', `${a.name}与${b.name}结为道侣，双修可增益修为。`, gameDate));
+    } else if (rel.type === 'rival') {
+      a.rival = b.name; b.rival = a.name;
+      notifications.push(createNotification('warning', '结为宿敌', `${a.name}与${b.name}成为宿敌，需留意内部矛盾。`, gameDate));
+    }
+    updatedDisciples.push(a); updatedDisciples.push(b);
+  }
+
+  // 2. 建筑随机事件
+  const buildingEvents = generateBuildingEvents(buildings, random);
+  for (const event of buildingEvents) {
+    notifications.push(createNotification(
+      event.type === 'auspicious' ? 'success' : 'danger',
+      `【${event.title}】`, event.description, gameDate,
+    ));
+    sectHistories.push({ id: generateId(), date: gameDate, type: 'building_event', title: event.title, description: event.description });
+    if (event.effects.spiritStoneChange) spiritStoneChange += event.effects.spiritStoneChange;
+    if (event.effects.reputationChange) reputationChange += event.effects.reputationChange;
+    if (event.effects.satisfactionChange) {
+      const target = disciples[Math.floor(random() * disciples.length)];
+      if (target) { target.satisfaction = clamp(target.satisfaction + event.effects.satisfactionChange, 0, 100); updatedDisciples.push(target); }
+    }
+  }
+
+  // 3. 分支选择事件
+  const choiceEvent = generateChoiceEvent(gameDate, reputation, spiritStones, random);
+
+  // 4. 灭亡检查
+  const { collapsed, reason } = checkSectCollapse(spiritStones, disciples, reputation, monthsConsecutiveNegative);
+
+  return { notifications, sectHistories, spiritStoneChange, reputationChange, karmaChange, buildingEvents, choiceEvent, collapsed, collapseReason: reason, updatedDisciples };
+}
+
+/**
+ * 处理弟子死亡与叛逃，返回统一结构让 nextMonth 合并库存、事件、宗门历史。
+ *
+ * 规则：
+ * - 寿终：age >= maxAge（年龄按年数存储，每月 + 1/12）
+ * - 叛逃：满意度连续 N 月 < 阈值 → 按身份概率触发；叛逃时按 1–3 倍身份月收入带走灵石
+ * - 死亡时遗产：师傅→道侣→同门好友 →全部归仓库
+ * - 叛逃时：背包/装备不带走（按用户选"少量灵石"），仅扣灵石
+ *
+ * 注意：本函数会**就地修改**传入 disciples 数组中仍然存活的弟子对象
+ *       （仅修改继承人的装备/突破加成字段），这对 nextMonth 的 mutate 流程是安全的
+ *       （调用方本身已接受 updatedDisciples.map 返回的是新对象）。
+ *       为避免突变影响，这里对继承人做浅拷贝 patch。
+ */
+export function processDiscipleDepartures(
+  inputDisciples: Disciple[],
+  { year, month }: GameDate,
+  createNotification: (
+    kind: 'success' | 'warning' | 'danger' | 'info',
+    title: string,
+    description: string,
+    date?: GameDate,
+  ) => Notification,
+): DiscipleDepartureResult {
+  const date = { year, month };
+  const result: DiscipleDepartureResult = {
+    survivors: [],
+    deadCount: 0,
+    defectedCount: 0,
+    stoneLossFromDefection: 0,
+    notifications: [],
+    sectHistories: [],
+    inventoryReport: {
+      artifacts: {},
+      talismans: {},
+      beasts: {},
+      pills: {},
+      specialMaterials: {},
+      herbs: 0,
+      iron: 0,
+      paper: 0,
+    },
+  };
+
+  const totalDisciples = inputDisciples.length;
+
+  // 先做第一轮筛选：同时更新 lowSatisfactionMonths
+  const living: Disciple[] = [];
+  for (let i = 0; i < totalDisciples; i++) {
+    // ⚠️ 不突变原输入弟子——统一浅拷贝，只把"存活下来的"浅拷贝推到 living
+    const d0 = inputDisciples[i];
+    const d: Disciple = { ...d0, backpack: d0.backpack ? [...d0.backpack] : d0.backpack };
+
+    // 1) 寿命判定：age 按年存储（每月 + 1/12），≥maxAge 即寿终
+    if (d.age >= d.maxAge) {
+      result.deadCount += 1;
+      // 继承人稍后在第二轮处理
+      (d as any).__departureReason = 'death';
+      result.survivors.push(d as any);
+      continue;
+    }
+
+    // 2) 满意度判定：满意度 < 30 时 lowSatisfactionMonths++，否则回落
+    const lowThr = 30;
+    if (d.satisfaction < lowThr) {
+      d.lowSatisfactionMonths = (d.lowSatisfactionMonths ?? 0) + 1;
+    } else {
+      d.lowSatisfactionMonths = Math.max(0, (d.lowSatisfactionMonths ?? 0) - 1);
+    }
+
+    // 3) 叛逃：连续 3 月低满意度，按身份概率触发
+    const low = d.lowSatisfactionMonths ?? 0;
+    const defectProbMap: Record<DiscipleStatus, number> = {
+      mortal: 0, servant: 0.12, outer: 0.08, inner: 0.05, core: 0.03, elder: 0.02,
+    };
+    if (low >= 3 && Math.random() < (defectProbMap[d.status as DiscipleStatus] ?? 0.05)) {
+      result.defectedCount += 1;
+      const income = STATUS_MONTHLY_INCOME_LS[d.status as DiscipleStatus] ?? 5;
+      const takeout = Math.max(1, income) * randomInt(1, 3);
+      result.stoneLossFromDefection += takeout;
+      (d as any).__departureReason = 'defect';
+      (d as any).__defectTakeout = takeout;
+      result.survivors.push(d as any);
+      continue;
+    }
+
+    // 4) 满意度过 60 → 清历史（快速回归信任）
+    if (d.satisfaction > 60) d.lowSatisfactionMonths = 0;
+
+    living.push(d);
+  }
+
+  // 第二轮：处理 死亡/叛逃 的遗产/灵石/事件
+  // 先把 survivors 拆成"真正存活"和"已 departure"
+  const trueSurvivors: Disciple[] = [];
+  const departures: Array<Disciple & {
+    __departureReason: 'death' | 'defect';
+    __defectTakeout?: number;
+  }> = [];
+  for (const s of result.survivors as any) {
+    if (s.__departureReason) departures.push(s); else trueSurvivors.push(s);
+  }
+  // living 里全是未 departure 的，合并进 trueSurvivors（trueSurvivors 此时应是空）
+  if (trueSurvivors.length > 0) {
+    // 理论上不会触发（departure 走了就 push survivor，没 departure push living），防御性合并
+    trueSurvivors.push(...living);
+  } else {
+    result.survivors = living;
+  }
+
+  // 处理 departures
+  for (const dep of departures) {
+    const reason = dep.__departureReason;
+
+    // ---------- 继承人 ----------
+    let heir: Disciple | undefined;
+    if (reason === 'death') {
+      // 候选人：在全部"真正存活"的弟子中找（living 就是活着的集合）
+      const heirId = findHeirId(dep, living);
+      if (heirId) {
+        // 浅拷贝继承人，防止后续影响其他索引（调用方在 nextMonth 会重新 map，这里修改是暂时的）
+        const idx = living.findIndex(x => x.id === heirId);
+        if (idx >= 0) {
+          living[idx] = { ...living[idx] };
+          heir = living[idx];
+        }
+      }
+    }
+
+    const transfer = transferEquipToHeirOrWarehouse(heir, result.inventoryReport);
+
+    // 装备三槽（只有死亡才传，叛逃不抢装备）
+    if (reason === 'death') {
+      transfer.equipArtifact(dep.equippedArtifact as ArtifactType | undefined);
+      transfer.equipTalisman(dep.equippedTalisman as TalismanType | undefined);
+      transfer.equipBeast(dep.equippedBeast as BeastType | undefined);
+    } else {
+      // 叛逃：装备全归仓库（按用户选择"净身出户+少量灵石"）
+      if (dep.equippedArtifact) result.inventoryReport.artifacts[dep.equippedArtifact] =
+        (result.inventoryReport.artifacts[dep.equippedArtifact] || 0) + 1;
+      if (dep.equippedTalisman) result.inventoryReport.talismans[dep.equippedTalisman] =
+        (result.inventoryReport.talismans[dep.equippedTalisman] || 0) + 1;
+      if (dep.equippedBeast) result.inventoryReport.beasts[dep.equippedBeast] =
+        (result.inventoryReport.beasts[dep.equippedBeast] || 0) + 1;
+    }
+
+    // 背包
+    if (dep.backpack) {
+      for (const bi of dep.backpack) {
+        // 兼容 backpack 中包含 material:xxx（原材料用 kind + itemType = material:xxx）
+        if ((bi.kind as string) === 'material' || (bi.itemType && bi.itemType.startsWith('material:'))) {
+          transfer.rawMaterial(bi.itemType, bi.quantity);
+        } else {
+          transfer.backpackItem(bi);
+        }
+      }
+    }
+
+    // ---------- 事件通知 + 宗门历史 ----------
+    if (reason === 'death') {
+      let detail = `享年 ${Math.floor(dep.age)} 岁`;
+      if (heir) {
+        detail += `，衣钵由 ${heir.name} 继承`;
+      } else {
+        detail += `，遗产归入宗门库房`;
+      }
+      result.notifications.push(createNotification(
+        'warning', '弟子仙逝',
+        `${dep.name}（${DiscipleStatusNames[dep.status as DiscipleStatus]}·${RealmNames[dep.realm]}）寿终正寝，${detail}。`,
+        date,
+      ));
+      result.sectHistories.push(makeDepartureHistory('disciple_death', date, dep, detail));
+
+      // 师傅寿终时触发衣钵继承
+      const inheritanceResult = processMasterInheritance(dep, result.survivors, createNotification, date, Math.random);
+      result.notifications.push(...inheritanceResult.notifications);
+      // 更新继承人的状态
+      for (const updated of inheritanceResult.updatedDisciples) {
+        const idx = (result.survivors as any[]).findIndex((s: any) => s.id === updated.id);
+        if (idx >= 0) (result.survivors as any[])[idx] = updated;
+      }
+    } else {
+      const takeout = dep.__defectTakeout ?? 0;
+      const detail = `因长期不满叛出山门，带走 ${takeout} 灵石`;
+      result.notifications.push(createNotification(
+        'danger', '弟子叛逃',
+        `${dep.name}（${DiscipleStatusNames[dep.status as DiscipleStatus]}·${RealmNames[dep.realm]}）${detail}。`,
+        date,
+      ));
+      result.sectHistories.push(makeDepartureHistory('disciple_defect', date, dep, detail));
+    }
+  }
+
+  return result;
+}
+
+/** 把 processDiscipleDepartures 得到的 inventoryReport 合并到各库存累加器（直接 mutate） */
+export function mergeDepartureInventories(
+  report: DiscipleDepartureResult['inventoryReport'],
+  target: {
+    pillInventory: PillInventory[];
+    artifactInventory: ArtifactInventory[];
+    talismanInventory: TalismanInventory[];
+    beastInventory: BeastInventory[];
+    specialMaterials: Record<string, number>;
+    herbInventory: number;
+    ironInventory: number;
+    paperInventory: number;
+  },
+): void {
+  for (const [k, v] of Object.entries(report.pills)) {
+    if (!v) continue;
+    const row = target.pillInventory.find(p => p.type === k as PillType);
+    if (row) row.quantity += v; else target.pillInventory.push({ type: k as PillType, quantity: v });
+  }
+  for (const [k, v] of Object.entries(report.artifacts)) {
+    if (!v) continue;
+    const row = target.artifactInventory.find(p => p.type === k as any);
+    if (row) row.quantity += v; else target.artifactInventory.push({ type: k as any, quantity: v });
+  }
+  for (const [k, v] of Object.entries(report.talismans)) {
+    if (!v) continue;
+    const row = target.talismanInventory.find(p => p.type === k as any);
+    if (row) row.quantity += v; else target.talismanInventory.push({ type: k as any, quantity: v });
+  }
+  for (const [k, v] of Object.entries(report.beasts)) {
+    if (!v) continue;
+    const row = target.beastInventory.find(p => p.type === k as any);
+    if (row) row.quantity += v; else target.beastInventory.push({ type: k as any, quantity: v });
+  }
+  for (const [k, v] of Object.entries(report.specialMaterials)) {
+    if (!v) continue;
+    target.specialMaterials[k] = (target.specialMaterials[k] || 0) + v;
+  }
+  target.herbInventory = Math.max(0, target.herbInventory + report.herbs);
+  target.ironInventory = Math.max(0, target.ironInventory + report.iron);
+  target.paperInventory = Math.max(0, target.paperInventory + report.paper);
+}
+
+// ============================================================
+// 炼制系统（炼丹/炼器/制符）
+// ============================================================
+
+/** 根据材料库存判断是否可炼制 */
+export function canAffordRecipe(
+  recipe: Recipe,
+  inventory: {
+    herbInventory: number;
+    ironInventory: number;
+    paperInventory: number;
+    specialMaterials: Record<string, number>;
+  },
+): boolean {
+  for (const mat of recipe.baseMaterials) {
+    const needed = mat.amount;
+    if (BASIC_MATERIALS.has(mat.name)) {
+      if (mat.name === '灵草' && inventory.herbInventory < needed) return false;
+      if (mat.name === '玄铁' && inventory.ironInventory < needed) return false;
+      if (mat.name === '灵铁' && inventory.ironInventory < needed) return false;
+      if (mat.name === '灵纸' && inventory.paperInventory < needed) return false;
+      if (mat.name === '符纸' && inventory.paperInventory < needed) return false;
+      if (mat.name === '矿石' && inventory.ironInventory < needed) return false;
+    } else {
+      const have = inventory.specialMaterials[mat.name] ?? 0;
+      if (have < needed) return false;
+    }
+  }
+  return true;
+}
+
+/** 消耗配方材料 */
+export function consumeRecipeMaterials(
+  recipe: Recipe,
+  inventory: {
+    herbInventory: number;
+    ironInventory: number;
+    paperInventory: number;
+    specialMaterials: Record<string, number>;
+  },
+): void {
+  for (const mat of recipe.baseMaterials) {
+    if (BASIC_MATERIALS.has(mat.name)) {
+      if (mat.name === '灵草') inventory.herbInventory -= mat.amount;
+      else if (mat.name === '玄铁' || mat.name === '灵铁' || mat.name === '矿石') inventory.ironInventory -= mat.amount;
+      else if (mat.name === '灵纸' || mat.name === '符纸') inventory.paperInventory -= mat.amount;
+    } else {
+      inventory.specialMaterials[mat.name] = (inventory.specialMaterials[mat.name] ?? 0) - mat.amount;
+    }
+  }
+  // 消耗可选辅料（如果有投入）
+  if (recipe.optionalMaterials) {
+    for (const mat of recipe.optionalMaterials) {
+      if (!mat.optional) continue;
+      // 可选辅料由调用方决定是否消耗，这里不做自动消耗
+    }
+  }
+}
+
+/** 计算炼制品质
+ *  @param discipleTalent 弟子对应天赋值（0-100）
+ *  @param buildingLevel 建筑等级（1-10）
+ *  @param hasOptionalMaterials 是否投入了可选辅料
+ *  @param targetQuality 目标品质
+ *  @param random 随机函数
+ */
+export function calculateCraftingQuality(
+  discipleTalent: number,
+  buildingLevel: number,
+  hasOptionalMaterials: boolean,
+  random: () => number = Math.random,
+): ItemQuality {
+  // 基础分：天赋（0-50分）+ 建筑等级（0-20分）
+  const baseScore = (discipleTalent / 100) * 50 + (buildingLevel / 10) * 20;
+  // 辅料加成
+  const materialBonus = hasOptionalMaterials ? 15 : 0;
+  // 随机波动
+  const roll = random() * 25;
+
+  const totalScore = baseScore + materialBonus + roll;
+
+  if (totalScore >= 85) return 'immortal';
+  if (totalScore >= 60) return 'perfect';
+  if (totalScore >= 35) return 'fine';
+  return 'mortal';
+}
+
+/** 获取弟子对应炼制类别的天赋值 */
+export function getDiscipleCraftingTalent(disciple: Disciple, category: 'pill' | 'artifact' | 'talisman'): number {
+  const { spiritRhythm, rootBone, daoFate } = disciple.hiddenTalents;
+  switch (category) {
+    case 'pill': return spiritRhythm * 0.7 + rootBone * 0.3;
+    case 'artifact': return rootBone * 0.6 + daoFate * 0.4;
+    case 'talisman': return spiritRhythm * 0.5 + daoFate * 0.5;
+  }
+}
+
+/** 月度炼制进度处理
+ *  返回：完成的炼制任务列表
+ */
+export function processMonthlyCrafting(
+  tasks: CraftingTask[],
+  inventory: {
+    herbInventory: number;
+    ironInventory: number;
+    paperInventory: number;
+    specialMaterials: Record<string, number>;
+  },
+  disciples: Disciple[],
+  buildings: { type: string; level: number }[],
+  random: () => number = Math.random,
+): { completedTasks: CraftingResult[]; updatedTasks: CraftingTask[] } {
+  const completedTasks: CraftingResult[] = [];
+  const updatedTasks: CraftingTask[] = [];
+
+  for (const task of tasks) {
+    if (task.status === 'completed') {
+      updatedTasks.push(task);
+      continue;
+    }
+
+    // 检查材料是否足够（开始炼制时已扣材料，如果中途材料不足则暂停）
+    const recipe = RECIPE_MAP[task.recipeId];
+    if (!recipe) {
+      // 配方不存在，标记完成但无产出
+      updatedTasks.push({ ...task, status: 'completed', elapsedDays: task.totalDays });
+      continue;
+    }
+
+    // 推进进度
+    task.elapsedDays += 1;
+
+    if (task.elapsedDays >= task.totalDays) {
+      // 炼制完成
+      const disciple = disciples.find(d => d.id === task.discipleId);
+      const buildingLevel = buildings
+        .filter(b => b.type === 'pill_hall' || b.type === 'artifact_hall' || b.type === 'talisman_hall')
+        .reduce((max, b) => Math.max(max, b.level), 1);
+
+      const talent = disciple
+        ? getDiscipleCraftingTalent(disciple, task.category)
+        : 30;
+
+      const quality = task.resultQuality ?? calculateCraftingQuality(
+        talent,
+        buildingLevel,
+        false, // 简化处理：可选辅料由调用方管理
+        random,
+      );
+
+      // 暴击判定：5%概率额外产出50%
+      const isCritical = random() < 0.05;
+      const actualQuantity = isCritical ? Math.ceil(task.quantity * 1.5) : task.quantity;
+
+      completedTasks.push({
+        taskId: task.id,
+        recipeId: task.recipeId,
+        category: task.category,
+        itemType: task.itemType,
+        quality,
+        quantity: actualQuantity,
+        isCritical,
+      });
+
+      updatedTasks.push({ ...task, status: 'completed', resultQuality: quality });
+    } else {
+      updatedTasks.push(task);
+    }
+  }
+
+  return { completedTasks, updatedTasks };
+}
+
+/** 创建炼制任务（同时扣材料） */
+export function createCraftingTask(
+  recipeId: string,
+  category: 'pill' | 'artifact' | 'talisman',
+  itemType: string,
+  discipleId: string | null,
+  quantity: number,
+  inventory: {
+    herbInventory: number;
+    ironInventory: number;
+    paperInventory: number;
+    specialMaterials: Record<string, number>;
+  },
+  random: () => string = generateId,
+): CraftingTask | null {
+  const recipe = RECIPE_MAP[recipeId];
+  if (!recipe) return null;
+
+  // 检查材料
+  if (!canAffordRecipe(recipe, inventory)) return null;
+
+  // 扣材料
+  consumeRecipeMaterials(recipe, inventory);
+
+  return {
+    id: random(),
+    recipeId,
+    category,
+    itemType,
+    discipleId,
+    targetQuality: 'mortal',
+    elapsedDays: 0,
+    totalDays: recipe.baseCraftTime,
+    quantity,
+    autoRefill: false,
+    status: 'in_progress',
+  };
+}

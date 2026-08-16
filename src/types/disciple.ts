@@ -3,6 +3,156 @@ import type { TalismanType } from '@/types/talisman';
 import type { BeastType } from '@/types/beast';
 import type { PillType } from '@/types/pill';
 
+/** 弟子性格特质 */
+export type Personality =
+  | 'diligent'    // 勤勉 - 修炼速度+5%
+  | 'lazy'        // 懒散 - 修炼速度-5%
+  | 'aggressive'  // 好斗 - 战力+5%，满意度易波动
+  | 'peaceful'    // 平和 - 满意度更稳定
+  | 'greedy'      // 贪婪 - 对灵石奖励更敏感
+  | 'generous'    // 慷慨 - 对门派贡献更积极
+  | 'loner'       // 孤僻 - 更容易叛逃
+  | 'friendly'    // 友善 - 更容易交朋友
+  ;
+
+export const PersonalityNames: Record<Personality, string> = {
+  diligent: '勤勉',
+  lazy: '懒散',
+  aggressive: '好斗',
+  peaceful: '平和',
+  greedy: '贪婪',
+  generous: '慷慨',
+  loner: '孤僻',
+  friendly: '友善',
+};
+
+export const PersonalityDescriptions: Record<Personality, string> = {
+  diligent: '修炼刻苦，修为增长更快',
+  lazy: '天性散漫，修炼效率略低',
+  aggressive: '好勇斗狠，战力更强但易与人冲突',
+  peaceful: '心性平和，满意度稳定',
+  greedy: '对灵石极为敏感，奖励更有效',
+  generous: '乐于奉献，宗门贡献更积极',
+ loner: '独来独往，不满时容易离去',
+  friendly: '善于交际，容易结交好友',
+};
+
+/** 性格对修炼速度的倍率修正 */
+export const PERSONALITY_CULTIVATION_MULT: Record<Personality, number> = {
+  diligent: 1.05,
+  lazy: 0.95,
+  aggressive: 1.0,
+  peaceful: 1.0,
+  greedy: 1.0,
+  generous: 1.0,
+  loner: 1.0,
+  friendly: 1.0,
+};
+
+/** 性格对满意度变化的修正 */
+export const PERSONALITY_SATISFACTION_MOD: Record<Personality, number> = {
+  diligent: 1.0,
+  lazy: 1.0,
+  aggressive: 1.2,   // 好斗：满意度变化更剧烈
+  peaceful: 0.8,     // 平和：满意度更稳定
+  greedy: 1.3,       // 贪婪：对灵石奖励更敏感
+  generous: 0.9,
+  loner: 1.1,
+  friendly: 0.9,
+};
+
+/** 性格对叛逃概率的修正倍率 */
+export const PERSONALITY_DEFECTION_MULT: Record<Personality, number> = {
+  diligent: 0.7,
+  lazy: 1.3,
+  aggressive: 1.1,
+  peaceful: 0.6,
+  greedy: 1.2,
+  generous: 0.8,
+  loner: 1.5,
+  friendly: 0.7,
+};
+
+/** 性格对交友概率的修正倍率 */
+export const PERSONALITY_FRIEND_MULT: Record<Personality, number> = {
+  diligent: 1.0,
+  lazy: 1.0,
+  aggressive: 0.7,
+  peaceful: 1.2,
+  greedy: 0.8,
+  generous: 1.3,
+  loner: 0.4,
+  friendly: 1.5,
+};
+
+/** 背景故事类型 */
+export type BackgroundStory =
+  | 'common_folk'       // 凡人出身
+  | 'cultivation_family' // 修仙世家
+  | 'wandering_scholar'  // 游历散修
+  | 'sect_orphan'        // 宗门遗孤
+  | 'fallen_noble'       // 没落贵族
+  | 'ancient_heritage'   // 远古传承
+  | 'beast_tamer'        // 御兽世家
+  | 'artifact_artisan'   // 炼器世家
+  ;
+
+export const BackgroundStoryNames: Record<BackgroundStory, string> = {
+  common_folk: '凡人出身',
+  cultivation_family: '修仙世家',
+  wandering_scholar: '游历散修',
+  sect_orphan: '宗门遗孤',
+  fallen_noble: '没落贵族',
+  ancient_heritage: '远古传承',
+  beast_tamer: '御兽世家',
+  artifact_artisan: '炼器世家',
+};
+
+export const BackgroundStoryDescriptions: Record<BackgroundStory, string> = {
+  common_folk: '出身普通凡人家庭，因机缘踏入修仙之路。',
+  cultivation_family: '生于修仙世家，从小耳濡目染，基础扎实。',
+  wandering_scholar: '曾独自游历天下，见多识广，阅历丰富。',
+  sect_orphan: '幼年被宗门收养，将宗门视为自己的家。',
+  fallen_noble: '祖上曾是大能，家族没落，身怀祖传秘法残篇。',
+  ancient_heritage: '偶然获得远古传承，身怀异宝，前途不可限量。',
+  beast_tamer: '御兽世家出身，天生与灵兽亲近，驯兽天赋异禀。',
+  artifact_artisan: '炼器世家出身，对法器炼制有着独到的见解。',
+};
+
+/** 背景故事对属性的影响 */
+export interface BackgroundEffects {
+  rootBoneBonus?: number;
+  spiritRhythmBonus?: number;
+  constitutionBonus?: number;
+  daoFateBonus?: number;
+  cultivationSpeedBonus?: number;
+  combatPowerBonus?: number;
+  description: string;
+}
+
+export const BACKGROUND_EFFECTS: Record<BackgroundStory, BackgroundEffects> = {
+  common_folk: { description: '无特殊加成' },
+  cultivation_family: { rootBoneBonus: 5, spiritRhythmBonus: 5, description: '根骨+5，灵韵+5' },
+  wandering_scholar: { daoFateBonus: 10, description: '命数+10' },
+  sect_orphan: { cultivationSpeedBonus: 3, description: '修炼速度+3%' },
+  fallen_noble: { rootBoneBonus: 8, description: '根骨+8' },
+  ancient_heritage: { daoFateBonus: 15, cultivationSpeedBonus: 5, description: '命数+15，修炼速度+5%' },
+  beast_tamer: { constitutionBonus: 8, description: '体质+8' },
+  artifact_artisan: { spiritRhythmBonus: 8, description: '灵韵+8' },
+};
+
+/** 喜好类型 */
+export interface DisciplePreference {
+  /** 喜欢的丹药类型（有偏好时服用效果提升） */
+  likedPillTypes?: PillType[];
+  /** 喜欢的功法类型 */
+  likedTechniqueTypes?: string[];
+  /** 厌恶的丹药类型（服用效果降低） */
+  dislikedPillTypes?: PillType[];
+  /** 厌恶的功法类型 */
+  dislikedTechniqueTypes?: string[];
+}
+
 // 弟子背包物品：记录弟子个人持有的丹药/法器/符箓/灵兽
 export interface DiscipleBackpackItem {
   kind: 'pill' | 'artifact' | 'talisman' | 'beast';
@@ -221,7 +371,16 @@ export interface Disciple {
   // 人物经历
   master: string | null;        // 师傅名称
   friends: string[];            // 好友名称列表
+  daoPartner: string | null;    // 道侣名称（新增）
+  rival: string | null;         // 宿敌名称（新增）
+  apprenticeIds: string[];      // 弟子ID列表（由 master 字段关联，新增）
   tournamentHistory: DiscipleTournamentRecord[];  // 大比历史记录
+  // 自然流失追踪：连续低满意度月数（用于叛逃判定，老存档自动填0）
+  lowSatisfactionMonths?: number;
+  // 弟子个性化
+  personality?: Personality;        // 性格特质
+  background?: BackgroundStory;     // 背景故事
+  preferences?: DisciplePreference; // 喜好偏好
 }
 
 export interface PromotionRules {
