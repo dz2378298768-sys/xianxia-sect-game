@@ -12,34 +12,35 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 
 /**
  * TapTap 登录 SDK v4 的 Capacitor 插件封装。
  *
  * 设计策略（同广告/更新插件）：
- *   1. 优先通过反射调用真实 TapSDK v4 登录模块（tap-login Maven 依赖）；
- *   2. SDK 不可用时，resolve 错误信息，不影响游戏流程。
+ *   1. 优先通过反射调用真实 TapTap SDK v4 登录模块（tap-login Maven 依赖）；
+ *   2. SDK 不可用时，返回错误信息，不影响游戏流程。
  *
- * 真实 SDK Java 调用等价于：
+ * 真实 SDK Kotlin 调用等价于：
  * <pre>
- *   // 登录
- *   TapLogin.Login(activity, new LoginCallback<TapAccount>() {
- *       public void onSuccess(TapAccount account) {
- *           String openId = account.getOpenId();
- *           String name = account.getName();
- *           String avatar = account.getAvatar();
- *           AccessToken token = account.getAccessToken();
- *       }
- *       public void onError(TapError error) { }
- *       public void onCancel() { }
- *   });
+ *   // 登录（需传入 scope 数组）
+ *   TapTapLogin.loginWithScopes(activity, arrayOf("public_profile"), object : TapTapCallback<TapTapAccount> {
+ *       override fun onSuccess(account: TapTapAccount) { }
+ *       override fun onCancel() { }
+ *       override fun onFail(exception: TapTapException) { }
+ *   })
  *
  *   // 获取当前账号
- *   TapAccount account = TapLogin.GetCurrentTapAccount();
+ *   val account = TapTapLogin.getCurrentTapAccount()
  *
  *   // 登出
- *   TapLogin.Logout();
+ *   TapTapLogin.logout()
  * </pre>
+ *
+ * TapTapAccount 字段：
+ *   - openId, unionId, name, avatar, email, accessToken
+ * AccessToken 字段：
+ *   - kid, tokenType, macKey, macAlgorithm, scopes
  *
  * 文档参考：
  *   - 功能介绍：https://developer.taptap.cn/docs/sdk/taptap-login/features/
@@ -50,30 +51,30 @@ import java.lang.reflect.Method;
 public class TapLoginPlugin extends Plugin {
 
     private static final String TAG = "TapLoginPlugin";
-    private static final String TAP_PKG = "com.taptap.sdk";
 
-    // 登录模块主类
-    private static final String LOGIN_CLASS = TAP_PKG + ".login.TapLogin";
-
-    // 登录回调接口
-    private static final String CALLBACK_CLASS = LOGIN_CLASS + "$LoginCallback";
-    // TapAccount 类
-    private static final String ACCOUNT_CLASS = TAP_PKG + ".login.TapAccount";
+    // TapTapLogin 主类（v4.10.8 中为 TapTapLogin，不是 TapLogin）
+    private static final String LOGIN_CLASS = "com.taptap.sdk.login.TapTapLogin";
+    // TapTapAccount 类
+    private static final String ACCOUNT_CLASS = "com.taptap.sdk.login.TapTapAccount";
     // AccessToken 类
-    private static final String TOKEN_CLASS = ACCOUNT_CLASS + "$AccessToken";
-    // TapError 类
-    private static final String ERROR_CLASS = TAP_PKG + ".login.TapError";
+    private static final String TOKEN_CLASS = "com.taptap.sdk.login.AccessToken";
+    // TapTapCallback 接口
+    private static final String CALLBACK_CLASS = "com.taptap.sdk.kit.internal.callback.TapTapCallback";
+    // TapTapException 异常类
+    private static final String EXCEPTION_CLASS = "com.taptap.sdk.kit.internal.exception.TapTapException";
 
     private boolean resolved = false;
-    private Class<?> loginCls;       // TapLogin 类
-    private Class<?> accountCls;     // TapAccount 类
-    private Class<?> tokenCls;       // AccessToken 类
-    private Method loginMethod;      // Login(Activity, LoginCallback)
-    private Method getCurrentAccountMethod; // GetCurrentTapAccount()
-    private Method logoutMethod;     // Logout()
+    private Class<?> loginCls;       // TapTapLogin
+    private Class<?> accountCls;     // TapTapAccount
+    private Class<?> tokenCls;       // AccessToken
+    private Class<?> callbackCls;    // TapTapCallback
+    private Class<?> exceptionCls;   // TapTapException
+    private Method loginMethod;      // loginWithScopes(Activity, String[], TapTapCallback)
+    private Method getCurrentMethod; // getCurrentTapAccount()
+    private Method logoutMethod;     // logout()
 
     /**
-     * 尝试反射解析 TapLogin SDK API。
+     * 尝试反射解析 TapTap Login SDK API。
      */
     private synchronized void resolve() {
         if (resolved) return;
@@ -82,69 +83,40 @@ public class TapLoginPlugin extends Plugin {
             loginCls = Class.forName(LOGIN_CLASS);
             accountCls = Class.forName(ACCOUNT_CLASS);
             tokenCls = Class.forName(TOKEN_CLASS);
+            callbackCls = Class.forName(CALLBACK_CLASS);
+            exceptionCls = Class.forName(EXCEPTION_CLASS);
 
-            // 解析 Login 方法
-            // 签名：public static void Login(Activity activity, LoginCallback<TapAccount> callback)
-            // 由于泛型擦除，第三个参数是 android.app.Activity 或 android.content.Context + LoginCallback
-            // 尝试多种签名（v4 不同小版本有差异）
-            Class<?> callbackCls = Class.forName(CALLBACK_CLASS);
-            // 尝试 Login(Activity, LoginCallback)
-            try {
-                loginMethod = loginCls.getMethod("Login", Activity.class, callbackCls);
-            } catch (NoSuchMethodException e) {
-                // 尝试 Login(Activity, TapLoginSdkOptions, LoginCallback)
-                Class<?> optionsCls = Class.forName(TAP_PKG + ".login.TapLoginSdkOptions");
-                try {
-                    loginMethod = loginCls.getMethod("Login", Activity.class, optionsCls, callbackCls);
-                } catch (NoSuchMethodException e2) {
-                    Log.w(TAG, "未找到 TapLogin.Login 方法签名");
-                }
-            }
+            // loginWithScopes(Activity, String[], TapTapCallback)
+            loginMethod = loginCls.getMethod("loginWithScopes",
+                Activity.class, String[].class, callbackCls);
 
-            // 解析 GetCurrentTapAccount 方法
-            // 签名：public static TapAccount GetCurrentTapAccount()
-            try {
-                getCurrentAccountMethod = loginCls.getMethod("GetCurrentTapAccount");
-            } catch (NoSuchMethodException e) {
-                try {
-                    getCurrentAccountMethod = loginCls.getMethod("getCurrentTapAccount");
-                } catch (NoSuchMethodException e2) {
-                    Log.w(TAG, "未找到 GetCurrentTapAccount 方法");
-                }
-            }
+            // getCurrentTapAccount()
+            getCurrentMethod = loginCls.getMethod("getCurrentTapAccount");
 
-            // 解析 Logout 方法
-            try {
-                logoutMethod = loginCls.getMethod("Logout");
-            } catch (NoSuchMethodException e) {
-                try {
-                    logoutMethod = loginCls.getMethod("logout");
-                } catch (NoSuchMethodException e2) {
-                    Log.w(TAG, "未找到 Logout 方法");
-                }
-            }
+            // logout()
+            logoutMethod = loginCls.getMethod("logout");
 
             Log.i(TAG, "resolve 成功: login=" + (loginMethod != null)
-                + " getCurrent=" + (getCurrentAccountMethod != null)
+                + " getCurrent=" + (getCurrentMethod != null)
                 + " logout=" + (logoutMethod != null));
         } catch (ClassNotFoundException e) {
-            Log.w(TAG, "TapLogin SDK 类未找到（未引入 tap-login 依赖？）: " + e.getMessage());
+            Log.w(TAG, "TapTap SDK 类未找到（未引入 tap-login 依赖？）: " + e.getMessage());
         } catch (Throwable t) {
             Log.w(TAG, "resolve 异常: " + t.getMessage());
         }
     }
 
-    // ===== 工具方法：从 TapAccount 反射提取字段 =========================================
+    // ===== 工具方法：从 TapTapAccount 反射提取字段 =========================================
 
     private JSObject accountToJS(Object account) {
         JSObject obj = new JSObject();
         if (account == null) return obj;
         try {
-            // 基础字段
-            putIfExists(obj, account, "getOpenId", "openid");
-            putIfExists(obj, account, "getUnionId", "unionid");
-            putIfExists(obj, account, "getName", "name");
-            putIfExists(obj, account, "getAvatar", "avatar");
+            putStr(obj, account, "getOpenId", "openid");
+            putStr(obj, account, "getUnionId", "unionid");
+            putStr(obj, account, "getName", "name");
+            putStr(obj, account, "getAvatar", "avatar");
+            putStr(obj, account, "getEmail", "email");
 
             // AccessToken 子对象
             try {
@@ -152,10 +124,10 @@ public class TapLoginPlugin extends Plugin {
                 Object token = getToken.invoke(account);
                 if (token != null) {
                     JSObject tokenObj = new JSObject();
-                    putIfExists(tokenObj, token, "getKid", "kid");
-                    putIfExists(tokenObj, token, "getMacKey", "mac_key");
-                    putIfExists(tokenObj, token, "getMacAlgorithm", "mac_algorithm");
-                    putIfExists(tokenObj, token, "getTokenType", "token_type");
+                    putStr(tokenObj, token, "getKid", "kid");
+                    putStr(tokenObj, token, "getTokenType", "token_type");
+                    putStr(tokenObj, token, "getMacKey", "mac_key");
+                    putStr(tokenObj, token, "getMacAlgorithm", "mac_algorithm");
                     obj.put("accessToken", tokenObj);
                 }
             } catch (NoSuchMethodException ignored) { }
@@ -165,16 +137,14 @@ public class TapLoginPlugin extends Plugin {
         return obj;
     }
 
-    private static void putIfExists(JSObject target, Object obj, String getterName, String key) {
+    private static void putStr(JSObject target, Object obj, String getterName, String key) {
         try {
             Method m = obj.getClass().getMethod(getterName);
             Object val = m.invoke(obj);
-            if (val != null) {
-                target.put(key, val.toString());
-            }
+            if (val != null) target.put(key, val.toString());
         } catch (NoSuchMethodException ignored) {
         } catch (Throwable t) {
-            Log.w(TAG, "putIfExists(" + getterName + ") 异常: " + t.getMessage());
+            Log.w(TAG, "putStr(" + getterName + ") 异常: " + t.getMessage());
         }
     }
 
@@ -182,7 +152,8 @@ public class TapLoginPlugin extends Plugin {
 
     /**
      * 登录。
-     * 前端调用：TapLogin.login() → Promise<{ success: boolean, account?: {...}, error?: string }>
+     * 前端调用：TapLogin.login() → Promise<LoginResult>
+     * LoginResult: { success: boolean, account?: TapTapAccount, error?: string }
      */
     @PluginMethod
     public void login(final PluginCall call) {
@@ -194,16 +165,18 @@ public class TapLoginPlugin extends Plugin {
         resolve();
 
         if (loginCls == null || loginMethod == null) {
-            call.resolve(makeResult(false, null, "TapLogin SDK 未就绪（未引入 tap-login 依赖？）"));
+            call.resolve(makeResult(false, null, "TapTap SDK 未就绪（未引入 tap-login 依赖？）"));
             return;
         }
 
         try {
-            // 反射创建 LoginCallback 动态代理
-            Class<?> callbackCls = Class.forName(CALLBACK_CLASS);
+            // 默认 scope：public_profile 获取基本用户信息
+            final String[] scopes = new String[]{"public_profile"};
+
+            // 创建 TapTapCallback 动态代理
             final boolean[] settled = {false};
 
-            Object callback = java.lang.reflect.Proxy.newProxyInstance(
+            Object callback = Proxy.newProxyInstance(
                 TapLoginPlugin.class.getClassLoader(),
                 new Class<?>[]{callbackCls},
                 (proxy, method, args) -> {
@@ -218,10 +191,10 @@ public class TapLoginPlugin extends Plugin {
                                 getActivity().runOnUiThread(() ->
                                     call.resolve(makeResult(true, account, null)));
                             }
-                        } else if ("onError".equals(name) && args != null && args.length > 0) {
+                        } else if ("onFail".equals(name) && args != null && args.length > 0) {
                             settled[0] = true;
-                            String errMsg = extractErrorMessage(args[0]);
-                            Log.w(TAG, "login onError: " + errMsg);
+                            String errMsg = extractExceptionMessage(args[0]);
+                            Log.w(TAG, "login onFail: " + errMsg);
                             if (getActivity() != null) {
                                 getActivity().runOnUiThread(() ->
                                     call.resolve(makeResult(false, null, errMsg)));
@@ -241,20 +214,8 @@ public class TapLoginPlugin extends Plugin {
                 }
             );
 
-            // 调用 Login 方法
-            Class<?>[] paramTypes = loginMethod.getParameterTypes();
-            if (paramTypes.length == 2) {
-                // Login(Activity, LoginCallback)
-                loginMethod.invoke(null, activity, callback);
-            } else if (paramTypes.length == 3) {
-                // Login(Activity, TapLoginSdkOptions, LoginCallback)
-                // 使用默认 options
-                Class<?> optionsCls = paramTypes[1];
-                Object options = optionsCls.getConstructor().newInstance();
-                loginMethod.invoke(null, activity, options, callback);
-            } else {
-                call.resolve(makeResult(false, null, "不支持的 Login 方法签名"));
-            }
+            // 调用 loginWithScopes(Activity, String[], TapTapCallback)
+            loginMethod.invoke(null, activity, scopes, callback);
         } catch (Throwable t) {
             Log.e(TAG, "login 异常: " + t.getMessage(), t);
             call.resolve(makeResult(false, null, "登录异常: " + t.getMessage()));
@@ -263,17 +224,18 @@ public class TapLoginPlugin extends Plugin {
 
     /**
      * 获取当前登录账号信息。
-     * 前端调用：TapLogin.getCurrentAccount() → Promise<{ hasAccount: boolean, account?: {...} }>
+     * 前端调用：TapLogin.getCurrentAccount() → Promise<AccountStatus>
+     * AccountStatus: { hasAccount: boolean, account?: TapTapAccount }
      */
     @PluginMethod
     public void getCurrentAccount(final PluginCall call) {
         resolve();
-        if (loginCls == null || getCurrentAccountMethod == null) {
-            call.resolve(makeResult(false, null, "TapLogin SDK 未就绪"));
+        if (loginCls == null || getCurrentMethod == null) {
+            call.resolve(makeResult(false, null, "TapTap SDK 未就绪"));
             return;
         }
         try {
-            Object account = getCurrentAccountMethod.invoke(null);
+            Object account = getCurrentMethod.invoke(null);
             if (account == null) {
                 JSObject ret = new JSObject();
                 ret.put("hasAccount", false);
@@ -299,7 +261,7 @@ public class TapLoginPlugin extends Plugin {
     public void logout(final PluginCall call) {
         resolve();
         if (loginCls == null || logoutMethod == null) {
-            call.resolve(makeResult(false, null, "TapLogin SDK 未就绪"));
+            call.resolve(makeResult(false, null, "TapTap SDK 未就绪"));
             return;
         }
         try {
@@ -316,13 +278,13 @@ public class TapLoginPlugin extends Plugin {
 
     // ===== 工具方法 =====================================================================
 
-    private static String extractErrorMessage(Object errorObj) {
+    private static String extractExceptionMessage(Object exObj) {
         try {
-            // 尝试 getErrorMsg() / getMessage() / toString()
-            for (String m : new String[]{"getErrorMsg", "getMessage", "toString"}) {
+            // TapTapException 可能有 getMessage() / getErrorMsg() 等方法
+            for (String m : new String[]{"getMessage", "getErrorMsg", "toString"}) {
                 try {
-                    Method method = errorObj.getClass().getMethod(m);
-                    Object val = method.invoke(errorObj);
+                    Method method = exObj.getClass().getMethod(m);
+                    Object val = method.invoke(exObj);
                     if (val != null) return val.toString();
                 } catch (NoSuchMethodException ignored) { }
             }
