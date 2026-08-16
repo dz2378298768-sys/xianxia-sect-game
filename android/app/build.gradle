@@ -91,18 +91,20 @@ dependencies {
     }
     // ========================================================================================
 
+    // === TapTap SDK v4 =====================================================================
+    // TapSDK v4 核心包 + 登录模块（始终启用，独立于更新模块）
+    // 文档：https://developer.taptap.cn/docs/sdk/taptap-login/guide/
+    implementation "com.taptap.sdk:tap-core:4.10.8"
+    implementation "com.taptap.sdk:tap-login:4.10.8"
+
     // === TapTap 更新唤起 SDK v4 ==============================================================
     // 官方文档：https://developer.taptap.cn/docs/sdk/update/guide/
     // 功能：APK 上传到 TapTap 开发者中心并设置强制更新后，SDK 会自动唤起 TapTap 商店更新页。
     // 通过 TAP_UPDATE_ENABLED 环境变量可控制是否启用该模块：
     //   gradlew assembleDebug -PTAP_UPDATE_ENABLED=true   （拉取 TapSDK 依赖）
-    //   默认：false，跳过依赖拉取，TapUpdate.java 内部通过反射 ClassNotFoundException 安全降级。
+    //   默认：true，若不需要更新功能可传 -PTAP_UPDATE_ENABLED=false 跳过。
     def tapUpdateEnabled = project.hasProperty('TAP_UPDATE_ENABLED') ? project.property('TAP_UPDATE_ENABLED').toBoolean() : true
     if (tapUpdateEnabled) {
-        // TapSDK v4 核心包 + 更新模块（Maven Central）
-        // 参考：https://mvnrepository.com/artifact/com.taptap.sdk/tap-update/4.10.8
-        implementation "com.taptap.sdk:tap-core:4.10.8"
-        implementation "com.taptap.sdk:tap-login:4.10.8"
         implementation "com.taptap.sdk:tap-update:4.10.8"
         // 官方 FAQ 列出的更新模块依赖（Unity 会自动注入，原生 Android 手动列出）
         implementation 'com.squareup.okhttp3:okhttp:3.12.1'

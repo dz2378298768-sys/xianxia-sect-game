@@ -3,11 +3,13 @@
 buildscript {
 
     repositories {
-        // 国内环境仅使用阿里云镜像（避免 Maven Central 429 限流）
+        // 国内环境优先使用阿里云镜像（避免 Maven Central 429 限流）
         maven { url 'https://maven.aliyun.com/repository/google' }
         maven { url 'https://maven.aliyun.com/repository/public' }
         maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
         maven { url 'https://maven.aliyun.com/repository/central' }
+        // 官方 Maven Central 后备
+        mavenCentral()
     }
     dependencies {
         classpath 'com.android.tools.build:gradle:8.13.0'
@@ -22,13 +24,16 @@ apply from: "variables.gradle"
 
 allprojects {
     repositories {
-        // 国内环境仅使用阿里云镜像（避免 Maven Central 429 限流）
+        // 国内环境优先使用阿里云镜像（避免 Maven Central 429 限流）
         maven { url 'https://maven.aliyun.com/repository/google' }
         maven { url 'https://maven.aliyun.com/repository/public' }
         maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
         maven { url 'https://maven.aliyun.com/repository/central' }
+        // 官方 Maven Central 后备（阿里云镜像可能缺少 TapTap SDK 等较新 artifact）
+        mavenCentral()
         // 穿山甲（Pangle）广告 SDK Maven 仓库（Dirichlet 聚合 SDK 依赖）
-        // 使用阿里云镜像替代 artifact.bytedance.com（沙箱环境直连不稳定）
+        maven { url 'https://maven.aliyun.com/repository/public' }
+        // TapTap SDK 官方仓库
         maven { url 'https://maven.aliyun.com/repository/public' }
     }
 }
