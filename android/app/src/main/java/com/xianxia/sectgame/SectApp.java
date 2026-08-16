@@ -94,17 +94,18 @@ public class SectApp extends Application {
     }
 
     /**
-     * 初始化 TapTap 更新唤起 SDK v4（开发者中心配置更新模式）。
+     * 初始化 TapTap SDK v4（核心 + 登录 + 更新统一初始化）。
      *
-     * 真实调用等价于（SDK v4 原生 Java 示例）：
+     * 真实调用等价于：
      * <pre>
-     *   TapConfig config = new TapConfig.Builder()
-     *       .withAppContext(this)
-     *       .withClientId(TAP_CLIENT_ID)
-     *       .withClientToken(TAP_CLIENT_TOKEN)
-     *       .withRegion(TapConfig.REGION_CN)
-     *       .build();
-     *   TapSDK.init(config);
+     *   TapTapSdkOptions options = new TapTapSdkOptions(
+     *       TAP_CLIENT_ID,           // clientId
+     *       TAP_CLIENT_TOKEN,        // clientToken
+     *       TapTapRegion.CN,         // region (0=国内, 1=海外)
+     *       "1.0.0",                 // gameVersion (可选)
+     *       false                    // enableLog (可选)
+     *   );
+     *   TapTapSdk.init(context, options);
      * </pre>
      *
      * 如果使用 v4 更新模块单独初始化的实现（TapTapUpdate.init 或独立 Builder），
@@ -112,32 +113,39 @@ public class SectApp extends Application {
      */
     private void initTapUpdateSdk() {
         try {
-            // 优先尝试 TapSDK 核心统一初始化（v4 推荐流程）
-            Class<?> configCls = Class.forName(TAP_PKG + ".core.TapConfig");
-            Class<?> builderCls = Class.forName(TAP_PKG + ".core.TapConfig$Builder");
-            Class<?> sdkCls = Class.forName(TAP_PKG + ".core.TapSDK");
-            Class<?> regionEnumCls = Class.forName(TAP_PKG + ".core.TapConfig$Region");
+            // v4.10.8 核心类名：TapTapSdk / TapTapSdkOptions / TapTapRegion
+            Class<?> sdkCls = Class.forName(TAP_PKG + ".core.TapTapSdk");
+            Class<?> optionsCls = Class.forName(TAP_PKG + ".core.TapTapSdkOptions");
+            Class<?> regionCls = Class.forName(TAP_PKG + ".core.TapTapRegion");
 
-            Object builder = builderCls.newInstance();
-            builderCls.getMethod("withAppContext", android.content.Context.class).invoke(builder, this);
-            builderCls.getMethod("withClientId", String.class).invoke(builder, TAP_CLIENT_ID);
-            builderCls.getMethod("withClientToken", String.class).invoke(builder, TAP_CLIENT_TOKEN);
-            // REGION_CN 是枚举值，反射获取常量字段
-            Object regionCn = regionEnumCls.getField("REGION_CN").get(null);
-            builderCls.getMethod("withRegion", regionEnumCls).invoke(builder, regionCn);
-            Object config = builderCls.getMethod("build").invoke(builder);
+            // TapTapRegion.CN 是注解接口中的 int 常量字段
+            int regionCn = regionCls.getField("CN").getInt(null);
 
-            sdkCls.getMethod("init", configCls).invoke(null, config);
+            // 构造 TapTapSdkOptions(clientId, clientToken, region, gameVersion, enableLog)
+            Object options = optionsCls.getConstructor(
+                String.class, String.class, int.class, String.class, boolean.class
+            ).newInstance(
+                TAP_CLIENT_ID,
+                TAP_CLIENT_TOKEN,
+                regionCn,
+                "1.0.0",
+                false
+            );
+
+            // TapTapSdk.init(context, options)
+            sdkCls.getMethod("init", android.content.Context.class, optionsCls)
+                .invoke(null, this, options);
+
             tapUpdateSdkReady = true;
-            Log.i(TAG, "TapTap SDK 已初始化（ClientId=" + TAP_CLIENT_ID + "），更新唤起模块可用");
+            Log.i(TAG, "TapTap SDK v4 核心+登录+更新已统一初始化（ClientId=" + TAP_CLIENT_ID + "）");
             return;
         } catch (ClassNotFoundException ignored) {
-            // v4 核心包不存在或包名不同，尝试 update 模块的独立初始化
+            Log.w(TAG, "TapTap SDK v4 核心类未找到（未引入 tap-core 依赖？）");
         } catch (Throwable t) {
-            Log.w(TAG, "TapTap SDK 核心初始化失败（尝试降级更新模块独立初始化）: " + t.getMessage());
+            Log.w(TAG, "TapTap SDK v4 核心初始化失败: " + t.getMessage());
         }
 
-        // 降级：尝试更新模块独立初始化（部分 v4.9.x 之前版本）
+        // 降级：尝试更新模块独立初始化（仅用于更新唤起，不影响登录）
         try {
             Class<?> updateCls = Class.forName(TAP_PKG + ".update.TapTapUpdate");
             try {
