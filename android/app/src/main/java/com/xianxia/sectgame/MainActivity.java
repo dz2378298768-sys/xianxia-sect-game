@@ -37,6 +37,8 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(DirichletAd.class);
         // 注册 TapTap 更新唤起插件
         registerPlugin(TapUpdate.class);
+        // 注册 TapTap 登录插件
+        registerPlugin(TapLoginPlugin.class);
         super.onCreate(savedInstanceState);
 
         // 2. Window 层面：关闭 decorFitsSystemWindows，让内容延伸到系统栏后面

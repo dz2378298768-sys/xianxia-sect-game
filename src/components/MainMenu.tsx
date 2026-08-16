@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/Button';
 import {
   Play, PlusCircle, LogOut, Mountain,
-  Users, Gem, Trash2, Clock,
+  Users, Gem, Trash2, Clock, LogIn,
 } from 'lucide-react';
 import { getSlots, deleteSlot, SAVE_SLOT_COUNT, type SaveSlotMeta } from '@/utils/saveSlots';
 import { SectLevelNames } from '@/types/game';
+import { login, getCurrentAccount, logout, type TapAccount } from '@/services/tapLogin';
 
 interface MainMenuProps {
   onStartNew: (sectName: string) => void;
@@ -56,6 +57,9 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartNew, onContinue }) =>
   // 选中的空槽位（用于开辟新宗时填名）
   const [newSlotIndex, setNewSlotIndex] = useState<number | null>(null);
   const [sectName, setSectName] = useState('');
+  // TapTap 登录状态
+  const [tapAccount, setTapAccount] = useState<TapAccount | null>(null);
+  const [tapLogging, setTapLogging] = useState(false);
 
   // 读取存档槽位
   const refreshSlots = () => {
@@ -64,7 +68,33 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartNew, onContinue }) =>
 
   useEffect(() => {
     refreshSlots();
+    // 尝试检查是否已登录
+    getCurrentAccount().then(status => {
+      if (status.hasAccount && status.account) {
+        setTapAccount(status.account);
+      }
+    });
   }, []);
+
+  // TapTap 登录
+  const handleTapLogin = async () => {
+    setTapLogging(true);
+    const result = await login();
+    setTapLogging(false);
+    if (result.success && result.account) {
+      setTapAccount(result.account);
+    } else if (result.error) {
+      alert('TapTap 登录失败: ' + result.error);
+    }
+  };
+
+  // TapTap 登出
+  const handleTapLogout = async () => {
+    const result = await logout();
+    if (result.success) {
+      setTapAccount(null);
+    }
+  };
 
   // 点击空槽位 → 打开命名弹窗
   const handleEmptySlotClick = (index: number) => {
@@ -115,6 +145,33 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartNew, onContinue }) =>
             <div className="flex-1 h-px bg-gradient-to-r from-transparent to-[var(--gold-400)]" />
             <span className="text-[var(--gold-300)] text-[10px]">❖</span>
             <div className="flex-1 h-px bg-gradient-to-l from-transparent to-[var(--gold-400)]" />
+          </div>
+
+          {/* TapTap 登录 */}
+          <div className="w-full max-w-2xl mb-3">
+            {tapAccount ? (
+              <div className="flex items-center justify-center gap-2 text-[11px] text-[var(--gold-300)]/70">
+                <span className="w-5 h-5 rounded-full bg-[var(--gold-400)]/20 flex items-center justify-center text-[10px]">
+                  {tapAccount.name?.charAt(0) || 'T'}
+                </span>
+                <span>{tapAccount.name || tapAccount.openid?.slice(0, 8)}</span>
+                <button
+                  onClick={handleTapLogout}
+                  className="text-[10px] text-[var(--ink-400)] hover:text-red-400 ml-1"
+                >
+                  退出
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={handleTapLogin}
+                disabled={tapLogging}
+                className="mx-auto flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] border border-[var(--gold-400)]/20 text-[var(--gold-300)]/60 hover:text-[var(--gold-200)] hover:border-[var(--gold-400)]/40 transition-colors disabled:opacity-40"
+              >
+                <LogIn size={13} />
+                {tapLogging ? '登录中…' : 'TapTap 登录'}
+              </button>
+            )}
           </div>
 
           {/* 六个存档槽位：3列 × 2行 */}

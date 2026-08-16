@@ -102,6 +102,7 @@ dependencies {
         // TapSDK v4 核心包 + 更新模块（Maven Central）
         // 参考：https://mvnrepository.com/artifact/com.taptap.sdk/tap-update/4.10.8
         implementation "com.taptap.sdk:tap-core:4.10.8"
+        implementation "com.taptap.sdk:tap-login:4.10.8"
         implementation "com.taptap.sdk:tap-update:4.10.8"
         // 官方 FAQ 列出的更新模块依赖（Unity 会自动注入，原生 Android 手动列出）
         implementation 'com.squareup.okhttp3:okhttp:3.12.1'
