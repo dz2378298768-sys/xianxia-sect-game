@@ -9,10 +9,12 @@ const encounterIcons = [Swords, Shield, Award, Sparkles, Map];
  * 探索试炼过程中触发，玩家做出选择影响结果
  */
 export const ExplorationEncounterModal: React.FC = () => {
-  const pendingEncounter = useGameStore(s => s.pendingEncounter);
+  const pendingEncounters = useGameStore(s => s.pendingEncounters);
   const resolveEncounter = useGameStore(s => s.resolveExplorationEncounter);
 
-  if (!pendingEncounter) return null;
+  // 展示队列中的第一个遭遇
+  const encounter = pendingEncounters.length > 0 ? pendingEncounters[0] : null;
+  if (!encounter) return null;
 
   return (
     <div className="fixed inset-0 z-[95] flex items-center justify-center bg-black/70 px-4">
@@ -26,17 +28,17 @@ export const ExplorationEncounterModal: React.FC = () => {
             <Compass size={20} className="text-sky-400" />
           </div>
           <h3 className="font-display text-base" style={{ color: 'var(--gold-200)' }}>
-            {pendingEncounter.name}
+            {encounter.name}
           </h3>
         </div>
 
         <div className="text-xs leading-relaxed px-2 py-3 rounded"
           style={{ background: 'rgba(13,17,23,0.6)', border: '1px solid rgba(56,189,248,0.2)', color: 'var(--ink-200)' }}>
-          {pendingEncounter.description}
+          {encounter.description}
         </div>
 
         <div className="space-y-2">
-          {pendingEncounter.choices.map((choice, i) => {
+          {encounter.choices.map((choice, i) => {
             const Icon = encounterIcons[i % encounterIcons.length];
             const isHighRisk = choice.successChance < 0.4;
 

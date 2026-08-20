@@ -30,7 +30,6 @@ export interface SectLevelRequirements {
   spiritDisciple?: boolean;  // 至少1名化神期
   elderCount?: number;       // 长老数量要求
   promotionCost: number;     // 晋升消耗灵石
-  promotionContribution?: number; // 晋升消耗贡献点
 }
 
 export const SectLevelRequirementsMap: Record<SectLevel, SectLevelRequirements> = {
@@ -436,8 +435,6 @@ export interface SchoolTalent {
   description: string;
   /** 前置节点ID */
   prerequisites: string[];
-  /** 消耗宗门贡献点 */
-  contributionCost: number;
   /** 消耗灵石 */
   spiritStoneCost: number;
   /** 效果描述 */
@@ -466,34 +463,34 @@ export interface SchoolTalent {
 /** 流派天赋树（每个流派有自己的天赋树） */
 export const SCHOOL_TALENT_TREES: Record<SectSchool, SchoolTalent[]> = {
   sword: [
-    { id: 'sword_1', name: '剑心通明', description: '弟子剑道悟性提升，战力+5%', prerequisites: [], contributionCost: 100, spiritStoneCost: 200, effects: { combatPowerBonus: 5 } },
-    { id: 'sword_2', name: '万剑归宗', description: '剑修弟子可施展群体剑技，战力+10%', prerequisites: ['sword_1'], contributionCost: 300, spiritStoneCost: 500, effects: { combatPowerBonus: 10 } },
-    { id: 'sword_3', name: '剑意冲霄', description: '剑修弟子战力+15%，且修炼速度+5%', prerequisites: ['sword_2'], contributionCost: 600, spiritStoneCost: 1000, effects: { combatPowerBonus: 15, cultivationSpeedBonus: 5 } },
-    { id: 'sword_4', name: '人剑合一', description: '剑修流派终极奥义，战力+25%', prerequisites: ['sword_3'], contributionCost: 1200, spiritStoneCost: 3000, effects: { combatPowerBonus: 25 } },
+    { id: 'sword_1', name: '剑心通明', description: '弟子剑道悟性提升，战力+5%', prerequisites: [], spiritStoneCost: 200, effects: { combatPowerBonus: 5 } },
+    { id: 'sword_2', name: '万剑归宗', description: '剑修弟子可施展群体剑技，战力+10%', prerequisites: ['sword_1'], spiritStoneCost: 500, effects: { combatPowerBonus: 10 } },
+    { id: 'sword_3', name: '剑意冲霄', description: '剑修弟子战力+15%，且修炼速度+5%', prerequisites: ['sword_2'], spiritStoneCost: 1000, effects: { combatPowerBonus: 15, cultivationSpeedBonus: 5 } },
+    { id: 'sword_4', name: '人剑合一', description: '剑修流派终极奥义，战力+25%', prerequisites: ['sword_3'], spiritStoneCost: 3000, effects: { combatPowerBonus: 25 } },
   ],
   pill: [
-    { id: 'pill_1', name: '草木知性', description: '炼丹基础提升，炼丹产出+10%', prerequisites: [], contributionCost: 100, spiritStoneCost: 200, effects: { pillOutputBonus: 10 } },
-    { id: 'pill_2', name: '丹火纯青', description: '炼丹技艺精进，炼丹产出+15%', prerequisites: ['pill_1'], contributionCost: 300, spiritStoneCost: 500, effects: { pillOutputBonus: 15 } },
-    { id: 'pill_3', name: '丹道宗师', description: '宗师级炼丹术，炼丹产出+25%', prerequisites: ['pill_2'], contributionCost: 600, spiritStoneCost: 1000, effects: { pillOutputBonus: 25 } },
-    { id: 'pill_4', name: '仙丹妙法', description: '可炼制仙品丹药，炼丹产出+40%', prerequisites: ['pill_3'], contributionCost: 1200, spiritStoneCost: 3000, effects: { pillOutputBonus: 40 } },
+    { id: 'pill_1', name: '草木知性', description: '炼丹基础提升，炼丹产出+10%', prerequisites: [], spiritStoneCost: 200, effects: { pillOutputBonus: 10 } },
+    { id: 'pill_2', name: '丹火纯青', description: '炼丹技艺精进，炼丹产出+15%', prerequisites: ['pill_1'], spiritStoneCost: 500, effects: { pillOutputBonus: 15 } },
+    { id: 'pill_3', name: '丹道宗师', description: '宗师级炼丹术，炼丹产出+25%', prerequisites: ['pill_2'], spiritStoneCost: 1000, effects: { pillOutputBonus: 25 } },
+    { id: 'pill_4', name: '仙丹妙法', description: '可炼制仙品丹药，炼丹产出+40%', prerequisites: ['pill_3'], spiritStoneCost: 3000, effects: { pillOutputBonus: 40 } },
   ],
   array: [
-    { id: 'array_1', name: '阵基稳固', description: '阵法基础加固，防御+5%', prerequisites: [], contributionCost: 100, spiritStoneCost: 200, effects: { defenseBonus: 5 } },
-    { id: 'array_2', name: '八卦迷阵', description: '护山大阵增强，防御+10%', prerequisites: ['array_1'], contributionCost: 300, spiritStoneCost: 500, effects: { defenseBonus: 10 } },
-    { id: 'array_3', name: '周天星斗', description: '引星辰之力护宗，防御+20%', prerequisites: ['array_2'], contributionCost: 600, spiritStoneCost: 1000, effects: { defenseBonus: 20 } },
-    { id: 'array_4', name: '不灭仙阵', description: '护山大阵几乎不可攻破，防御+35%', prerequisites: ['array_3'], contributionCost: 1200, spiritStoneCost: 3000, effects: { defenseBonus: 35 } },
+    { id: 'array_1', name: '阵基稳固', description: '阵法基础加固，防御+5%', prerequisites: [], spiritStoneCost: 200, effects: { defenseBonus: 5 } },
+    { id: 'array_2', name: '八卦迷阵', description: '护山大阵增强，防御+10%', prerequisites: ['array_1'], spiritStoneCost: 500, effects: { defenseBonus: 10 } },
+    { id: 'array_3', name: '周天星斗', description: '引星辰之力护宗，防御+20%', prerequisites: ['array_2'], spiritStoneCost: 1000, effects: { defenseBonus: 20 } },
+    { id: 'array_4', name: '不灭仙阵', description: '护山大阵几乎不可攻破，防御+35%', prerequisites: ['array_3'], spiritStoneCost: 3000, effects: { defenseBonus: 35 } },
   ],
   artifact: [
-    { id: 'artifact_1', name: '百炼成钢', description: '炼器基础提升，炼器产出+10%', prerequisites: [], contributionCost: 100, spiritStoneCost: 200, effects: { artifactOutputBonus: 10 } },
-    { id: 'artifact_2', name: '器魂觉醒', description: '炼器品质提升，炼器产出+15%', prerequisites: ['artifact_1'], contributionCost: 300, spiritStoneCost: 500, effects: { artifactOutputBonus: 15 } },
-    { id: 'artifact_3', name: '天工开物', description: '炼器大师，炼器产出+25%', prerequisites: ['artifact_2'], contributionCost: 600, spiritStoneCost: 1000, effects: { artifactOutputBonus: 25 } },
-    { id: 'artifact_4', name: '神器锻造', description: '可锻造仙品法器，炼器产出+40%', prerequisites: ['artifact_3'], contributionCost: 1200, spiritStoneCost: 3000, effects: { artifactOutputBonus: 40 } },
+    { id: 'artifact_1', name: '百炼成钢', description: '炼器基础提升，炼器产出+10%', prerequisites: [], spiritStoneCost: 200, effects: { artifactOutputBonus: 10 } },
+    { id: 'artifact_2', name: '器魂觉醒', description: '炼器品质提升，炼器产出+15%', prerequisites: ['artifact_1'], spiritStoneCost: 500, effects: { artifactOutputBonus: 15 } },
+    { id: 'artifact_3', name: '天工开物', description: '炼器大师，炼器产出+25%', prerequisites: ['artifact_2'], spiritStoneCost: 1000, effects: { artifactOutputBonus: 25 } },
+    { id: 'artifact_4', name: '神器锻造', description: '可锻造仙品法器，炼器产出+40%', prerequisites: ['artifact_3'], spiritStoneCost: 3000, effects: { artifactOutputBonus: 40 } },
   ],
   balance: [
-    { id: 'balance_1', name: '五行调和', description: '全属性+3%', prerequisites: [], contributionCost: 100, spiritStoneCost: 200, effects: { combatPowerBonus: 3, cultivationSpeedBonus: 3, spiritStoneOutputBonus: 3 } },
-    { id: 'balance_2', name: '阴阳相济', description: '全属性+5%', prerequisites: ['balance_1'], contributionCost: 300, spiritStoneCost: 500, effects: { combatPowerBonus: 5, cultivationSpeedBonus: 5, spiritStoneOutputBonus: 5 } },
-    { id: 'balance_3', name: '天人合一', description: '全属性+8%', prerequisites: ['balance_2'], contributionCost: 600, spiritStoneCost: 1000, effects: { combatPowerBonus: 8, cultivationSpeedBonus: 8, spiritStoneOutputBonus: 8 } },
-    { id: 'balance_4', name: '大道自然', description: '全属性+12%，且满意度+5', prerequisites: ['balance_3'], contributionCost: 1200, spiritStoneCost: 3000, effects: { combatPowerBonus: 12, cultivationSpeedBonus: 12, spiritStoneOutputBonus: 12, satisfactionBonus: 5 } },
+    { id: 'balance_1', name: '五行调和', description: '全属性+3%', prerequisites: [], spiritStoneCost: 200, effects: { combatPowerBonus: 3, cultivationSpeedBonus: 3, spiritStoneOutputBonus: 3 } },
+    { id: 'balance_2', name: '阴阳相济', description: '全属性+5%', prerequisites: ['balance_1'], spiritStoneCost: 500, effects: { combatPowerBonus: 5, cultivationSpeedBonus: 5, spiritStoneOutputBonus: 5 } },
+    { id: 'balance_3', name: '天人合一', description: '全属性+8%', prerequisites: ['balance_2'], spiritStoneCost: 1000, effects: { combatPowerBonus: 8, cultivationSpeedBonus: 8, spiritStoneOutputBonus: 8 } },
+    { id: 'balance_4', name: '大道自然', description: '全属性+12%，且满意度+5', prerequisites: ['balance_3'], spiritStoneCost: 3000, effects: { combatPowerBonus: 12, cultivationSpeedBonus: 12, spiritStoneOutputBonus: 12, satisfactionBonus: 5 } },
   ],
 };
 
@@ -525,6 +522,10 @@ export interface CalamityEvent {
   warningMonths: number;
   warningTitle: string;
   warningDescription: string;
+  /** 预警开始年份（运行时填充，用于计算剩余预警月数） */
+  warningStartYear?: number;
+  /** 预警开始月份 */
+  warningStartMonth?: number;
   effects: {
     spiritStoneChange?: number;
     reputationChange?: number;

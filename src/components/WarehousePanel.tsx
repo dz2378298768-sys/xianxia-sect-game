@@ -13,7 +13,8 @@ import type { BeastType } from '@/types/beast';
 import type { IconName } from '@/components/icons/SectIcons';
 import { SectIcon } from '@/components/icons/SectIcons';
 import type { Disciple } from '@/types/disciple';
-import { getRealmDisplay } from '@/types/disciple';
+import { getRealmDisplay, RealmNames, RealmOrder, DiscipleStatusNames } from '@/types/disciple';
+import type { Realm, DiscipleStatus } from '@/types/disciple';
 import type { AutoTradeRule } from '@/types/game';
 
 // 图鉴大图：放在 public/ 根目录，构建后 dist/ 下与 index.html 同级。
@@ -154,6 +155,12 @@ export const WarehousePanel: React.FC = () => {
   // ——— 兑换/赠送弹窗共用状态 ———
   const [actionMode, setActionMode] = useState<null | 'exchange' | 'gift'>(null);
   const [selectedDiscipleId, setSelectedDiscipleId] = useState<string | null>(null);
+  // ——— 弟子筛选 ———
+  const [whStatusFilter, setWhStatusFilter] = useState<DiscipleStatus | 'all'>('all');
+  const [whRealmFilter, setWhRealmFilter] = useState<Realm | 'all'>('all');
+  const [whFollowFilter, setWhFollowFilter] = useState<'all' | 'followed'>('all');
+  const [whSearchTerm, setWhSearchTerm] = useState('');
+  const { followedDiscipleIds } = useGameStore();
   // 玩家可手动输入的贡献值（兑换）与满意度增量（赠送，空=默认）
   const [inputContribution, setInputContribution] = useState<string>('50');
   const [inputSatisfaction, setInputSatisfaction] = useState<string>('');
@@ -864,11 +871,69 @@ export const WarehousePanel: React.FC = () => {
                 {/* 选弟子 */}
                 <div className="wh-disciple-picker">
                   <div className="wh-input-label mb-1">选择弟子</div>
+                  {/* 筛选栏：境界 + 身份 + 关注 + 搜索 */}
+                  <div className="wh-filter-row">
+                    <select
+                      className="wh-filter-select"
+                      value={whRealmFilter}
+                      onChange={e => setWhRealmFilter(e.target.value as Realm | 'all')}
+                    >
+                      <option value="all">全部境界</option>
+                      {RealmOrder.map(r => (
+                        <option key={r} value={r}>{RealmNames[r]}</option>
+                      ))}
+                    </select>
+                    <select
+                      className="wh-filter-select"
+                      value={whStatusFilter}
+                      onChange={e => setWhStatusFilter(e.target.value as DiscipleStatus | 'all')}
+                    >
+                      <option value="all">全部身份</option>
+                      {(Object.entries(DiscipleStatusNames) as [DiscipleStatus, string][]).map(([k, v]) => (
+                        <option key={k} value={k}>{v}</option>
+                      ))}
+                    </select>
+                    <select
+                      className="wh-filter-select"
+                      value={whFollowFilter}
+                      onChange={e => setWhFollowFilter(e.target.value as 'all' | 'followed')}
+                    >
+                      <option value="all">全部弟子</option>
+                      <option value="followed">关注弟子</option>
+                    </select>
+                    <input
+                      type="text"
+                      className="wh-filter-search"
+                      placeholder="搜名字…"
+                      value={whSearchTerm}
+                      onChange={e => setWhSearchTerm(e.target.value)}
+                    />
+                  </div>
                   <div className="wh-disciple-scroll">
-                    {disciples.length === 0 && (
+                    {(() => {
+                      let list = disciples;
+                      if (whRealmFilter !== 'all') list = list.filter(d => d.realm === whRealmFilter);
+                      if (whStatusFilter !== 'all') list = list.filter(d => d.status === whStatusFilter);
+                      if (whFollowFilter === 'followed') list = list.filter(d => followedDiscipleIds.includes(d.id));
+                      if (whSearchTerm.trim()) {
+                        const t = whSearchTerm.trim().toLowerCase();
+                        list = list.filter(d => d.name.includes(t));
+                      }
+                      return list;
+                    })().length === 0 && (
                       <div className="wh-empty-tip">暂无可分配弟子</div>
                     )}
-                    {disciples.map(d => {
+                    {(() => {
+                      let list = disciples;
+                      if (whRealmFilter !== 'all') list = list.filter(d => d.realm === whRealmFilter);
+                      if (whStatusFilter !== 'all') list = list.filter(d => d.status === whStatusFilter);
+                      if (whFollowFilter === 'followed') list = list.filter(d => followedDiscipleIds.includes(d.id));
+                      if (whSearchTerm.trim()) {
+                        const t = whSearchTerm.trim().toLowerCase();
+                        list = list.filter(d => d.name.includes(t));
+                      }
+                      return list;
+                    })().map(d => {
                       const selected = selectedDiscipleId === d.id;
                       return (
                         <button
@@ -877,7 +942,10 @@ export const WarehousePanel: React.FC = () => {
                           className={`wh-disciple-chip ${selected ? 'is-selected' : ''}`}
                           onClick={() => setSelectedDiscipleId(d.id)}
                         >
-                          <span className="wh-disciple-chip-name">{d.name}</span>
+                          <span className="wh-disciple-chip-name">
+                            {followedDiscipleIds.includes(d.id) && <span className="wh-follow-indicator">♥</span>}
+                            {d.name}
+                          </span>
                           <span className="wh-disciple-chip-info">
                             {getRealmDisplay(d)} · 贡献{d.contributionPoints} · 满意{d.satisfaction}
                           </span>

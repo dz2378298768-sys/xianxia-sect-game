@@ -371,7 +371,6 @@ export const BuildingsPanel: React.FC = () => {
   const [buildError, setBuildError] = useState<string | null>(null);
   const [showVacant, setShowVacant] = useState(false);
   const [showManagerPicker, setShowManagerPicker] = useState(false);
-  const [expandedBuildingId, setExpandedBuildingId] = useState<string | null>(null);
   const [showBeastCapturePicker, setShowBeastCapturePicker] = useState(false);
   const [showChallengePicker, setShowChallengePicker] = useState(false);
   const [showElderPicker, setShowElderPicker] = useState(false);
@@ -658,14 +657,12 @@ export const BuildingsPanel: React.FC = () => {
         </div>
       )}
 
-      {/* 建筑头像网格：一排6个，点击展开3个功能按钮 */}
+      {/* 建筑头像网格：点击直接进入建筑详情 */}
       <div className="building-avatar-grid">
         {buildings.map(building => {
           const isLocked = building.status === 'locked';
           const isClosed = building.status === 'closed';
-          const upgradeCost = getUpgradeCost(building);
           const img = getBuildingImage(building.type);
-          const isExpanded = expandedBuildingId === building.id;
 
           const statusClass = isLocked
             ? 'building-avatar-status-locked'
@@ -676,12 +673,12 @@ export const BuildingsPanel: React.FC = () => {
           return (
             <div
               key={building.id}
-              className={`building-avatar-item ${isExpanded ? 'building-avatar-item-expanded' : ''}`}
+              className="building-avatar-item"
             >
-              {/* 头像 + 等级角标 + 人数/维护费叠加层 + 名称：点击切换展开 */}
+              {/* 头像 + 等级角标 + 人数/维护费叠加层 + 名称：点击直接进入详情 */}
               <div
-                className="w-full"
-                onClick={() => setExpandedBuildingId(isExpanded ? null : building.id)}
+                className="w-full cursor-pointer"
+                onClick={() => setSelectedBuildingId(building.id)}
               >
                 <div className={`building-avatar-thumb ${statusClass}`}>
                   {img ? (
@@ -707,72 +704,11 @@ export const BuildingsPanel: React.FC = () => {
                 </div>
                 <div className="building-avatar-name">{building.name}</div>
               </div>
-
-              {/* 展开后的3个功能按钮：开启/关闭、升级、进入 */}
-              {isExpanded && !isLocked && (
-                <div className="building-avatar-actions">
-                  <button
-                    className="building-action-btn building-action-btn-toggle"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleBuilding(building.id);
-                    }}
-                    title={isClosed ? '开启建筑' : '关闭建筑'}
-                  >
-                    <Power size={12} />
-                    {isClosed ? '开启' : '关闭'}
-                  </button>
-                  <button
-                    className="building-action-btn building-action-btn-upgrade"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (canUpgrade(building)) handleUpgrade(building.id);
-                    }}
-                    disabled={!canUpgrade(building) || !upgradeCost}
-                    title={upgradeCost ? `升级需 ${upgradeCost.spiritStones} 灵石${upgradeCost.contribution ? `/${upgradeCost.contribution}贡献` : ''}${upgradeCost.reputation ? `/${upgradeCost.reputation}声望` : ''}` : (getUpgradeBlockReason(building) || '已满级')}
-                  >
-                    <ArrowUp size={12} />
-                    升级
-                  </button>
-                  <button
-                    className="building-action-btn building-action-btn-enter"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedBuildingId(building.id);
-                      setExpandedBuildingId(null);
-                    }}
-                    title="进入建筑详情"
-                  >
-                    <DoorOpen size={12} />
-                    进入
-                  </button>
-                </div>
-              )}
-
-              {/* 锁定状态下展开解锁条件 */}
-              {isExpanded && isLocked && building.unlockRequirement && (
-                <div className="building-avatar-actions">
-                  <div className="text-[9px] text-sect-jade/60 px-1 py-0.5">
-                    解锁：
-                    {building.unlockRequirement.sectLevel && (
-                      <span>{SectLevelNames[building.unlockRequirement.sectLevel as keyof typeof SectLevelNames]}</span>
-                    )}
-                    {building.unlockRequirement.reputation && (
-                      <span> · 声望{building.unlockRequirement.reputation}</span>
-                    )}
-                  </div>
-                </div>
-              )}
             </div>
           );
         })}
       </div>
 
-      {/* 提示：点击头像展开操作 */}
-      <div className="text-center text-[10px] text-sect-jade/40 mt-2">
-        点击建筑头像展开「开启/关闭 · 升级 · 进入」操作；点击「进入」查看完整描述与详情
-      </div>
-      
       <Modal
         isOpen={!!selectedBuilding}
         onClose={() => setSelectedBuildingId(null)}
@@ -994,7 +930,10 @@ export const BuildingsPanel: React.FC = () => {
                       <div className="text-[10px] text-yellow-400 px-1 py-1">暂无可用弟子</div>
                     ) : (
                       <div className="space-y-0.5">
-                        {disciples.filter(d => !d.onTrialId && !d.isBreakingThrough).map(d => (
+                        {disciples
+                          .filter(d => !d.onTrialId && !d.isBreakingThrough)
+                          .sort((a, b) => calculateDiscipleCombatPower(b) - calculateDiscipleCombatPower(a))
+                          .map(d => (
                           <button
                             key={d.id}
                             type="button"
@@ -1006,8 +945,13 @@ export const BuildingsPanel: React.FC = () => {
                             }}
                           >
                             <span className="text-[11px] text-sect-jade">{d.name}</span>
-                            <span className={`text-[10px] ${getRealmColor(d.realm)}`}>
-                              {getRealmDisplay(d)}
+                            <span className="flex items-center gap-2">
+                              <span className={`text-[10px] ${getRealmColor(d.realm)}`}>
+                                {getRealmDisplay(d)}
+                              </span>
+                              <span className="text-[9px] text-sect-gold/60">
+                                {Math.floor(calculateDiscipleCombatPower(d)).toLocaleString()}
+                              </span>
                             </span>
                           </button>
                         ))}

@@ -14,7 +14,7 @@ import type { Disciple } from '@/types/disciple';
 import { calculateDiscipleCombatPower, calculateSectCombatPower } from '@/utils/gameLogic';
 import { getRealmDisplay, DiscipleStatusNames } from '@/types/disciple';
 import { EXPLORATION_REGIONS } from '@/data/exploration';
-import { Compass, Lock } from 'lucide-react';
+import { Compass, Lock, Map } from 'lucide-react';
 
 // 境界颜色
 function getRealmColor(realm: string): string {
@@ -336,9 +336,10 @@ const TrialCard: React.FC<{ trial: Trial }> = ({ trial }) => {
   const [showDispatch, setShowDispatch] = useState(false);
   const { disciples } = useGameStore();
 
-  // 可派遣弟子：非突破中、非学习秘籍、非试炼中
+  // 可派遣弟子：非突破中、非学习秘籍、非试炼中，按战力降序
   const availableDisciples = useMemo(() =>
-    disciples.filter(d => !d.onTrialId && !d.isBreakingThrough && !d.isLearningSecret),
+    [...disciples.filter(d => !d.onTrialId && !d.isBreakingThrough && !d.isLearningSecret)]
+      .sort((a, b) => calculateDiscipleCombatPower(b) - calculateDiscipleCombatPower(a)),
     [disciples],
   );
 
@@ -468,12 +469,18 @@ interface ExplorationSectionProps {
   trials: Trial[];
   initiateExploration: (regionId: string, discipleId: string) => { ok: boolean; reason?: string };
   unlockedRegions: string[];
+  autoExploreRegions: Record<string, boolean>;
+  toggleAutoExplore: (regionId: string) => void;
+  explorationMapFragments: number;
+  hasCompleteMap: boolean;
 }
 
 const ExplorationSection: React.FC<ExplorationSectionProps> = ({
   disciples, trials, initiateExploration, unlockedRegions,
+  autoExploreRegions, toggleAutoExplore, explorationMapFragments, hasCompleteMap,
 }) => {
-  const [selectedDisciple, setSelectedDisciple] = useState<string | null>(null);
+  // 每个区域独立管理选择的弟子（key=regionId, value=discipleId）
+  const [selectedByRegion, setSelectedByRegion] = useState<Record<string, string | null>>({});
   const [dispatchMsg, setDispatchMsg] = useState<string | null>(null);
 
   // 探索区域配置
@@ -484,24 +491,48 @@ const ExplorationSection: React.FC<ExplorationSectionProps> = ({
     t => t.type.startsWith('explore_') && t.status === 'in_progress'
   );
 
-  // 可派遣的弟子
-  const availableDisciples = disciples.filter(
-    d => !d.onTrialId && !d.isBreakingThrough && (d.status === 'inner' || d.status === 'core' || d.status === 'elder')
-  );
+  // 可派遣的弟子（非试炼中、非突破中），按战力降序
+  const availableDisciples = [...disciples.filter(
+    d => !d.onTrialId && !d.isBreakingThrough
+  )].sort((a, b) => calculateDiscipleCombatPower(b) - calculateDiscipleCombatPower(a));
 
   const handleDispatch = (regionId: string) => {
-    if (!selectedDisciple) {
+    const discipleId = selectedByRegion[regionId];
+    if (!discipleId || discipleId === '_open_') {
       setDispatchMsg('请先选择弟子');
       return;
     }
-    const result = initiateExploration(regionId, selectedDisciple);
+    const result = initiateExploration(regionId, discipleId);
     setDispatchMsg(result.ok ? '探索队伍已出发！' : (result.reason ?? '派遣失败'));
-    if (result.ok) setSelectedDisciple(null);
+    if (result.ok) {
+      setSelectedByRegion(prev => ({ ...prev, [regionId]: null }));
+    }
     setTimeout(() => setDispatchMsg(null), 3000);
   };
 
   return (
     <div className="space-y-6">
+      {/* 地图碎片进度 */}
+      <div className="flex items-center gap-4 text-xs text-sect-jade/70 px-1">
+        <div className="flex items-center gap-1">
+          <Map size={14} className="text-sky-400" />
+          <span>地图碎片：</span>
+          <span className="text-sky-400 font-bold">{explorationMapFragments}/3</span>
+          {explorationMapFragments >= 3 && (
+            <span className="text-green-400 ml-1">✓ 已拼合</span>
+          )}
+        </div>
+        <div className="flex items-center gap-1">
+          <Map size={14} className="text-amber-400" />
+          <span>完整地图：</span>
+          {hasCompleteMap ? (
+            <span className="text-green-400 font-bold">已获得</span>
+          ) : (
+            <span className="text-sect-jade/40">未获得</span>
+          )}
+        </div>
+      </div>
+
       {/* 进行中的探索 */}
       {activeExplorations.length > 0 && (
         <Card className="p-4">
@@ -563,6 +594,26 @@ const ExplorationSection: React.FC<ExplorationSectionProps> = ({
                     </div>
                   </div>
                 </div>
+                {isUnlocked && (
+                  <button
+                    onClick={() => toggleAutoExplore(region.id)}
+                    className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] border transition-all ${
+                      autoExploreRegions[region.id]
+                        ? 'bg-[rgba(74,122,107,0.2)] border-[var(--jade-light)]/50 text-[var(--jade-light)]'
+                        : 'border-[var(--ink-400)]/30 text-[var(--ink-300)] hover:border-[var(--jade-light)]/30'
+                    }`}
+                    title={autoExploreRegions[region.id] ? '自动探索已开启' : '点击开启自动探索'}
+                  >
+                    <span className={autoExploreRegions[region.id] ? '' : 'opacity-40'}>自动</span>
+                    <span className={`inline-block w-6 h-3 rounded-full relative transition-all ${
+                      autoExploreRegions[region.id] ? 'bg-[var(--jade-light)]/60' : 'bg-[var(--ink-400)]/30'
+                    }`}>
+                      <span className={`absolute top-0.5 w-2 h-2 rounded-full bg-white transition-all ${
+                        autoExploreRegions[region.id] ? 'left-3.5' : 'left-0.5'
+                      }`} />
+                    </span>
+                  </button>
+                )}
               </div>
 
               <p className="text-xs text-sect-jade/60 mb-3 leading-relaxed">
@@ -571,26 +622,75 @@ const ExplorationSection: React.FC<ExplorationSectionProps> = ({
 
               {isUnlocked && !isActive ? (
                 <div className="space-y-2">
-                  <select
-                    value={selectedDisciple ?? ''}
-                    onChange={e => setSelectedDisciple(e.target.value || null)}
-                    className="w-full text-xs px-2 py-1.5 rounded bg-white/10 border border-white/20 text-sect-jade"
+                  {/* 选中弟子显示 */}
+                  <button
+                    onClick={() => setSelectedByRegion(prev => ({ ...prev, [region.id]: prev[region.id] ? null : '_open_' }))}
+                    className="w-full text-xs px-2 py-1.5 rounded border border-white/20 text-sect-jade flex items-center justify-between transition-colors"
+                    style={{
+                      background: selectedByRegion[region.id] && selectedByRegion[region.id] !== '_open_'
+                        ? 'rgba(56,189,248,0.15)'
+                        : 'rgba(255,255,255,0.05)',
+                    }}
                   >
-                    <option value="">选择派遣弟子...</option>
-                    {availableDisciples.map(d => (
-                      <option key={d.id} value={d.id}>
-                        {d.name}（{DiscipleStatusNames[d.status]} | 战力 {(calculateDiscipleCombatPower(d)).toLocaleString()}）
-                      </option>
-                    ))}
-                  </select>
+                    {selectedByRegion[region.id] && selectedByRegion[region.id] !== '_open_' ? (
+                      <span>
+                        {disciples.find(d => d.id === selectedByRegion[region.id])?.name ?? '选择弟子'}
+                        <span className="text-sect-jade/50 ml-1">
+                          战力 {Math.floor(calculateDiscipleCombatPower(
+                            disciples.find(d => d.id === selectedByRegion[region.id])!
+                          )).toLocaleString()}
+                        </span>
+                      </span>
+                    ) : (
+                      <span className="text-sect-jade/50">选择派遣弟子...</span>
+                    )}
+                    <span className="text-sect-jade/40">{selectedByRegion[region.id] === '_open_' ? '▲' : '▼'}</span>
+                  </button>
+
+                  {/* 弟子列表（展开） */}
+                  {selectedByRegion[region.id] === '_open_' && (
+                    <div className="p-1.5 rounded border border-sky-500/20 bg-[rgba(20,28,40,0.95)] max-h-48 overflow-y-auto space-y-0.5">
+                      {availableDisciples.length === 0 ? (
+                        <div className="text-center text-[10px] text-sect-jade/40 py-2">暂无可派遣弟子</div>
+                      ) : (
+                        availableDisciples.map(d => (
+                          <button
+                            key={d.id}
+                            onClick={() => setSelectedByRegion(prev => ({ ...prev, [region.id]: d.id }))}
+                            className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-sky-500/10 transition-colors text-left"
+                          >
+                            <SimpleAvatar seed={d.avatarSeed} size={24} status={d.status} realm={d.realm} name={d.name} />
+                            <div className="flex-1 min-w-0">
+                              <div className="text-[11px] text-sect-jade truncate">{d.name}</div>
+                              <div className="text-[9px] text-sect-jade/50">
+                                {getRealmDisplay(d)} · {DiscipleStatusNames[d.status]}
+                              </div>
+                            </div>
+                            <div className="text-[10px] text-sky-400 font-bold">
+                              {Math.floor(calculateDiscipleCombatPower(d)).toLocaleString()}
+                            </div>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+
                   <button
                     onClick={() => handleDispatch(region.id)}
-                    disabled={!selectedDisciple}
+                    disabled={!selectedByRegion[region.id] || selectedByRegion[region.id] === '_open_'}
                     className="w-full text-xs py-1.5 rounded transition-all"
                     style={{
-                      background: selectedDisciple ? 'rgba(56,189,248,0.2)' : 'rgba(255,255,255,0.05)',
-                      border: `1px solid ${selectedDisciple ? 'rgba(56,189,248,0.4)' : 'rgba(255,255,255,0.1)'}`,
-                      color: selectedDisciple ? 'var(--gold-200)' : 'var(--ink-400)',
+                      background: selectedByRegion[region.id] && selectedByRegion[region.id] !== '_open_'
+                        ? 'rgba(56,189,248,0.2)'
+                        : 'rgba(255,255,255,0.05)',
+                      border: `1px solid ${
+                        selectedByRegion[region.id] && selectedByRegion[region.id] !== '_open_'
+                          ? 'rgba(56,189,248,0.4)'
+                          : 'rgba(255,255,255,0.1)'
+                      }`,
+                      color: selectedByRegion[region.id] && selectedByRegion[region.id] !== '_open_'
+                        ? 'var(--gold-200)'
+                        : 'var(--ink-400)',
                     }}
                   >
                     派遣探索
@@ -624,7 +724,7 @@ type WorldTab = 'sects' | 'trials' | 'exploration';
 
 export const WorldPanel: React.FC = () => {
   const store = useGameStore();
-  const { otherSects, trials, disciples, buildings, autoTrialEnabled, toggleAutoTrial } = store;
+  const { otherSects, trials, disciples, buildings, autoTrialEnabled, toggleAutoTrial, refreshTrials } = store;
   const [activeTab, setActiveTab] = useState<WorldTab>('sects');
 
   // 本宗战力
@@ -644,11 +744,12 @@ export const WorldPanel: React.FC = () => {
   const vassalDiploCount = otherSects.filter(s => s.diplomaticStatus === 'vassal').length;
   const tradeCount = otherSects.filter(s => s.tradeActive).length;
 
-  // 试炼统计
-  const availableTrials = trials.filter(t => t.status === 'available');
-  const inProgressTrials = trials.filter(t => t.status === 'in_progress');
-  const completedTrials = trials.filter(t => t.status === 'completed');
-  const failedTrials = trials.filter(t => t.status === 'failed');
+  // 试炼统计（排除探索类型试炼，探索有独立页签）
+  const isNormalTrial = (t: Trial) => !t.type.startsWith('explore_');
+  const availableTrials = trials.filter(t => t.status === 'available' && isNormalTrial(t));
+  const inProgressTrials = trials.filter(t => t.status === 'in_progress' && isNormalTrial(t));
+  const completedTrials = trials.filter(t => t.status === 'completed' && isNormalTrial(t));
+  const failedTrials = trials.filter(t => t.status === 'failed' && isNormalTrial(t));
 
   return (
     <div className="space-y-4">
@@ -846,26 +947,38 @@ export const WorldPanel: React.FC = () => {
                 <h2 className="font-display text-sm text-gold-gradient">试炼任务</h2>
                 <Badge variant="default" size="sm">{trials.length} 项</Badge>
               </div>
-              {/* 自动试炼开关 */}
-              <button
-                onClick={() => toggleAutoTrial()}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs border transition-all ${
-                  autoTrialEnabled
-                    ? 'bg-[rgba(74,122,107,0.2)] border-[var(--jade-light)]/50 text-[var(--jade-light)]'
-                    : 'border-[var(--ink-400)]/30 text-[var(--ink-300)] hover:border-[var(--jade-light)]/30'
-                }`}
-                title={autoTrialEnabled ? '已开启：每月自动派遣空闲弟子执行可完成的试炼' : '点击开启：每月自动派遣空闲弟子执行可完成的试炼'}
-              >
-                <SectIcon name="talisman" size={12} strokeWidth={1.8} />
-                <span>自动试炼</span>
-                <span className={`ml-0.5 inline-block w-7 h-3.5 rounded-full relative transition-all ${
-                  autoTrialEnabled ? 'bg-[var(--jade-light)]/60' : 'bg-[var(--ink-400)]/30'
-                }`}>
-                  <span className={`absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white transition-all ${
-                    autoTrialEnabled ? 'left-4' : 'left-0.5'
-                  }`} />
-                </span>
-              </button>
+              {/* 试炼操作按钮区 */}
+              <div className="flex items-center gap-2">
+                {/* 刷新试炼按钮 */}
+                <button
+                  onClick={() => refreshTrials()}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs border border-[var(--ink-400)]/30 text-[var(--ink-300)] hover:border-[var(--gold-400)]/50 hover:text-[var(--gold-300)] transition-all"
+                  title="立即刷新试炼列表（按本宗当前战力重新生成）"
+                >
+                  <SectIcon name="sword" size={12} strokeWidth={1.8} />
+                  <span>刷新试炼</span>
+                </button>
+                {/* 自动试炼开关 */}
+                <button
+                  onClick={() => toggleAutoTrial()}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs border transition-all ${
+                    autoTrialEnabled
+                      ? 'bg-[rgba(74,122,107,0.2)] border-[var(--jade-light)]/50 text-[var(--jade-light)]'
+                      : 'border-[var(--ink-400)]/30 text-[var(--ink-300)] hover:border-[var(--jade-light)]/30'
+                  }`}
+                  title={autoTrialEnabled ? '已开启：每月自动派遣空闲弟子执行可完成的试炼' : '点击开启：每月自动派遣空闲弟子执行可完成的试炼'}
+                >
+                  <SectIcon name="talisman" size={12} strokeWidth={1.8} />
+                  <span>自动试炼</span>
+                  <span className={`ml-0.5 inline-block w-7 h-3.5 rounded-full relative transition-all ${
+                    autoTrialEnabled ? 'bg-[var(--jade-light)]/60' : 'bg-[var(--ink-400)]/30'
+                  }`}>
+                    <span className={`absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white transition-all ${
+                      autoTrialEnabled ? 'left-4' : 'left-0.5'
+                    }`} />
+                  </span>
+                </button>
+              </div>
             </div>
 
             <p className="text-sect-jade/50 text-xs mb-3 leading-relaxed">
@@ -897,6 +1010,10 @@ export const WorldPanel: React.FC = () => {
           trials={trials}
           initiateExploration={store.initiateExploration}
           unlockedRegions={store.unlockedExplorationRegions}
+          autoExploreRegions={store.autoExploreRegions}
+          toggleAutoExplore={store.toggleAutoExplore}
+          explorationMapFragments={store.explorationMapFragments}
+          hasCompleteMap={store.hasCompleteMap}
         />
       )}
     </div>

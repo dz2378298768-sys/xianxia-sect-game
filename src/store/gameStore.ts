@@ -20,7 +20,7 @@ import {
   SectLevelNames, SectLevelRequirementsMap, SectLevelOrder,
   SectLevelDiscipleCap, SectLevelReputationCap, ReputationGrowthConfig,
 } from '@/types/game';
-import type { Trial, ContributionLog, ContributionLogType, SectHistoryEntry, AutoTradeRule, ChoiceEvent, BuildingEvent, ExplorationEncounter, TrialType, ChainEvent, PendingChainEvent, SectSchool, CalamityEvent } from '@/types/game';
+import type { Trial, TrialReward, ContributionLog, ContributionLogType, SectHistoryEntry, AutoTradeRule, ChoiceEvent, BuildingEvent, ExplorationEncounter, TrialType, ChainEvent, PendingChainEvent, SectSchool, CalamityEvent } from '@/types/game';
 import {
   createInitialDisciple, createInitialBuildings, getDefaultPromotionRules, autoAssignBuilding,
   autoAssignResidence, getResidenceUpgradeCost, getResidenceCapacityByLevel, getCaveMansionUpgradeCost,
@@ -65,13 +65,14 @@ import type { ShopItem } from '@/types/shop';
 import { calcRecipeMaterialContribution, getMaterialContributionCost } from '@/data/specialMaterials';
 import { PILL_CONFIGS } from '@/data/pills';
 import { ARTIFACT_CONFIGS } from '@/data/artifacts';
+import { syncLeaderboardScores } from '@/services/tapLeaderboard';
 import { TALISMAN_CONFIGS } from '@/data/talismans';
 import { BEAST_CONFIGS } from '@/data/beasts';
 import { EXPLORATION_REGIONS, getEncountersByRegion, getRegionById } from '@/data/exploration';
 import type { CraftingTask, CraftingResult } from '@/types/crafting';
 import { QualityNames } from '@/types/crafting';
 import { processMonthlyCrafting, createCraftingTask as createCraftingTaskLogic } from '@/utils/gameLogic';
-import { generateChainEvents, processPendingChainEvents, generatePriceFluctuations, calculateExpansionCost, calculateDiscipleWelfareCost, checkCalamityTrigger, generateCalamity } from '@/utils/gameLogic';
+import { generateChainEvents, processPendingChainEvents, generatePriceFluctuations, calculateExpansionCost, calculateDiscipleWelfareCost, checkCalamityTrigger, generateCalamity, getSchoolTalentBonuses } from '@/utils/gameLogic';
 import { SCHOOL_TALENT_TREES } from '@/types/game';
 import { RECIPE_MAP } from '@/data/recipes';
 
@@ -83,7 +84,6 @@ interface GameState {
   reputation: number;
   karma: number;  // 正邪度：-100（极恶）~ 100（极善），0=中立
   spiritStones: number;
-  sectContribution: number;  // 宗门总贡献（用于宗门晋升等大宗门内部开销）
   disciples: Disciple[];
   buildings: Building[];
   pillInventory: PillInventory[];
@@ -112,6 +112,7 @@ interface GameState {
   sectHistory: SectHistoryEntry[]; // 宗门历史事件（建筑升级/宗门晋升/宗门战争，新记录在前）
   gameStarted: boolean;
   showMainMenu: boolean;
+  returnToMenuConfirm: boolean;  // 返回主菜单确认弹窗
   libraryBooks: BookConfig[]; // 藏经阁拥有的书籍
   libraryCosts: Record<BookTier, number>; // 每层藏经阁学习消耗贡献点
   otherSects: OtherSect[]; // 天下其他宗门
@@ -130,8 +131,11 @@ interface GameState {
   // 涌现事件系统
   choiceEvent: ChoiceEvent | null;       // 当前待处理的分支选择事件
   pendingChainEvents: PendingChainEvent[]; // 待触发的连锁事件队列
-  pendingEncounter: ExplorationEncounter | null; // 探索遭遇事件
+  pendingEncounters: ExplorationEncounter[]; // 探索遭遇事件队列（支持多个探索同时触发）
   unlockedExplorationRegions: string[];  // 已解锁的探索区域ID列表
+  explorationMapFragments: number;        // 地图碎片（妖兽森林掉落，集齐3块解锁古战场遗迹）
+  hasCompleteMap: boolean;                // 完整地图（古战场遗迹掉落，解锁天外秘境）
+  autoExploreRegions: Record<string, boolean>; // 各区域自动探索开关
   monthsConsecutiveNegative: number;     // 连续灵石赤字月数
   sectCollapsed: boolean;                // 宗门是否已灭亡
   sectCollapseReason: string;            // 灭亡原因
@@ -174,6 +178,7 @@ interface GameState {
   resetGame: () => void;
   newGame: (sectName?: string) => void;
   returnToMenu: () => void;
+  setReturnToMenuConfirm: (value: boolean) => void;
   markNotificationRead: (id: string) => void;
   assignDiscipleToBuilding: (discipleId: string, buildingId: string | null) => void;
   setBuildingManager: (buildingId: string, discipleId: string | null) => void;
@@ -201,6 +206,7 @@ interface GameState {
   toggleFollowDisciple: (discipleId: string) => void; // 关注/取消关注弟子
   appointElder: (discipleId: string) => { success: boolean; reason?: string }; // 任命核心弟子为长老
   setAutoAppointElder: (enabled: boolean) => void; // 设置自动任命长老开关
+  setDiscipleAutoDeduce: (discipleId: string, disable: boolean) => void; // 设置弟子自动推演开关
   updateSectTournamentFreqConfig: (frequency: TournamentFrequency, config: Partial<FrequencyTournamentConfig>) => void;   // 更新山门大比指定频率配置
   updateInterSectTournamentFreqConfig: (frequency: TournamentFrequency, config: Partial<FrequencyTournamentConfig>) => void; // 更新宗门大比指定频率配置
   triggerSectTournament: (frequency: TournamentFrequency) => TournamentResult | null;       // 手动触发山门大比（指定频率），返回结果或 null（CD中）
@@ -248,6 +254,7 @@ interface GameState {
   dispatchDiscipleToTrial: (trialId: string, discipleId: string) => { ok: boolean; reason?: string };  // 派遣弟子执行试炼
   cancelTrial: (trialId: string) => void;  // 取消试炼（弟子返回，无奖励）
   toggleAutoTrial: () => void;  // 切换自动试炼开关
+  toggleAutoExplore: (regionId: string) => void; // 切换指定区域自动探索开关
   // 外交系统优化
   giftSpiritStonesToSect: (sectId: string, amount: number) => { ok: boolean; reason?: string };  // 赠送灵石加好感
   insultSect: (sectId: string) => void;  // 侮辱减好感
@@ -494,8 +501,7 @@ const createInitialState = () => {
     sectLevel: 'founding' as SectLevel,
     reputation: 10,
     karma: 0,
-    spiritStones: 500,
-    sectContribution: 0,
+    spiritStones: 1000,
     disciples,
     buildings,
     // 仓库物品初始为0，需要解锁建筑后才能制作
@@ -522,6 +528,7 @@ const createInitialState = () => {
     sectHistory: [],
     gameStarted: false,
     showMainMenu: true,
+    returnToMenuConfirm: false,
     libraryBooks,
     libraryCosts: {
       qi: 100,
@@ -544,8 +551,11 @@ const createInitialState = () => {
     choiceEvent: null,
     pendingChainEvents: [],
     monthsConsecutiveNegative: 0,
-    pendingEncounter: null,
+    pendingEncounters: [],
     unlockedExplorationRegions: ['outer'],
+    explorationMapFragments: 0,
+    hasCompleteMap: false,
+    autoExploreRegions: {},
     sectCollapsed: false,
     sectCollapseReason: '',
     priceMultipliers: {},
@@ -683,6 +693,10 @@ export const useGameStore = create<GameState>()(
         set({ showMainMenu: true });
       },
 
+      setReturnToMenuConfirm: (value: boolean) => {
+        set({ returnToMenuConfirm: value });
+      },
+
       resolveChoiceEvent: (choiceIndex: number) => {
         const state = get();
         if (!state.choiceEvent) return;
@@ -730,9 +744,22 @@ export const useGameStore = create<GameState>()(
         if (!disciple) return { ok: false, reason: '弟子不存在' };
         if (disciple.onTrialId) return { ok: false, reason: '该弟子已在执行任务' };
         if (disciple.isBreakingThrough) return { ok: false, reason: '该弟子正在突破' };
-        if (disciple.status !== 'inner' && disciple.status !== 'core' && disciple.status !== 'elder') {
-          return { ok: false, reason: '该弟子不可派遣' };
-        }
+
+        // 按区域设置基础保底奖励
+        const baseRewards: TrialReward = (() => {
+          switch (region.id) {
+            case 'outer':
+              return { spiritStones: 10, reputation: 3, herbs: 5, description: '探索收获（灵石+10，声望+3，灵草+5）' };
+            case 'forest':
+              return { spiritStones: 30, reputation: 8, herbs: 10, iron: 3, description: '探索收获（灵石+30，声望+8，灵草+10，灵铁+3）' };
+            case 'ruins':
+              return { spiritStones: 80, reputation: 15, iron: 8, paper: 5, specialMaterials: [{ name: '灵玉', amount: 1 }], description: '探索收获（灵石+80，声望+15，灵铁+8，符纸+5，灵玉×1）' };
+            case 'secret':
+              return { spiritStones: 200, reputation: 30, herbs: 20, iron: 15, paper: 10, specialMaterials: [{ name: '空冥石', amount: 1 }, { name: '七宝砂', amount: 1 }], description: '探索收获（灵石+200，声望+30，灵草+20，灵铁+15，符纸+10，空冥石×1，七宝砂×1）' };
+            default:
+              return { spiritStones: 10, reputation: 3, description: '探索收获' };
+          }
+        })();
 
         // 创建探索试炼
         const newTrial: Trial = {
@@ -743,7 +770,7 @@ export const useGameStore = create<GameState>()(
           difficulty: 'normal',
           requiredPower: region.minPower,
           durationMonths: region.baseDurationMonths,
-          rewards: { description: '探索收获（含随机遭遇）' },
+          rewards: baseRewards,
           riskRate: region.riskRate,
           injuryRate: region.riskRate * 0.5,
           status: 'in_progress',
@@ -769,11 +796,11 @@ export const useGameStore = create<GameState>()(
         return { ok: true };
       },
 
-      // 处理探索遭遇选择
+      // 处理探索遭遇选择（处理队列中的第一个遭遇）
       resolveExplorationEncounter: (choiceIndex: number) => {
         const state = get();
-        if (!state.pendingEncounter) return;
-        const encounter = state.pendingEncounter;
+        if (state.pendingEncounters.length === 0) return;
+        const encounter = state.pendingEncounters[0];
         const choice = encounter.choices[choiceIndex];
         if (!choice) return;
         const currentDate = { year: state.year, month: state.month };
@@ -782,9 +809,9 @@ export const useGameStore = create<GameState>()(
         const isSuccess = roll < choice.successChance;
         const eff = isSuccess ? choice.effects.success : choice.effects.failure;
 
-        // 更新状态
+        // 更新状态（移除已处理的第一个遭遇）
         const updates: Partial<GameState> = {
-          pendingEncounter: null,
+          pendingEncounters: state.pendingEncounters.slice(1),
           notifications: [
             createNotification(
               isSuccess ? 'success' : 'warning',
@@ -937,8 +964,11 @@ export const useGameStore = create<GameState>()(
         let finalDisciples: Disciple[] = [];
         let refreshedOtherSects = state.otherSects;
         
+        // 宗门流派/天赋树加成计算
+        const schoolBonuses = getSchoolTalentBonuses(state.sectSchool, state.unlockedTalents);
+        
         // 声望自动增长（基于人数和战力）
-        const sectCombatPower = calculateSectCombatPower(disciples, buildings);
+        const sectCombatPower = calculateSectCombatPower(disciples, buildings, schoolBonuses);
         const discipleBonus = disciples.length * ReputationGrowthConfig.discipleWeight;
         const combatBonus = sectCombatPower.totalPower * ReputationGrowthConfig.combatWeight;
         const growthMultiplier = Math.min(1 + discipleBonus + combatBonus, ReputationGrowthConfig.maxMultiplier);
@@ -953,9 +983,17 @@ export const useGameStore = create<GameState>()(
           const assignedDisciples = disciples.filter(d => building.assignedDisciples.includes(d.id));
           const output = calculateBuildingOutput(building, assignedDisciples);
 
+          // 宗门流派/天赋树产出加成
+          let outputMul = 1;
+          if (schoolBonuses.spiritStoneOutputBonus && output.spiritStones > 0) outputMul = 1 + (schoolBonuses.spiritStoneOutputBonus || 0) / 100;
+          if (schoolBonuses.pillOutputBonus && output.pills > 0) outputMul = Math.max(outputMul, 1 + (schoolBonuses.pillOutputBonus || 0) / 100);
+          if (schoolBonuses.artifactOutputBonus && output.artifacts > 0) outputMul = Math.max(outputMul, 1 + (schoolBonuses.artifactOutputBonus || 0) / 100);
+          if (schoolBonuses.talismanOutputBonus && output.talismans > 0) outputMul = Math.max(outputMul, 1 + (schoolBonuses.talismanOutputBonus || 0) / 100);
+
           if (output.spiritStones > 0) {
-            totalSpiritStoneIncome += output.spiritStones;
-            spiritStoneIncome.push({ source: building.name, amount: output.spiritStones });
+            const mulAmount = Math.floor(output.spiritStones * outputMul);
+            totalSpiritStoneIncome += mulAmount;
+            spiritStoneIncome.push({ source: building.name, amount: mulAmount });
           }
           if (output.herbs > 0) {
             totalHerbIncome += output.herbs;
@@ -1590,8 +1628,8 @@ export const useGameStore = create<GameState>()(
                   deducingBook: { ...d2.deducingBook, progress: newProgress },
                 };
               }
-            } else if (!d2.learningBook && realmIdx >= 2) {
-              // ===== 自动推演：筑基以上（含筑基）、当前没在学习/推演时，每月按概率自动开启
+            } else if (!d2.learningBook && !d2.disableAutoDeduce && realmIdx >= 2) {
+              // ===== 自动推演：筑基以上（含筑基）、当前没在学习/推演、且未关闭自动推演时，每月按概率自动开启
               // 按道缘和藏经阁等级权重：基础 8% + 道缘/100 × 15% + 每级藏经阁 3%，上限 35%
               const daoFate = d2.hiddenTalents.daoFate || 50;
               const autoProb = Math.min(0.35, 0.08 + (daoFate / 100) * 0.15 + (building.level - 1) * 0.03);
@@ -2346,10 +2384,13 @@ export const useGameStore = create<GameState>()(
         let trialHerbs = accHerbs;
         let trialIron = accIron;
         let trialPaper = accPaper;
+        let pendingEncountersAcc = [...state.pendingEncounters];
+        let accMapFragments = state.explorationMapFragments;
+        let accHasCompleteMap = state.hasCompleteMap;
 
         // 每年1月刷新可用试炼（保留进行中的），加入按境界分层的保底试炼
         if (month === 1) {
-          const combatResult = calculateSectCombatPower(finalDisciples, currentBuildings);
+          const combatResult = calculateSectCombatPower(finalDisciples, currentBuildings, schoolBonuses);
           const newTrials = generateTrials(combatResult.totalPower, finalDisciples.length, year, true);
           // 保留进行中的旧试炼，替换已完成的/失败的/可用的
           const inProgress = finalTrials.filter(t => t.status === 'in_progress');
@@ -2362,7 +2403,7 @@ export const useGameStore = create<GameState>()(
         } else {
           // 每月随机追加 1~3 个新试炼（也含境界分层保底，保证高境界弟子有试炼可做）
           if (Math.random() < 0.9) {
-            const combatResult = calculateSectCombatPower(finalDisciples, currentBuildings);
+            const combatResult = calculateSectCombatPower(finalDisciples, currentBuildings, schoolBonuses);
             // 每月数量较少：2~5 个，其中开启境界保底
             const monthlyCount = randomInt(1, 3);
             const batch = generateTrials(
@@ -2465,20 +2506,72 @@ export const useGameStore = create<GameState>()(
           }
         }
 
+        // 探索区域解锁检测
+        const currentUnlocked = [...state.unlockedExplorationRegions];
+        EXPLORATION_REGIONS.forEach(region => {
+          if (currentUnlocked.includes(region.id)) return;
+          const completedTrials = state.trials.filter(t => t.status === 'completed' && t.type === region.trialType);
+          // 首个区域（宗门周边）初始已解锁，跳过
+          if (region.id === 'outer') return;
+          // 前置区域
+          const prevRegionId = (() => {
+            switch (region.id) {
+              case 'forest': return 'outer';
+              case 'ruins': return 'forest';
+              case 'secret': return 'ruins';
+              default: return null;
+            }
+          })();
+          const prevCompleted = prevRegionId
+            ? state.trials.some(t => t.type === `explore_${prevRegionId}` && t.status === 'completed')
+            : false;
+          // 声望门槛
+          let repThreshold = 0;
+          switch (region.id) {
+            case 'forest': repThreshold = 100; break;
+            case 'ruins': repThreshold = 300; break;
+            case 'secret': repThreshold = 800; break;
+          }
+          // 地图碎片/完整地图条件
+          const hasMapCondition = (() => {
+            switch (region.id) {
+              case 'ruins': return accMapFragments >= 3;
+              case 'secret': return accHasCompleteMap;
+              default: return false;
+            }
+          })();
+          if (reputation >= repThreshold || prevCompleted || hasMapCondition) {
+            currentUnlocked.push(region.id);
+          }
+        });
+        if (currentUnlocked.length > state.unlockedExplorationRegions.length) {
+          const newlyUnlocked = currentUnlocked.filter(r => !state.unlockedExplorationRegions.includes(r));
+          newlyUnlocked.forEach(id => {
+            const r = EXPLORATION_REGIONS.find(er => er.id === id);
+            if (r) {
+              trialNotifs.push(createNotification(
+                'success', '探索区域解锁',
+                `「${r.name}」现已开放探索！${r.description}`,
+                { year, month },
+              ));
+            }
+          });
+        }
+
         // 推进进行中试炼的进度
         finalTrials = finalTrials.map(trial => {
           if (trial.status !== 'in_progress' || !trial.assignedDiscipleId) return trial;
           const progressInc = 100 / trial.durationMonths;
           const newProgress = Math.min(100, trial.progress + progressInc);
 
-          // 探索试炼：每月有概率触发遭遇事件
-          if (trial.type.startsWith('explore_') && !state.pendingEncounter) {
+          // 探索试炼：每月有概率触发遭遇事件（每个探索独立判断）
+          if (trial.type.startsWith('explore_') && !pendingEncountersAcc.some(e => e.trialId === trial.id)) {
             const region = getRegionById(trial.type.replace('explore_', ''));
             if (region && Math.random() < region.encounterChance) {
               const encounters = getEncountersByRegion(region.id);
               if (encounters.length > 0) {
                 const encounter = encounters[Math.floor(Math.random() * encounters.length)];
-                state.pendingEncounter = {
+                pendingEncountersAcc.push({
                   id: encounter.id,
                   trialId: trial.id,
                   regionId: region.id,
@@ -2505,7 +2598,7 @@ export const useGameStore = create<GameState>()(
                       },
                     },
                   })),
-                };
+                });
               }
             }
           }
@@ -2536,6 +2629,30 @@ export const useGameStore = create<GameState>()(
                 for (const sm of r.specialMaterials) {
                   accSpecialMaterials[sm.name] = (accSpecialMaterials[sm.name] ?? 0) + sm.amount;
                 }
+              }
+              // 探索地图碎片掉落
+              if (trial.type === 'explore_forest' && Math.random() < 0.3) {
+                accMapFragments += 1;
+                trialNotifs.push(createNotification(
+                  'success', '发现地图碎片',
+                  `弟子 ${disciple.name} 在妖兽森林中发现了一块古老的地图碎片（${accMapFragments}/3）。`,
+                  { year, month },
+                ));
+                if (accMapFragments >= 3) {
+                  trialNotifs.push(createNotification(
+                    'success', '地图拼合完成',
+                    '三块地图碎片拼合完成！古战场遗迹的入口位置已标记在图中。',
+                    { year, month },
+                  ));
+                }
+              }
+              if (trial.type === 'explore_ruins' && !accHasCompleteMap && Math.random() < 0.2) {
+                accHasCompleteMap = true;
+                trialNotifs.push(createNotification(
+                  'success', '获得完整地图',
+                  `弟子 ${disciple.name} 在古战场遗迹深处发现了一张完整的上古秘境地图！天外秘境的方位已明了。`,
+                  { year, month },
+                ));
               }
               if (r.contributionPoints || r.satisfaction) {
                 finalDisciples = finalDisciples.map(d => {
@@ -2587,6 +2704,68 @@ export const useGameStore = create<GameState>()(
           }
           return { ...trial, progress: newProgress };
         });
+
+        // ===== 自动探索：已完成的探索区域若开了自动，重新派遣 =====
+        // 从 finalTrials 中找出本月刚完成的探索试炼
+        const completedExplorations = finalTrials.filter(t =>
+          (t.status === 'completed' || t.status === 'failed') &&
+          t.type.startsWith('explore_') && t.assignedDiscipleId &&
+          // 仅当状态变化了（原本是 in_progress 且刚结束）才触发
+          state.trials.some(old => old.id === t.id && old.status === 'in_progress')
+        );
+        for (const ct of completedExplorations) {
+          const regionId = ct.type.replace('explore_', '');
+          if (!state.autoExploreRegions[regionId]) continue;
+          // 找空闲弟子（优先原弟子，需非试炼中、非突破中）
+          let autoDisciple = finalDisciples.find(d =>
+            d.id === ct.assignedDiscipleId && !d.onTrialId && !d.isBreakingThrough
+          );
+          if (!autoDisciple) {
+            autoDisciple = finalDisciples.find(d =>
+              !d.onTrialId && !d.isBreakingThrough && d.status !== 'mortal'
+            );
+          }
+          if (!autoDisciple) continue;
+          const region = getRegionById(regionId);
+          if (!region) continue;
+          // 创建新的探索试炼
+          const baseRewardsForAuto: TrialReward = (() => {
+            switch (region.id) {
+              case 'outer': return { spiritStones: 10, reputation: 3, herbs: 5, description: '探索收获（灵石+10，声望+3，灵草+5）' };
+              case 'forest': return { spiritStones: 30, reputation: 8, herbs: 10, iron: 3, description: '探索收获（灵石+30，声望+8，灵草+10，灵铁+3）' };
+              case 'ruins': return { spiritStones: 80, reputation: 15, iron: 8, paper: 5, specialMaterials: [{ name: '灵玉', amount: 1 }], description: '探索收获（灵石+80，声望+15，灵铁+8，符纸+5，灵玉×1）' };
+              case 'secret': return { spiritStones: 200, reputation: 30, herbs: 20, iron: 15, paper: 10, specialMaterials: [{ name: '空冥石', amount: 1 }, { name: '七宝砂', amount: 1 }], description: '探索收获（灵石+200，声望+30，灵草+20，灵铁+15，符纸+10，空冥石×1，七宝砂×1）' };
+              default: return { spiritStones: 10, reputation: 3, description: '探索收获' };
+            }
+          })();
+          const newAutoTrial: Trial = {
+            id: generateId(),
+            type: region.trialType as TrialType,
+            name: `探索·${region.name}`,
+            description: `【自动探索】派遣弟子 ${autoDisciple.name} 前往「${region.name}」探索游历，预计耗时 ${region.baseDurationMonths} 个月。`,
+            difficulty: 'normal',
+            requiredPower: region.minPower,
+            durationMonths: region.baseDurationMonths,
+            rewards: baseRewardsForAuto,
+            riskRate: region.riskRate,
+            injuryRate: region.riskRate * 0.5,
+            status: 'in_progress',
+            assignedDiscipleId: autoDisciple.id,
+            startYear: year,
+            startMonth: month,
+            progress: 0,
+            generatedYear: year,
+          };
+          finalTrials = [...finalTrials, newAutoTrial];
+          finalDisciples = finalDisciples.map(d =>
+            d.id === autoDisciple!.id ? { ...d, onTrialId: newAutoTrial.id } : d,
+          );
+          trialNotifs.push(createNotification(
+            'info', '自动探索',
+            `弟子 ${autoDisciple.name} 自动出发前往「${region.name}」继续探索。`,
+            { year, month },
+          ));
+        }
 
         finalSpiritStones = trialSpiritStones;
         finalReputation = trialReputation;
@@ -2733,6 +2912,9 @@ export const useGameStore = create<GameState>()(
             { year, month },
           ));
         }
+        // 自动交易修改了 accPillInventory（买卖丹药），而 finalPillInventory 是早前副本，
+        // 刷新 finalPillInventory 以包含自动交易变更，同时保留后续炼制完成入库的修改。
+        finalPillInventory = [...accPillInventory];
 
         // 记录本月灵石收支历史（保留最近24条）
         const netIncome = totalSpiritStoneIncome - totalMaintenance;
@@ -2851,7 +3033,7 @@ export const useGameStore = create<GameState>()(
           const calamity = generateCalamity(newSectFortune, Math.random);
           if (calamity.warningMonths > 0) {
             // 触发预警
-            newCalamityWarnings = [calamity];
+            newCalamityWarnings = [{ ...calamity, warningStartYear: year, warningStartMonth: month }];
             newNotifications.push(createNotification(
               'warning', `【天灾预警】${calamity.warningTitle}`, calamity.warningDescription, { year, month },
             ));
@@ -2868,10 +3050,15 @@ export const useGameStore = create<GameState>()(
             if (calamity.effects.reputationChange) finalReputation += calamity.effects.reputationChange;
           }
         }
-        // 处理待触发的天灾预警（预警到期后触发）
+        // 处理待触发的天灾预警（按预警月数等待后触发）
         const resolvedWarnings: CalamityEvent[] = [];
         for (const warning of newCalamityWarnings) {
-          // 预警到期：预警月数后触发
+          // 计算自预警开始经过的月数
+          const startYear = warning.warningStartYear ?? year;
+          const startMonth = warning.warningStartMonth ?? month;
+          const monthsSinceWarning = (year - startYear) * 12 + (month - startMonth);
+          if (monthsSinceWarning < warning.warningMonths) continue; // 预警期未到，继续等待
+          // 预警到期触发
           newNotifications.push(createNotification(
             warning.type === 'secret_realm_open' ? 'success' : 'danger',
             `【天灾降临】${warning.title}`, warning.description, { year, month },
@@ -2894,21 +3081,12 @@ export const useGameStore = create<GameState>()(
         // 贡献值流水：将本月新记录合并到状态头部，最多保留 5000 条（避免存档无限膨胀）
         const mergedContributionLogs = [...pendingContributionLogs, ...state.contributionLogs].slice(0, 5000);
 
-        // 本月宗门总贡献池入账：按弟子身份抽成（每月每弟子固定流入，宗门晋升消耗）
-        const statusSectContribRate: Record<string, number> = {
-          servant: 1, outer: 3, inner: 8, core: 20, elder: 50,
-        };
-        const sectContribDelta = finalDisciples.reduce((sum, d) => {
-          return sum + (statusSectContribRate[d.status] || 0);
-        }, 0);
-
         set({
           year,
           month,
           sectLevel: state.sectLevel,
           reputation: finalReputation,
           spiritStones: finalSpiritStones,
-          sectContribution: (state.sectContribution || 0) + sectContribDelta,
           herbInventory: Math.max(0, accHerbs),
           ironInventory: Math.max(0, accIron),
           paperInventory: Math.max(0, accPaper),
@@ -2937,7 +3115,10 @@ export const useGameStore = create<GameState>()(
           // 涌现事件状态
           choiceEvent: pendingChoiceEvent,
           pendingChainEvents: remainingChainEvents,
-          pendingEncounter: state.pendingEncounter,
+          pendingEncounters: pendingEncountersAcc,
+          unlockedExplorationRegions: currentUnlocked,
+          explorationMapFragments: accMapFragments,
+          hasCompleteMap: accHasCompleteMap,
           monthsConsecutiveNegative: monthsNeg,
           sectCollapsed: collapseState.collapsed,
           sectCollapseReason: collapseState.collapseReason,
@@ -2951,6 +3132,10 @@ export const useGameStore = create<GameState>()(
           // 正邪度年度自然回复（每年+1，封顶+100）
           karma: Math.min(100, state.karma + karmaYearlyRecover),
         });
+        // 每月结束后同步排行榜（防抖 30 秒）
+        const finalState = get();
+        const totalPower = calculateSectCombatPower(finalState.disciples, finalState.buildings, schoolBonuses).totalPower;
+        syncLeaderboardScores(finalState.spiritStones, totalPower);
         // 围攻战报：推入 uiStore 触发弹窗（由 SiegeReportModal 渲染）
         if (pendingSiegeReport) {
           useUIStore.getState().setSiegeReport(pendingSiegeReport);
@@ -4005,11 +4190,6 @@ export const useGameStore = create<GameState>()(
           reasons.push(`晋升消耗不足（${Math.floor(state.spiritStones)}/${req.promotionCost}灵石）`);
         }
 
-        // 晋升贡献消耗检查
-        if (req.promotionContribution && state.sectContribution < req.promotionContribution) {
-          reasons.push(`宗门贡献不足（${Math.floor(state.sectContribution)}/${req.promotionContribution}）`);
-        }
-        
         return {
           canPromote: reasons.length === 0,
           nextLevel,
@@ -4025,11 +4205,8 @@ export const useGameStore = create<GameState>()(
         
         const req = SectLevelRequirementsMap[nextLevel];
         
-        // 扣除晋升消耗
+        // 扣除晋升消耗（灵石）
         const newSpiritStones = state.spiritStones - req.promotionCost;
-        const newContribution = req.promotionContribution
-          ? state.sectContribution - req.promotionContribution
-          : state.sectContribution;
         
         // 创建通知
         const currentDate = { year: state.year, month: state.month };
@@ -4056,13 +4233,12 @@ export const useGameStore = create<GameState>()(
           date: currentDate,
           type: 'sect_promote',
           title: '宗门晋升',
-          description: `宗门由「${SectLevelNames[state.sectLevel]}」晋升为「${SectLevelNames[nextLevel]}」，消耗 ${req.promotionCost} 灵石${req.promotionContribution ? `、${req.promotionContribution} 贡献` : ''}。`,
+          description: `宗门由「${SectLevelNames[state.sectLevel]}」晋升为「${SectLevelNames[nextLevel]}」，消耗 ${req.promotionCost} 灵石。`,
         };
 
         set({
           sectLevel: nextLevel,
           spiritStones: newSpiritStones,
-          sectContribution: Math.max(0, newContribution),
           notifications: [
             ...(schoolNotification ? [schoolNotification] : []),
             promotionNotification,
@@ -4143,6 +4319,15 @@ export const useGameStore = create<GameState>()(
 
       setAutoAppointElder: (enabled: boolean) => {
         set({ autoAppointElder: enabled });
+      },
+
+      setDiscipleAutoDeduce: (discipleId: string, disable: boolean) => {
+        const state = get();
+        set({
+          disciples: state.disciples.map(d =>
+            d.id === discipleId ? { ...d, disableAutoDeduce: disable } : d
+          ),
+        });
       },
 
       updateSectTournamentFreqConfig: (frequency, partial) => {
@@ -4426,6 +4611,12 @@ export const useGameStore = create<GameState>()(
         set({ autoTrialEnabled: !state.autoTrialEnabled });
       },
 
+      toggleAutoExplore: (regionId: string) => {
+        const state = get();
+        const current = state.autoExploreRegions[regionId] ?? false;
+        set({ autoExploreRegions: { ...state.autoExploreRegions, [regionId]: !current } });
+      },
+
       // ===== 外交系统优化 =====
       // 注：所有主动互动（赠送/侮辱/同盟/宿敌/讨伐）每宗门每年只能执行一次，
       // 由 checkSectInteraction 统一校验，并在成功后写入 lastInteractionYear。
@@ -4695,12 +4886,19 @@ export const useGameStore = create<GameState>()(
       saveToSlot: (slotIndex: number) => {
         const state = get();
         saveToSlotUtil(slotIndex, state as any);
+        // 保存后同步排行榜
+        const totalPower = calculateSectCombatPower(state.disciples, state.buildings).totalPower;
+        syncLeaderboardScores(state.spiritStones, totalPower);
       },
       loadFromSlot: (slotIndex: number) => {
         const snapshot = loadFromSlotUtil(slotIndex);
         if (!snapshot) return false;
         // 读取快照后替换全部 state，保留 action 函数（set 会合并）
         set({ ...snapshot, showMainMenu: false, gameStarted: true });
+        // 加载后同步排行榜
+        const newState = get();
+        const totalPower = calculateSectCombatPower(newState.disciples, newState.buildings).totalPower;
+        syncLeaderboardScores(newState.spiritStones, totalPower);
         return true;
       },
       buyShopItem: (itemId: string): { success: boolean; reason?: string } => {
@@ -4826,11 +5024,9 @@ export const useGameStore = create<GameState>()(
         for (const prereq of talent.prerequisites) {
           if (!state.unlockedTalents.includes(prereq)) return { ok: false, reason: '前置天赋未解锁' };
         }
-        // 检查消耗
-        if ((state.sectContribution || 0) < talent.contributionCost) return { ok: false, reason: '宗门贡献不足' };
+        // 检查消耗（仅灵石）
         if (state.spiritStones < talent.spiritStoneCost) return { ok: false, reason: '灵石不足' };
         set({
-          sectContribution: (state.sectContribution || 0) - talent.contributionCost,
           spiritStones: state.spiritStones - talent.spiritStoneCost,
           unlockedTalents: [...state.unlockedTalents, talentId],
         });
@@ -5660,7 +5856,7 @@ export const useGameStore = create<GameState>()(
     }),
     {
       name: 'sect-game-save',
-      version: 9,
+      version: 11,
       migrate: (persistedState: any, version) => {
         if (!persistedState) return persistedState;
         const state = persistedState as GameState;
@@ -5816,6 +6012,8 @@ export const useGameStore = create<GameState>()(
             learnedTechnique: d.learnedTechnique ?? null,
             learnedBattles: d.learnedBattles ?? [],
             learnedSecrets: d.learnedSecrets ?? [],
+            // 自动推演默认关闭，避免旧存档爆库
+            disableAutoDeduce: d.disableAutoDeduce ?? true,
           }));
         }
         if (state.otherSects) {
@@ -5842,6 +6040,25 @@ export const useGameStore = create<GameState>()(
             }
             return { ...b, productionTargets: [], productionTarget: undefined };
           });
+        }
+        // v10: pendingEncounter → pendingEncounters（单值改为数组，支持多个探索同时触发遭遇）
+        if ('pendingEncounter' in state && !('pendingEncounters' in state)) {
+          const oldEncounter = (state as any).pendingEncounter;
+          (state as any).pendingEncounters = oldEncounter ? [oldEncounter] : [];
+          delete (state as any).pendingEncounter;
+        }
+        if (!('pendingEncounters' in state)) {
+          (state as any).pendingEncounters = [];
+        }
+        // v11: 新增探索系统字段（地图碎片、完整地图、自动探索开关）
+        if (typeof (state as any).explorationMapFragments !== 'number') {
+          (state as any).explorationMapFragments = 0;
+        }
+        if (typeof (state as any).hasCompleteMap !== 'boolean') {
+          (state as any).hasCompleteMap = false;
+        }
+        if (!(state as any).autoExploreRegions || typeof (state as any).autoExploreRegions !== 'object') {
+          (state as any).autoExploreRegions = {};
         }
         return state;
       },

@@ -42,8 +42,8 @@ if (html.includes('__XIANXIA_H5_BOOT_PATCH__')) {
 const polyfillMatch = html.match(/id="vite-legacy-polyfill"\s+src="([^"]+)"/);
 const entryMatch    = html.match(/id="vite-legacy-entry"\s+data-src="([^"]+)"/);
 if (!polyfillMatch || !entryMatch) {
-  console.error('[patch-h5-index] 未能在 index.html 里解析到 vite legacy polyfill / entry。请确认已使用 @vitejs/plugin-legacy 构建。');
-  process.exit(2);
+  console.warn('[patch-h5-index] 未检测到 vite legacy polyfill / entry，跳过补丁（非致命）。');
+  process.exit(0);
 }
 const POLYFILL_SRC = polyfillMatch[1];
 const ENTRY_DATA_SRC = entryMatch[1];

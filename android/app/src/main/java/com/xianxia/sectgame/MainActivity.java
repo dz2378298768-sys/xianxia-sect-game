@@ -39,6 +39,8 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(TapUpdate.class);
         // 注册 TapTap 登录插件
         registerPlugin(TapLoginPlugin.class);
+        // 注册 TapTap 排行榜插件
+        registerPlugin(TapLeaderboardPlugin.class);
         super.onCreate(savedInstanceState);
 
         // 2. Window 层面：关闭 decorFitsSystemWindows，让内容延伸到系统栏后面

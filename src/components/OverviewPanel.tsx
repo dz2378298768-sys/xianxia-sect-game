@@ -46,10 +46,22 @@ export const OverviewPanel: React.FC = () => {
   const coreCount = disciples.filter(d => d.status === 'core').length;
   const elderCount = disciples.filter(d => d.status === 'elder').length;
 
+  const DISCIPLE_MAINTENANCE_COST: Record<string, number> = {
+    servant: 2,
+    outer: 2,
+    inner: 4,
+    core: 6,
+    elder: 10,
+  };
+  const discipleMaintenance = disciples.reduce(
+    (sum, d) => sum + (DISCIPLE_MAINTENANCE_COST[d.status] || 0),
+    0,
+  );
+
   const totalMaintenance = buildings.reduce((sum, b) => {
     if (b.status !== 'active') return sum;
     return sum + calculateBuildingMaintenance(b);
-  }, 0);
+  }, 0) + discipleMaintenance;
 
   const totalOutput = buildings.reduce((sum, b) => {
     if (b.status !== 'active') return sum;
@@ -144,14 +156,6 @@ export const OverviewPanel: React.FC = () => {
                   color="bg-rose-500/70"
                 />
               )}
-              {nextLevelReq.promotionContribution !== undefined && nextLevelReq.promotionContribution > 0 && (
-                <RequirementBar
-                  label="贡献"
-                  current={useGameStore.getState().sectContribution || 0}
-                  required={nextLevelReq.promotionContribution}
-                  color="bg-yellow-500/70"
-                />
-              )}
               {nextLevelReq.level2Buildings && (
                 <RequirementBar
                   label="Lv2建筑"
@@ -223,9 +227,6 @@ export const OverviewPanel: React.FC = () => {
               <div className="text-xs text-[var(--ink-400)]">
                 <span className="text-[var(--ink-300)]">晋升消耗：</span>
                 <span className="text-amber-400">{nextLevelReq.promotionCost} 灵石</span>
-                {nextLevelReq.promotionContribution ? (
-                  <span className="ml-1 text-yellow-400">+ {nextLevelReq.promotionContribution} 贡献</span>
-                ) : null}
               </div>
               <button
                 className={`btn-ink text-sm px-4 py-1.5 ${canPromote ? '' : 'opacity-50 cursor-not-allowed'}`}
@@ -286,8 +287,8 @@ export const OverviewPanel: React.FC = () => {
                       {isUnlocked && <span className="text-green-400">✓</span>}
                     </div>
                     <div className="text-sect-jade/50 mt-0.5">{talent.description}</div>
-                    {canUnlock && (
-                      <div className="text-amber-400/70 mt-1">贡献{talent.contributionCost} + 灵石{talent.spiritStoneCost}</div>
+                    {canUnlock && talent.spiritStoneCost > 0 && (
+                      <div className="text-amber-400/70 mt-1">消耗 灵石{talent.spiritStoneCost}</div>
                     )}
                   </div>
                 );
@@ -335,7 +336,7 @@ export const OverviewPanel: React.FC = () => {
                 }} />
               </div>
               <span className={`text-xs font-mono ${sectFortune > 0 ? 'text-green-400' : sectFortune < 0 ? 'text-red-400' : 'text-sect-jade/60'}`}>
-                {sectFortune > 0 ? '+' : ''}{sectFortune}
+                {sectFortune > 0 ? '+' : ''}{Math.round(sectFortune)}
               </span>
             </div>
             {activeCalamity && (
@@ -360,7 +361,7 @@ export const OverviewPanel: React.FC = () => {
                 <div className="space-y-1">
                   {Object.entries(priceMultipliers).slice(0, 6).map(([id, mult]) => (
                     <div key={id} className="flex justify-between">
-                      <span className="text-sect-jade/60">{id}</span>
+                      <span className="text-sect-jade/60">{id.replace(/^material:/, '').replace(/^product:/, '')}</span>
                       <span className={mult > 1 ? 'text-red-400' : mult < 1 ? 'text-green-400' : 'text-sect-jade/60'}>
                         {mult > 1 ? `+${Math.round((mult - 1) * 100)}%` : mult < 1 ? `${Math.round((mult - 1) * 100)}%` : '基准价'}
                       </span>

@@ -1,4 +1,6 @@
 import type { Disciple, HiddenTalents, Realm, DiscipleStatus, PromotionRules, RealmStage, DeducingBook, DiscipleBackpackItem, Personality, BackgroundStory, DisciplePreference } from '@/types/disciple';
+import type { SectSchool } from '@/types/game';
+import { SCHOOL_TALENT_TREES } from '@/types/game';
 import type { CombatPowerBreakdown, SectCombatSummary } from '@/types/combat';
 import { RealmOrder, RealmStageOrder, DiscipleStatusNames, BreakthroughData, RealmNames, PersonalityNames, PersonalityDescriptions, PERSONALITY_CULTIVATION_MULT, PERSONALITY_SATISFACTION_MOD, PERSONALITY_DEFECTION_MULT, PERSONALITY_FRIEND_MULT, BackgroundStoryNames, BackgroundStoryDescriptions, BACKGROUND_EFFECTS } from '@/types/disciple';
 import type { Building, BuildingType } from '@/types/building';
@@ -595,6 +597,8 @@ export function createInitialDisciple(status: DiscipleStatus = 'servant', realm:
     rival: null,
     apprenticeIds: [],
     tournamentHistory: [],
+    // 自动推演默认关闭，避免藏经阁爆库
+    disableAutoDeduce: true,
   };
 
   // 生成弟子个性化数据
@@ -1397,8 +1401,53 @@ export function computeSectCombatSummary(
   };
 }
 
+// ===== 宗门流派/天赋树加成计算 =====
+
+/** 流派基础加成 */
+const SCHOOL_BASE_BONUSES: Record<SectSchool, Record<string, number>> = {
+  sword: { combatPowerBonus: 10 },
+  pill: { pillOutputBonus: 20 },
+  array: { defenseBonus: 15 },
+  artifact: { artifactOutputBonus: 20 },
+  balance: { combatPowerBonus: 5, cultivationSpeedBonus: 5, spiritStoneOutputBonus: 5, pillOutputBonus: 5, artifactOutputBonus: 5, talismanOutputBonus: 5, defenseBonus: 5 },
+};
+
+/** 获取流派+天赋树的总加成百分比 */
+export function getSchoolTalentBonuses(
+  sectSchool: SectSchool | null,
+  unlockedTalents: string[],
+): Record<string, number> {
+  const bonuses: Record<string, number> = {};
+  if (!sectSchool) return bonuses;
+  // 流派基础加成
+  const base = SCHOOL_BASE_BONUSES[sectSchool];
+  if (base) {
+    for (const [key, val] of Object.entries(base)) {
+      bonuses[key] = (bonuses[key] ?? 0) + val;
+    }
+  }
+  // 天赋树加成
+  const tree = SCHOOL_TALENT_TREES[sectSchool];
+  if (tree) {
+    for (const talent of tree) {
+      if (unlockedTalents.includes(talent.id)) {
+        for (const [key, val] of Object.entries(talent.effects)) {
+          if (typeof val === 'number') {
+            bonuses[key] = (bonuses[key] ?? 0) + val;
+          }
+        }
+      }
+    }
+  }
+  return bonuses;
+}
+
 // 计算宗门总战力
-export function calculateSectCombatPower(disciples: Disciple[], buildings: Building[]): {
+export function calculateSectCombatPower(
+  disciples: Disciple[],
+  buildings: Building[],
+  schoolBonuses?: Record<string, number>,
+): {
   totalPower: number;
   mountainGateBonus: boolean;
   basePower: number;
@@ -1433,6 +1482,16 @@ export function calculateSectCombatPower(disciples: Disciple[], buildings: Build
       name: '通天塔',
       multiplier: levelBonus,
       description: `通天塔Lv.${skyscraperTower.level}，战力+${(levelBonus * 100).toFixed(0)}%`,
+    });
+  }
+  
+  // 宗门流派/天赋树战力加成
+  if (schoolBonuses?.combatPowerBonus) {
+    const schoolCombatBonus = schoolBonuses.combatPowerBonus / 100;
+    bonuses.push({
+      name: '宗门流派',
+      multiplier: schoolCombatBonus,
+      description: `宗门流派/天赋树，战力+${schoolBonuses.combatPowerBonus.toFixed(0)}%`,
     });
   }
   

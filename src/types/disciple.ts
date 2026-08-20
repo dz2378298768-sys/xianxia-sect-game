@@ -381,6 +381,8 @@ export interface Disciple {
   personality?: Personality;        // 性格特质
   background?: BackgroundStory;     // 背景故事
   preferences?: DisciplePreference; // 喜好偏好
+  // 藏经阁自动推演开关
+  disableAutoDeduce?: boolean;      // true=不自动推演（默认false即允许自动推演，但新增弟子默认关）
 }
 
 export interface PromotionRules {

@@ -44,7 +44,7 @@ export const SectInfoDrawer: React.FC = () => {
   const { sectInfoOpen, setSectInfoOpen } = useUIStore();
 
   const {
-    year, month, sectLevel, reputation, spiritStones,
+    year, month, sectLevel, reputation, spiritStones, karma,
     disciples, buildings,
     canPromoteSect, promoteSect,
   } = useGameStore();
@@ -141,9 +141,6 @@ export const SectInfoDrawer: React.FC = () => {
                   {nextLevelReq.elderCount !== undefined && (
                     <RequirementRow label="长老" current={elderCount} required={nextLevelReq.elderCount} color="bg-rose-500/70" />
                   )}
-                  {nextLevelReq.promotionContribution !== undefined && nextLevelReq.promotionContribution > 0 && (
-                    <RequirementRow label="贡献" current={Math.floor(useGameStore.getState().sectContribution || 0)} required={nextLevelReq.promotionContribution} color="bg-yellow-500/70" />
-                  )}
                   {nextLevelReq.level2Buildings && (() => {
                     const lv2Count = buildings.filter(b => b.level >= 2 && b.status === 'active').length;
                     return <RequirementRow label="Lv2建筑" current={lv2Count} required={nextLevelReq.level2Buildings} color="bg-blue-500/70" />;
@@ -174,7 +171,6 @@ export const SectInfoDrawer: React.FC = () => {
                   <div className="flex items-center justify-between mt-1 pt-1.5 border-t border-[rgba(212,168,87,0.2)]">
                     <div className="text-[9px] text-[var(--ink-400)]">
                       <span className="text-amber-400">{nextLevelReq.promotionCost}</span> 灵石
-                      {nextLevelReq.promotionContribution ? <span className="ml-0.5 text-yellow-400">+ {nextLevelReq.promotionContribution} 贡献</span> : null}
                     </div>
                     <button
                       className={`btn-ink text-[10px] px-2 py-0.5 ${canPromote ? '' : 'opacity-50 cursor-not-allowed'}`}
@@ -208,7 +204,7 @@ export const SectInfoDrawer: React.FC = () => {
                 月净收益 {netIncome >= 0 ? '+' : ''}{netIncome}
               </div>
               <div className="text-center text-[9px] text-[var(--gold-200)] mt-1">
-                灵石 {Math.floor(spiritStones).toLocaleString()} · 声望 {Math.floor(reputation)}
+                灵石 {Math.floor(spiritStones).toLocaleString()} · 声望 {Math.floor(reputation)} · 正邪 {karma > 0 ? '+' : ''}{karma}
               </div>
             </div>
 

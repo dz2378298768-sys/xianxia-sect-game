@@ -8,6 +8,7 @@ import { SimpleAvatar, DiscipleAvatar } from '@/components/ui/Avatar';
 import { BuildingTypeNames } from '@/types/building';
 import { DiscipleStatusNames, RealmOrder, getRealmDisplay } from '@/types/disciple';
 import type { DiscipleStatus } from '@/types/disciple';
+import { calculateDiscipleCombatPower } from '@/utils/gameLogic';
 import { 
   Users, Building2, Sparkles, TrendingUp, 
   Star, UserPlus, Shuffle, Crown, X, Check, Shield
@@ -349,6 +350,7 @@ export const AllocationPanel: React.FC = () => {
               <div className="space-y-2 max-h-96 overflow-y-auto pr-2">
                 {disciples
                   .filter(d => d.status !== 'elder')
+                  .sort((a, b) => calculateDiscipleCombatPower(b) - calculateDiscipleCombatPower(a))
                   .map(disciple => {
                     const isAssignedHere = disciple.assignedBuilding === selectedBuildingForAssignData.id;
                     const canEnter = canDiscipleEnterBuilding(
@@ -387,6 +389,9 @@ export const AllocationPanel: React.FC = () => {
                               </Badge>
                               <span className={getRealmColor(disciple.realm)}>
                                 {getRealmDisplay(disciple)}
+                              </span>
+                              <span className="text-sect-gold/50">
+                                战力 {Math.floor(calculateDiscipleCombatPower(disciple)).toLocaleString()}
                               </span>
                               {disciple.managingBuilding && (
                                 <Crown size={12} className="text-sect-gold" />

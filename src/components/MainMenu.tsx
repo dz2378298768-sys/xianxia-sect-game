@@ -2,11 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/Button';
 import {
   Play, PlusCircle, LogOut, Mountain,
-  Users, Gem, Trash2, Clock, LogIn,
+  Users, Gem, Trash2, Clock, LogIn, Trophy,
 } from 'lucide-react';
 import { getSlots, deleteSlot, SAVE_SLOT_COUNT, type SaveSlotMeta } from '@/utils/saveSlots';
 import { SectLevelNames } from '@/types/game';
 import { login, getCurrentAccount, logout, type TapAccount } from '@/services/tapLogin';
+import { openLeaderboard, LEADERBOARD_IDS } from '@/services/tapLeaderboard';
 
 interface MainMenuProps {
   onStartNew: (sectName: string) => void;
@@ -53,6 +54,8 @@ const SectEmblem: React.FC<{ size?: number }> = ({ size = 80 }) => (
 );
 
 export const MainMenu: React.FC<MainMenuProps> = ({ onStartNew, onContinue }) => {
+  // TapTap 排行榜 ID（在 TapTap 开发者中心 → 游戏服务 → 排行榜 创建后获得）
+  const LEADERBOARDS = LEADERBOARD_IDS;
   const [slots, setSlots] = useState<(SaveSlotMeta | null)[]>(new Array(SAVE_SLOT_COUNT).fill(null));
   // 选中的空槽位（用于开辟新宗时填名）
   const [newSlotIndex, setNewSlotIndex] = useState<number | null>(null);
@@ -173,6 +176,36 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartNew, onContinue }) =>
               </button>
             )}
           </div>
+
+          {/* 排行榜入口（仅 TapTap 已登录时显示） */}
+          {tapAccount && (
+            <div className="w-full max-w-2xl mb-3 flex items-center justify-center gap-2">
+              <button
+                onClick={async () => {
+                  const r = await openLeaderboard(LEADERBOARDS.SPIRIT_STONES);
+                  if (!r.success) {
+                    alert('打开排行榜失败: ' + (r.error || '未知错误'));
+                  }
+                }}
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-[11px] border border-[var(--gold-400)]/20 text-[var(--gold-300)]/60 hover:text-[var(--gold-200)] hover:border-[var(--gold-400)]/40 transition-colors"
+              >
+                <Trophy size={13} />
+                灵石榜
+              </button>
+              <button
+                onClick={async () => {
+                  const r = await openLeaderboard(LEADERBOARDS.COMBAT_POWER);
+                  if (!r.success) {
+                    alert('打开排行榜失败: ' + (r.error || '未知错误'));
+                  }
+                }}
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-[11px] border border-[var(--gold-400)]/20 text-[var(--gold-300)]/60 hover:text-[var(--gold-200)] hover:border-[var(--gold-400)]/40 transition-colors"
+              >
+                <Trophy size={13} />
+                战力榜
+              </button>
+            </div>
+          )}
 
           {/* 六个存档槽位：3列 × 2行 */}
           <div className="grid grid-cols-3 gap-2 w-full max-w-2xl mb-3">

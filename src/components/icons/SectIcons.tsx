@@ -812,5 +812,9 @@ const ICON_MAP: Record<IconName, React.FC<IconProps>> = {
 
 export const SectIcon: React.FC<IconProps & { name: IconName }> = ({ name, size, className, strokeWidth }) => {
   const Cmp = ICON_MAP[name];
+  if (!Cmp) {
+    // 兜底：图标名不存在时渲染一个占位，避免崩溃黑屏
+    return <svg {...baseProps(size, className, strokeWidth)}><circle cx="12" cy="12" r="4" fill="currentColor" opacity="0.3" /></svg>;
+  }
   return <Cmp size={size} className={className} strokeWidth={strokeWidth} />;
 };

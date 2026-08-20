@@ -194,6 +194,7 @@ export const DisciplesPanel: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<DiscipleStatus | 'all'>('all');
   const [realmFilter, setRealmFilter] = useState<Realm | 'all'>('all');
   const [sortBy, setSortBy] = useState<'default' | 'combat' | 'joinDate'>('default');
+  const [followOnly, setFollowOnly] = useState(false);
   const [detailTab, setDetailTab] = useState<'basic' | 'combat' | 'experience' | 'inventory'>('basic');
   const [showRecruitModal, setShowRecruitModal] = useState(false);
   const [recruitResultMsg, setRecruitResultMsg] = useState<string | null>(null);
@@ -229,6 +230,7 @@ export const DisciplesPanel: React.FC = () => {
     let list = disciples;
     if (statusFilter !== 'all') list = list.filter(d => d.status === statusFilter);
     if (realmFilter !== 'all') list = list.filter(d => d.realm === realmFilter);
+    if (followOnly) list = list.filter(d => followedDiscipleIds.includes(d.id));
     if (sortBy === 'combat') {
       list = [...list].sort((a, b) => calculateDiscipleCombatPower(b) - calculateDiscipleCombatPower(a));
     } else if (sortBy === 'joinDate') {
@@ -239,7 +241,7 @@ export const DisciplesPanel: React.FC = () => {
       });
     }
     return list;
-  }, [disciples, statusFilter, realmFilter, sortBy]);
+  }, [disciples, statusFilter, realmFilter, followOnly, followedDiscipleIds, sortBy]);
 
   const selectedDisciple = disciples.find(d => d.id === selectedDiscipleId);
 
@@ -395,6 +397,17 @@ export const DisciplesPanel: React.FC = () => {
           >
             <Calendar size={12} className="opacity-50" />
             <span className="disciple-level-nav-label">入宗</span>
+          </button>
+
+          {/* 关注筛选 */}
+          <div className="text-[10px] text-sect-gold/50 px-1 pt-2 pb-0.5">关注</div>
+          <button
+            className={`disciple-level-nav-item ${followOnly ? 'disciple-level-nav-item-active' : ''}`}
+            onClick={() => setFollowOnly(!followOnly)}
+            title={followOnly ? '显示所有弟子' : '仅显示关注的弟子'}
+          >
+            <Heart size={12} className="opacity-50" fill={followOnly ? 'currentColor' : 'none'} color={followOnly ? 'var(--gold-300)' : undefined} />
+            <span className="disciple-level-nav-label">{followOnly ? '已关注' : '关注'}</span>
           </button>
         </div>
 

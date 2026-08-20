@@ -81,13 +81,16 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({ buildingId }) => {
   const {
     disciples, buildings, learnBook, forgetBook, getDiscipleById,
     libraryBooks, libraryCosts, buyRandomBook, setLibraryCost, spiritStones,
-    startDeducingBook, cancelDeducingBook,
+    startDeducingBook, cancelDeducingBook, setDiscipleAutoDeduce,
   } = useGameStore();
 
   const [selectedTier, setSelectedTier] = useState<BookTier>('qi');
   const [selectedDiscipleId, setSelectedDiscipleId] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [lastBoughtBook, setLastBoughtBook] = useState<BookConfig | null>(null);
+  const [toast, setToast] = useState<string>('');
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 20;
 
   const building = buildings.find(b => b.id === buildingId);
   const assignedDisciples = building
@@ -148,11 +151,27 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({ buildingId }) => {
 
   const handleLearn = (bookId: string) => {
     if (!selectedDiscipleId) return;
-    learnBook(selectedDiscipleId, bookId);
+    const ok = learnBook(selectedDiscipleId, bookId);
+    const book = libraryBooks.find(b => b.id === bookId);
+    const name = book?.name || '未知秘籍';
+    if (ok) {
+      setToast(`✓ ${name} 修炼开始`);
+    } else {
+      const disciple = getDiscipleById(selectedDiscipleId);
+      const reason = disciple?.learningBook ? '（该弟子正在学习其他秘籍）' : '（条件不足，请检查贡献/境界/灵根）';
+      setToast(`✗ ${name} 修炼失败${reason}`);
+    }
+    setTimeout(() => setToast(''), 2500);
   };
   const handleForget = (bookType: BookType, bookId: string) => {
     if (!selectedDiscipleId) return;
-    forgetBook(selectedDiscipleId, bookType, bookId);
+    const ok = forgetBook(selectedDiscipleId, bookType, bookId);
+    if (ok) {
+      setToast('✓ 已遗忘');
+    } else {
+      setToast('✗ 遗忘失败');
+    }
+    setTimeout(() => setToast(''), 2000);
   };
   const handleBuyBook = (tier: BookTier) => {
     const book = buyRandomBook(tier);
@@ -294,7 +313,10 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({ buildingId }) => {
             ) : assignedDisciples.map(disciple => (
               <button
                 key={disciple.id}
-                onClick={() => setSelectedDiscipleId(selectedDiscipleId === disciple.id ? null : disciple.id)}
+                onClick={() => {
+                  setSelectedDiscipleId(selectedDiscipleId === disciple.id ? null : disciple.id);
+                  setPage(0);
+                }}
                 className={cn(
                   'px-2.5 py-1 rounded-md border text-xs transition-all flex items-center gap-1.5',
                   selectedDiscipleId === disciple.id
@@ -304,6 +326,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({ buildingId }) => {
               >
                 <MiniAvatar seed={disciple.avatarSeed} size={20} status={disciple.status} realm={disciple.realm} name={disciple.name} />
                 {disciple.name}
+                <span className="text-[10px] text-amber-400/60">{Math.floor(disciple.contributionPoints)}贡</span>
                 {disciple.learningBook && <span className="w-1.5 h-1.5 rounded-full bg-spirit-400 animate-pulse" title="学习中" />}
                 {disciple.deducingBook && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" title="推演中" />}
               </button>
@@ -344,7 +367,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({ buildingId }) => {
           return (
             <button
               key={tier}
-              onClick={() => unlocked && setSelectedTier(tier)}
+              onClick={() => { unlocked && setSelectedTier(tier); setPage(0); }}
               disabled={!unlocked}
               className={cn(
                 'relative rounded-lg border p-3 text-center transition-all overflow-hidden',
@@ -453,6 +476,30 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({ buildingId }) => {
             ))}
           </div>
 
+          {/* ===== 自动推演开关 ===== */}
+          <div className="flex items-center justify-between mt-2 pt-2 border-t border-sect-gold/10">
+            <span className="text-[10px] text-sect-jade/60 flex items-center gap-1">
+              <Wand2 size={10} />
+              自动推演
+            </span>
+            <button
+              onClick={() => {
+                setDiscipleAutoDeduce(selectedDisciple.id, !selectedDisciple.disableAutoDeduce);
+                setToast(selectedDisciple.disableAutoDeduce ? '✓ 已开启自动推演' : '✓ 已关闭自动推演');
+                setTimeout(() => setToast(''), 2000);
+              }}
+              className={cn(
+                'relative w-10 h-5 rounded-full transition-all duration-200',
+                selectedDisciple.disableAutoDeduce ? 'bg-gray-600' : 'bg-amber-500/60'
+              )}
+            >
+              <div className={cn(
+                'absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all duration-200 shadow',
+                selectedDisciple.disableAutoDeduce ? 'left-0.5' : 'left-[22px]'
+              )} />
+            </button>
+          </div>
+
           {/* ===== 推演区块 ===== */}
           <DeduceSection disciple={selectedDisciple} buildingLevel={building?.level || 1} unlockedTier={unlockedTier} />
         </div>
@@ -480,7 +527,15 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({ buildingId }) => {
             </div>
           ) : (
             <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
-              {techniqueBooks.map(renderBookCard)}
+              {techniqueBooks.slice(0, (page + 1) * PAGE_SIZE).map(renderBookCard)}
+              {techniqueBooks.length > (page + 1) * PAGE_SIZE && (
+                <button
+                  onClick={() => setPage(p => p + 1)}
+                  className="w-full py-2 text-[10px] text-sect-jade/50 hover:text-sect-gold/80 border border-dashed border-sect-gold/20 rounded transition-colors"
+                >
+                  加载更多（{techniqueBooks.length - (page + 1) * PAGE_SIZE}本）
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -502,11 +557,26 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({ buildingId }) => {
             </div>
           ) : (
             <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
-              {battleBooks.map(renderBookCard)}
+              {battleBooks.slice(0, (page + 1) * PAGE_SIZE).map(renderBookCard)}
+              {battleBooks.length > (page + 1) * PAGE_SIZE && (
+                <button
+                  onClick={() => setPage(p => p + 1)}
+                  className="w-full py-2 text-[10px] text-sect-jade/50 hover:text-sect-gold/80 border border-dashed border-sect-gold/20 rounded transition-colors"
+                >
+                  加载更多（{battleBooks.length - (page + 1) * PAGE_SIZE}本）
+                </button>
+              )}
             </div>
           )}
         </div>
       </div>
+
+      {/* ===== Toast 提示 ===== */}
+      {toast && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-lg bg-sect-ink/90 border border-sect-gold/30 text-xs text-sect-gold/90 shadow-lg backdrop-blur-sm animate-pulse">
+          {toast}
+        </div>
+      )}
     </div>
   );
 };

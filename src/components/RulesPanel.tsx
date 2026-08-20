@@ -9,6 +9,57 @@ import { ScrollText, Settings, Check, Users, UserPlus } from 'lucide-react';
 import { RealmNames, RealmOrder, getRealmDisplay } from '@/types/disciple';
 import type { Realm } from '@/types/disciple';
 
+/** 统一的滑条组件 */
+const SliderField: React.FC<{
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step?: number;
+  onChange: (v: number) => void;
+  unit?: string;
+  className?: string;
+  colorClass?: string;
+  markerLabels?: string[];
+}> = ({ label, value, min, max, step = 1, onChange, unit, className = '', colorClass = '', markerLabels }) => {
+  const pct = ((value - min) / (max - min)) * 100;
+  return (
+    <div className={`slider-field ${className}`}>
+      <div className="slider-field-header">
+        <span className="slider-field-label">{label}</span>
+        <span className={`slider-field-value ${colorClass}`}>
+          {markerLabels ? markerLabels[value] ?? value : value}
+          {unit && !markerLabels && <span className="slider-field-unit">{unit}</span>}
+        </span>
+      </div>
+      <div className="slider-field-track-wrap">
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          onChange={e => onChange(parseInt(e.target.value))}
+          className={`slider-field-input ${colorClass}`}
+          style={{ '--slider-pct': `${pct}%` } as React.CSSProperties}
+        />
+        <div className="slider-field-track">
+          <div className={`slider-field-fill ${colorClass}`} style={{ width: `${pct}%` }} />
+        </div>
+      </div>
+      {markerLabels && (
+        <div className="slider-field-markers">
+          {markerLabels.map((l, i) => (
+            <span key={i} className={`slider-field-marker ${i === value ? 'is-active' : ''} ${colorClass}`}>
+              {l}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 type RuleType = 'servantToOuter' | 'outerToInner' | 'innerToCore' | 'coreToElder' | 'recruitment';
 
 const RuleLabels: Record<RuleType, { from: string; to: string }> = {
@@ -338,79 +389,42 @@ export const RulesPanel: React.FC = () => {
                 设置招收弟子的资质要求。四项属性全部达到要求可收为外门弟子，否则为杂役弟子。
                 若任一属性超过「破例阈值」，即使其他属性未达标也可收为外门弟子。
               </div>
-              
-              <div>
-                <div className="flex justify-between text-sm mb-2">
-                  <span className="text-sect-jade/80">根骨要求</span>
-                  <span className="text-sect-gold">{editForm.minRootBone}</span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={editForm.minRootBone}
-                  onChange={e => setEditForm({ ...editForm, minRootBone: parseInt(e.target.value) })}
-                  className="w-full h-2 bg-sect-ink-light rounded-lg appearance-none cursor-pointer accent-sect-gold"
-                />
-              </div>
-              
-              <div>
-                <div className="flex justify-between text-sm mb-2">
-                  <span className="text-sect-jade/80">灵根要求</span>
-                  <span className="text-sect-gold">{editForm.minSpiritRhythm}</span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={editForm.minSpiritRhythm}
-                  onChange={e => setEditForm({ ...editForm, minSpiritRhythm: parseInt(e.target.value) })}
-                  className="w-full h-2 bg-sect-ink-light rounded-lg appearance-none cursor-pointer accent-sect-gold"
-                />
-              </div>
-              
-              <div>
-                <div className="flex justify-between text-sm mb-2">
-                  <span className="text-sect-jade/80">体质要求</span>
-                  <span className="text-sect-gold">{editForm.minConstitution}</span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={editForm.minConstitution}
-                  onChange={e => setEditForm({ ...editForm, minConstitution: parseInt(e.target.value) })}
-                  className="w-full h-2 bg-sect-ink-light rounded-lg appearance-none cursor-pointer accent-sect-gold"
-                />
-              </div>
-              
-              <div>
-                <div className="flex justify-between text-sm mb-2">
-                  <span className="text-sect-jade/80">道心要求</span>
-                  <span className="text-sect-gold">{editForm.minDaoFate}</span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={editForm.minDaoFate}
-                  onChange={e => setEditForm({ ...editForm, minDaoFate: parseInt(e.target.value) })}
-                  className="w-full h-2 bg-sect-ink-light rounded-lg appearance-none cursor-pointer accent-sect-gold"
-                />
-              </div>
-              
-              <div className="pt-4 border-t border-sect-gold/20">
-                <div className="flex justify-between text-sm mb-2">
-                  <span className="text-sect-jade/80">破例阈值（任一属性达标即可）</span>
-                  <span className="text-purple-400">{editForm.recruitmentExceptional}</span>
-                </div>
-                <input
-                  type="range"
-                  min="50"
-                  max="100"
+              <SliderField
+                label="根骨要求"
+                value={editForm.minRootBone}
+                min={0}
+                max={100}
+                onChange={v => setEditForm({ ...editForm, minRootBone: v })}
+              />
+              <SliderField
+                label="灵根要求"
+                value={editForm.minSpiritRhythm}
+                min={0}
+                max={100}
+                onChange={v => setEditForm({ ...editForm, minSpiritRhythm: v })}
+              />
+              <SliderField
+                label="体质要求"
+                value={editForm.minConstitution}
+                min={0}
+                max={100}
+                onChange={v => setEditForm({ ...editForm, minConstitution: v })}
+              />
+              <SliderField
+                label="道心要求"
+                value={editForm.minDaoFate}
+                min={0}
+                max={100}
+                onChange={v => setEditForm({ ...editForm, minDaoFate: v })}
+              />
+              <div className="mt-4 pt-4 border-t border-sect-gold/20">
+                <SliderField
+                  label="破例阈值（任一属性达标即可）"
                   value={editForm.recruitmentExceptional}
-                  onChange={e => setEditForm({ ...editForm, recruitmentExceptional: parseInt(e.target.value) })}
-                  className="w-full h-2 bg-sect-ink-light rounded-lg appearance-none cursor-pointer accent-purple-400"
+                  min={50}
+                  max={100}
+                  colorClass="is-purple"
+                  onChange={v => setEditForm({ ...editForm, recruitmentExceptional: v })}
                 />
               </div>
             </>
@@ -418,71 +432,81 @@ export const RulesPanel: React.FC = () => {
           
           {editingRule === 'servantToOuter' && (
             <>
-              <div>
-                <label className="block text-sm text-sect-jade/60 mb-1">最低贡献点</label>
-                <input
-                  type="number"
-                  value={editForm.minContribution}
-                  onChange={e => setEditForm({ ...editForm, minContribution: parseInt(e.target.value) || 0 })}
-                  className="w-full px-3 py-2 rounded bg-sect-ink-light border border-sect-gold/20 text-sect-jade"
-                />
+              <div className="text-sm text-sect-jade/60 mb-3">
+                设置杂役晋升外门弟子的条件
               </div>
-              <div>
-                <label className="block text-sm text-sect-jade/60 mb-1">最低根骨</label>
-                <input
-                  type="number"
-                  value={editForm.minRootBone}
-                  onChange={e => setEditForm({ ...editForm, minRootBone: parseInt(e.target.value) || 0 })}
-                  className="w-full px-3 py-2 rounded bg-sect-ink-light border border-sect-gold/20 text-sect-jade"
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="enableExceptional"
-                  checked={editForm.enableExceptional}
-                  onChange={e => setEditForm({ ...editForm, enableExceptional: e.target.checked })}
-                  className="rounded"
-                />
-                <label htmlFor="enableExceptional" className="text-sm text-sect-jade">启用破格录取</label>
+              <SliderField
+                label="最低贡献点"
+                value={editForm.minContribution}
+                min={0}
+                max={500}
+                step={10}
+                unit=" 点"
+                onChange={v => setEditForm({ ...editForm, minContribution: v })}
+              />
+              <SliderField
+                label="最低根骨"
+                value={editForm.minRootBone}
+                min={0}
+                max={100}
+                unit=""
+                onChange={v => setEditForm({ ...editForm, minRootBone: v })}
+              />
+              <div className="slider-field">
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={editForm.enableExceptional}
+                    onClick={() => setEditForm({ ...editForm, enableExceptional: !editForm.enableExceptional })}
+                    className={`slider-switch ${editForm.enableExceptional ? 'is-on' : ''}`}
+                  >
+                    <span className="slider-switch-knob" />
+                  </button>
+                  <span className="text-sm text-sect-jade">启用破格录取</span>
+                </div>
+                <div className="text-xs text-sect-jade/40 mt-1">
+                  若根骨超过破格门槛，即使贡献点不足也可晋升
+                </div>
               </div>
               {editForm.enableExceptional && (
-                <div>
-                  <label className="block text-sm text-sect-jade/60 mb-1">破格门槛（根骨）</label>
-                  <input
-                    type="number"
-                    value={editForm.exceptionalThreshold}
-                    onChange={e => setEditForm({ ...editForm, exceptionalThreshold: parseInt(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 rounded bg-sect-ink-light border border-sect-gold/20 text-sect-jade"
-                  />
-                </div>
+                <SliderField
+                  label="破格门槛（根骨）"
+                  value={editForm.exceptionalThreshold}
+                  min={0}
+                  max={100}
+                  colorClass="is-purple"
+                  onChange={v => setEditForm({ ...editForm, exceptionalThreshold: v })}
+                />
               )}
             </>
           )}
           
           {(editingRule === 'outerToInner' || editingRule === 'innerToCore' || editingRule === 'coreToElder') && (
             <>
-              <div>
-                <label className="block text-sm text-sect-jade/60 mb-1">最低境界</label>
-                <select
-                  value={editForm.minRealm}
-                  onChange={e => setEditForm({ ...editForm, minRealm: e.target.value as Realm })}
-                  className="w-full px-3 py-2 rounded bg-sect-ink-light border border-sect-gold/20 text-sect-jade"
-                >
-                  {RealmOrder.map(realm => (
-                    <option key={realm} value={realm}>{RealmNames[realm]}</option>
-                  ))}
-                </select>
+              <div className="text-sm text-sect-jade/60 mb-3">
+                {editingRule === 'outerToInner' && '外门弟子晋升内门弟子条件'}
+                {editingRule === 'innerToCore' && '内门弟子晋升核心弟子条件'}
+                {editingRule === 'coreToElder' && '核心弟子晋升长老条件'}
               </div>
-              <div>
-                <label className="block text-sm text-sect-jade/60 mb-1">最低贡献点</label>
-                <input
-                  type="number"
-                  value={editForm.minContribution}
-                  onChange={e => setEditForm({ ...editForm, minContribution: parseInt(e.target.value) || 0 })}
-                  className="w-full px-3 py-2 rounded bg-sect-ink-light border border-sect-gold/20 text-sect-jade"
-                />
-              </div>
+              <SliderField
+                label="最低境界"
+                value={RealmOrder.indexOf(editForm.minRealm)}
+                min={0}
+                max={RealmOrder.length - 1}
+                markerLabels={RealmOrder.map(r => RealmNames[r])}
+                colorClass="is-realm"
+                onChange={v => setEditForm({ ...editForm, minRealm: RealmOrder[v] as Realm })}
+              />
+              <SliderField
+                label="最低贡献点"
+                value={editForm.minContribution}
+                min={0}
+                max={editingRule === 'outerToInner' ? 1000 : editingRule === 'innerToCore' ? 2000 : 5000}
+                step={10}
+                unit=" 点"
+                onChange={v => setEditForm({ ...editForm, minContribution: v })}
+              />
             </>
           )}
           

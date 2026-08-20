@@ -6,7 +6,7 @@ import { SectIcon } from '@/components/icons/SectIcons';
 import { getSlots, SAVE_SLOT_COUNT, type SaveSlotMeta } from '@/utils/saveSlots';
 
 export const TopBar: React.FC = () => {
-  const { year, month, sectName, sectLevel, reputation, spiritStones, disciples, herbInventory, ironInventory, paperInventory, returnToMenu, newGame, saveToSlot, redeemCodeUsed, useRedeemCode, grantAdReward, adRewardTotal } = useGameStore();
+  const { year, month, sectName, sectLevel, reputation, spiritStones, karma, disciples, herbInventory, ironInventory, paperInventory, setReturnToMenuConfirm, newGame, saveToSlot, redeemCodeUsed, useRedeemCode, grantAdReward, adRewardTotal } = useGameStore();
   const { sectInfoOpen, toggleSectInfo } = useUIStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const [showSavePicker, setShowSavePicker] = useState(false);
@@ -53,6 +53,11 @@ export const TopBar: React.FC = () => {
                 <span className="text-[var(--ink-400)]">|</span>
                 <span className="text-[var(--gold-300)]">灵石</span>
                 <span className="font-bold text-[var(--gold-100)]">{Math.floor(spiritStones)}</span>
+                <span className="text-[var(--ink-400)]">|</span>
+                <span className="text-[var(--gold-300)]">正邪</span>
+                <span className={`font-bold ${karma > 0 ? 'text-emerald-400' : karma < 0 ? 'text-red-400' : 'text-[var(--ink-300)]'}`}>
+                  {karma > 0 ? '+' : ''}{karma}
+                </span>
               </div>
             </div>
           </button>
@@ -89,7 +94,7 @@ export const TopBar: React.FC = () => {
                   广告奖励({adRewardTotal})
                 </button>
                 <div className="border-t border-sect-ink-light/30 my-1" />
-                <button className="text-[11px] text-left px-2 py-1.5 rounded hover:bg-red-500/10 text-red-400" onClick={() => { setMenuOpen(false); if (confirm('确定返回主菜单？当前进度不会自动保存。')) returnToMenu(); }}>
+                <button className="text-[11px] text-left px-2 py-1.5 rounded hover:bg-red-500/10 text-red-400" onClick={() => { setMenuOpen(false); setReturnToMenuConfirm(true); }}>
                   返回主菜单
                 </button>
               </div>

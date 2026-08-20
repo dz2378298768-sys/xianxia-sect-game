@@ -26,6 +26,7 @@ import { ExplorationEncounterModal } from '@/components/ExplorationModal';
 import { EconomyPanel } from '@/components/EconomyPanel';
 import { EldersPanel } from '@/components/EldersPanel';
 import { AllocationPanel } from '@/components/AllocationPanel';
+import { SectIcon } from '@/components/icons/SectIcons';
 
 /**
  * 合并面板容器：affairs = overview + economy + rules + elders + combat
@@ -174,7 +175,7 @@ const GameLayout: React.FC = () => {
         {activePanel !== null && (
           <div
             ref={panelRef}
-            className={`absolute inset-0 z-20 bg-[var(--ink-900)]/95 backdrop-blur-sm flex flex-col overflow-hidden ${panelAnim === 'enter' ? 'panel-enter' : ''}`}
+            className={`absolute inset-0 z-20 bg-[var(--ink-900)] flex flex-col overflow-hidden ${panelAnim === 'enter' ? 'panel-enter' : ''}`}
           >
             {/* 面板头部：标题 + 关闭按钮 */}
             <div className="flex items-center justify-between px-3 py-2 border-b border-sect-ink-light/30">
@@ -213,6 +214,7 @@ const GameLayout: React.FC = () => {
       <ChoiceEventModal />
       <ExplorationEncounterModal />
       <SectCollapseModal />
+      <ReturnToMenuConfirmModal />
     </div>
   );
 };
@@ -236,6 +238,83 @@ const SectCollapseModal: React.FC = () => {
           <button className="btn-ink flex-1 text-xs" onClick={returnToMenu}>
             返回主菜单
           </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/** 返回主菜单确认弹窗 */
+const ReturnToMenuConfirmModal: React.FC = () => {
+  const { returnToMenuConfirm, setReturnToMenuConfirm, returnToMenu } = useGameStore();
+
+  if (!returnToMenuConfirm) return null;
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 px-4">
+      <div className="scroll-panel-dark slide-in-up max-w-sm w-full p-6 flex flex-col gap-4 text-center">
+        {/* 顶部装饰 */}
+        <div className="flex items-center justify-center gap-2">
+          <div className="w-12 h-px bg-gradient-to-r from-transparent to-[var(--gold-400)]/60" />
+          <span className="text-[var(--gold-400)]/60 text-[10px]">◆</span>
+          <div className="w-12 h-px bg-gradient-to-l from-transparent to-[var(--gold-400)]/60" />
+        </div>
+
+        {/* 图标 */}
+        <div className="inline-flex items-center justify-center w-14 h-14 rounded-full mx-auto"
+          style={{ background: 'rgba(212,168,87,0.12)', border: '1px solid rgba(212,168,87,0.2)' }}>
+          <SectIcon name="mountain" size={24} strokeWidth={1.6} />
+        </div>
+
+        {/* 标题 */}
+        <h2 className="font-display text-lg" style={{ color: 'var(--gold-200)' }}>
+          返回主菜单
+        </h2>
+
+        {/* 提示文字 */}
+        <div className="text-xs leading-relaxed px-3 py-3 rounded"
+          style={{ background: 'rgba(13,17,23,0.6)', border: '1px solid rgba(212,168,87,0.1)', color: 'var(--ink-300)' }}>
+          确定返回主菜单？当前进度不会自动保存。
+        </div>
+
+        {/* 按钮 */}
+        <div className="flex gap-3 pt-1">
+          <button
+            className="flex-1 text-xs px-3 py-2.5 rounded-lg transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
+            style={{
+              background: 'rgba(13,17,23,0.6)',
+              border: '1px solid rgba(212,168,87,0.2)',
+              color: 'var(--gold-300)',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(212,168,87,0.5)'; e.currentTarget.style.background = 'rgba(212,168,87,0.08)'; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(212,168,87,0.2)'; e.currentTarget.style.background = 'rgba(13,17,23,0.6)'; }}
+            onClick={() => setReturnToMenuConfirm(false)}
+          >
+            取消
+          </button>
+          <button
+            className="flex-1 text-xs px-3 py-2.5 rounded-lg transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
+            style={{
+              background: 'rgba(180,60,50,0.15)',
+              border: '1px solid rgba(180,60,50,0.3)',
+              color: '#e8857a',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(180,60,50,0.6)'; e.currentTarget.style.background = 'rgba(180,60,50,0.25)'; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(180,60,50,0.3)'; e.currentTarget.style.background = 'rgba(180,60,50,0.15)'; }}
+            onClick={() => {
+              setReturnToMenuConfirm(false);
+              returnToMenu();
+            }}
+          >
+            确认返回
+          </button>
+        </div>
+
+        {/* 底部装饰 */}
+        <div className="flex items-center justify-center gap-2">
+          <div className="w-12 h-px bg-gradient-to-r from-transparent to-[var(--gold-400)]/40" />
+          <span className="text-[var(--gold-400)]/40 text-[8px]">◇</span>
+          <div className="w-12 h-px bg-gradient-to-l from-transparent to-[var(--gold-400)]/40" />
         </div>
       </div>
     </div>

@@ -36,6 +36,15 @@
             android:configChanges="orientation|screenSize|keyboardHidden|uiMode">
         </activity>
 
+        <!-- TapTap 登录 SDK OAuth 回调 -->
+        <activity
+            android:name="com.taptap.sdk.login.TapTapLoginActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|keyboardHidden">
+        </activity>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

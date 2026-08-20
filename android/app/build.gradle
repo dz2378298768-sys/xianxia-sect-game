@@ -115,6 +115,15 @@ dependencies {
         logger.lifecycle("TapUpdate: 未启用 TapTap 更新唤起 SDK（启用：-PTAP_UPDATE_ENABLED=true）")
     }
     // ========================================================================================
+
+    // === TapTap 排行榜 v4 ======================================================================
+    // 官方文档：https://developer.taptap.cn/docs/sdk/leaderboard/guide/
+    // 功能：TapTap 服务器托管的排行榜，支持多种排序方式、好友榜、全局榜、分享功能
+    // 注意：必须使用 tap-leaderboard-androidx（含 AndroidX UI 实现），而非 tap-leaderboard（仅 API）
+    //       tap-leaderboard-androidx 会传递依赖 tap-leaderboard，无需重复引入
+    implementation "com.taptap.sdk:tap-leaderboard-androidx:4.10.8"
+    logger.lifecycle("TapLeaderboard: 已启用 TapTap 排行榜 SDK v4.10.8 (AndroidX)")
+    // ========================================================================================
 }
 
 apply from: 'capacitor.build.gradle'
