@@ -137,7 +137,7 @@ const ContributionSettingsEditor: React.FC<ContributionSettingsEditorProps> = ({
       </div>
       <div className="contribution-settings-grid">
         <label className="contribution-field">
-          <span className="contribution-field-label">每人月获得 +</span>
+          <span className="contribution-field-label">每人季度获得 +</span>
           <input
             type="number"
             className="contribution-field-input"
@@ -156,7 +156,7 @@ const ContributionSettingsEditor: React.FC<ContributionSettingsEditorProps> = ({
           />
         </label>
         <label className="contribution-field">
-          <span className="contribution-field-label">每人月消耗 -</span>
+          <span className="contribution-field-label">每人季度消耗 -</span>
           <input
             type="number"
             className="contribution-field-input"
@@ -697,7 +697,7 @@ export const BuildingsPanel: React.FC = () => {
                   )}
                   {/* 维护费叠加层（右下角）— 仅对开启中建筑显示 */}
                   {!isLocked && !isClosed && (
-                    <span className="building-avatar-maintenance" title={`月维护 ${calculateBuildingMaintenance(building)} 灵石`}>
+                    <span className="building-avatar-maintenance" title={`季度维护 ${calculateBuildingMaintenance(building)} 灵石`}>
                       -{calculateBuildingMaintenance(building)}
                     </span>
                   )}
@@ -751,7 +751,7 @@ export const BuildingsPanel: React.FC = () => {
                       Lv.{selectedBuilding.level}/{selectedBuilding.maxLevel}
                     </span>
                     <span className="inline-flex items-center gap-1 text-[9px] text-sect-jade/50">
-                      维护 {maintenance}/月
+                      维护 {maintenance}/季度
                     </span>
                     <span className="inline-flex items-center gap-1 text-[9px] text-sect-jade/50">
                       弟子 {assignedDisciples.length}/{selectedBuilding.discipleCapacity}
@@ -765,15 +765,15 @@ export const BuildingsPanel: React.FC = () => {
             <div className="grid grid-cols-2 gap-2">
               {(() => {
                 const items: { label: string; value: number | string; color: string; icon: string }[] = [];
-                if (output.spiritStones > 0) items.push({ label: '灵石/月', value: output.spiritStones, color: 'text-green-400', icon: '✦' });
-                if (output.herbs > 0) items.push({ label: '灵草/月', value: output.herbs, color: 'text-green-400', icon: '🌿' });
-                if (output.iron > 0) items.push({ label: '灵铁/月', value: output.iron, color: 'text-sect-jade', icon: '⛏' });
-                if (output.paper > 0) items.push({ label: '符纸/月', value: output.paper, color: 'text-sect-gold', icon: '📜' });
-                if (output.pills > 0) items.push({ label: '丹药/月', value: output.pills, color: 'text-sect-herb-light', icon: '💊' });
-                if (output.artifacts > 0) items.push({ label: '法器/月', value: output.artifacts, color: 'text-sect-jade', icon: '⚔' });
-                if (output.talismans > 0) items.push({ label: '符箓/月', value: output.talismans, color: 'text-sect-gold', icon: '🔮' });
-                if (output.reputation > 0) items.push({ label: '声望/月', value: output.reputation, color: 'text-yellow-400', icon: '⭐' });
-                if (maintenance > 0) items.push({ label: '维护/月', value: `-${maintenance}`, color: 'text-red-400', icon: '⚡' });
+                if (output.spiritStones > 0) items.push({ label: '灵石/季度', value: output.spiritStones, color: 'text-green-400', icon: '✦' });
+                if (output.herbs > 0) items.push({ label: '灵草/季度', value: output.herbs, color: 'text-green-400', icon: '🌿' });
+                if (output.iron > 0) items.push({ label: '灵铁/季度', value: output.iron, color: 'text-sect-jade', icon: '⛏' });
+                if (output.paper > 0) items.push({ label: '符纸/季度', value: output.paper, color: 'text-sect-gold', icon: '📜' });
+                if (output.pills > 0) items.push({ label: '丹药/季度', value: output.pills, color: 'text-sect-herb-light', icon: '💊' });
+                if (output.artifacts > 0) items.push({ label: '法器/季度', value: output.artifacts, color: 'text-sect-jade', icon: '⚔' });
+                if (output.talismans > 0) items.push({ label: '符箓/季度', value: output.talismans, color: 'text-sect-gold', icon: '🔮' });
+                if (output.reputation > 0) items.push({ label: '声望/季度', value: output.reputation, color: 'text-yellow-400', icon: '⭐' });
+                if (maintenance > 0) items.push({ label: '维护/季度', value: `-${maintenance}`, color: 'text-red-400', icon: '⚡' });
                 items.push({ label: '弟子', value: `${assignedDisciples.length}/${selectedBuilding.discipleCapacity}`, color: 'text-sect-jade', icon: '👤' });
                 if (selectedBuilding.minDiscipleStatus) {
                   items.push({ label: '准入', value: DiscipleStatusDisplayNames[selectedBuilding.minDiscipleStatus], color: 'text-sect-gold', icon: '🔑' });
@@ -822,7 +822,7 @@ export const BuildingsPanel: React.FC = () => {
                   <span className="font-display text-blue-300 text-xs">山门作用</span>
                 </div>
                 <div className="space-y-1.5 text-[11px] text-sect-jade/80 leading-snug ml-1 relative z-10">
-                  <div className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span>驻守弟子每月 +5 贡献点</div>
+                  <div className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span>驻守弟子每季度 +5 贡献点</div>
                   <div className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span>每级满员 +5% 防御战力</div>
                   <div className="flex items-center gap-1.5"><span className="text-amber-400">★</span>升至 10 级满员化为护山大阵，+50% 战力</div>
                   <div className="flex items-center gap-1.5"><span className="text-blue-400">↑</span>每级 +10 容量，最高 10 级</div>
@@ -846,7 +846,7 @@ export const BuildingsPanel: React.FC = () => {
                   <span className="font-display text-purple-300 text-xs">讲经堂作用</span>
                 </div>
                 <div className="space-y-1.5 text-[11px] text-sect-jade/80 leading-snug ml-1 relative z-10">
-                  <div className="flex items-center gap-1.5"><span className="text-orange-400">−</span>听讲弟子每月消耗 {Math.abs(BUILDING_CONTRIBUTION_BONUS['lecture_hall'] ?? -5)} 贡献</div>
+                  <div className="flex items-center gap-1.5"><span className="text-orange-400">−</span>听讲弟子每季度消耗 {Math.abs(BUILDING_CONTRIBUTION_BONUS['lecture_hall'] ?? -5)} 贡献</div>
                   <div className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span>听讲弟子修炼 +10%，讲师越强加成越高</div>
                   <div className="flex items-center gap-1.5"><span className="text-amber-400">★</span>讲师同享修炼加成</div>
                 </div>
@@ -869,7 +869,7 @@ export const BuildingsPanel: React.FC = () => {
                 </div>
                 <div className="space-y-1.5 text-[11px] text-sect-jade/80 leading-snug ml-1 relative z-10">
                   <div className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span>杂役弟子劳作赚取贡献点</div>
-                  <div className="flex items-center gap-1.5"><span className="text-amber-400">★</span>每名弟子每月 +10 贡献</div>
+                  <div className="flex items-center gap-1.5"><span className="text-amber-400">★</span>每名弟子每季度 +10 贡献</div>
                   <div className="flex items-center gap-1.5"><span className="text-blue-400">↑</span>每级 +10 容量；灵韵越高产出越多</div>
                 </div>
                 <div className="mt-2 text-[10px] text-green-400/60 bg-green-500/5 rounded-lg px-2 py-1 relative z-10">
@@ -888,8 +888,8 @@ export const BuildingsPanel: React.FC = () => {
                   <span className="font-display text-emerald-300 text-xs">灵兽原</span>
                 </div>
                 <div className="space-y-1.5 text-[11px] text-sect-jade/80 leading-snug ml-1 relative z-10">
-                  <div className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span>弟子于灵兽原培养，每月 +{BUILDING_CONTRIBUTION_BONUS['spirit_beast_garden'] ?? 7} 贡献</div>
-                  <div className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span>每只灵兽每月消耗 2 灵草维持</div>
+                  <div className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span>弟子于灵兽原培养，每季度 +{BUILDING_CONTRIBUTION_BONUS['spirit_beast_garden'] ?? 7} 贡献</div>
+                  <div className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span>每只灵兽每季度消耗 2 灵草维持</div>
                   <div className="flex items-center gap-1.5"><span className="text-amber-400">★</span>解锁条件：山门达到 2 级</div>
                 </div>
 
@@ -990,7 +990,7 @@ export const BuildingsPanel: React.FC = () => {
                 </div>
                 <div className="space-y-1.5 text-[11px] text-sect-jade/80 leading-snug ml-1 relative z-10">
                   <div className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span>弟子于此学习功法，无额外基础贡献</div>
-                  <div className="flex items-center gap-1.5"><span className="text-amber-400">★</span>金丹期以上弟子可推演功法，每月获取贡献</div>
+                  <div className="flex items-center gap-1.5"><span className="text-amber-400">★</span>金丹期以上弟子可推演功法，每季度获取贡献</div>
                   <div className="flex items-center gap-1.5"><span className="text-blue-400">↑</span>推演贡献随道缘、藏经阁等级提升</div>
                 </div>
                 <div className="mt-2 text-[10px] text-amber-400/60 bg-amber-500/5 rounded-lg px-2 py-1 relative z-10">

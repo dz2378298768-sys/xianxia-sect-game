@@ -16,12 +16,12 @@ export const OpeningGuideModal: React.FC = () => {
     {
       icon: <Users size={20} className="text-sect-gold" />,
       title: '杂役堂升级并保证满员',
-      desc: '杂役弟子每月为宗门产出灵石，升级杂役堂、招满编制可稳定获得灵石收入。',
+      desc: '杂役弟子每季度为宗门产出灵石，升级杂役堂、招满编制可稳定获得灵石收入。',
     },
     {
       icon: <Swords size={20} className="text-sect-gold" />,
       title: '附庸其他宗门与参加试炼',
-      desc: '在「世界」面板附庸弱小宗门获得每月上贡；派遣弟子参加试炼也能带回大量灵石。',
+      desc: '在「世界」面板附庸弱小宗门获得每季度上贡；派遣弟子参加试炼也能带回大量灵石。',
     },
     {
       icon: <ShoppingCart size={20} className="text-sect-gold" />,
@@ -62,7 +62,7 @@ export const OpeningGuideModal: React.FC = () => {
         </div>
 
         <div className="p-3 rounded-lg bg-sect-gold/5 border border-sect-gold/20 text-xs text-sect-jade/70 leading-relaxed">
-          提示：弟子现由你<b className="text-sect-gold">手动招收</b>，且每名弟子每月需按身份等级发放维护费
+          提示：弟子现由你<b className="text-sect-gold">手动招收</b>，且每名弟子每季度需按身份等级发放维护费
           （杂役1 / 外门2 / 内门4 / 核心6 / 长老10 灵石）。善用量入为出，方能基业长青。
         </div>
 

@@ -378,7 +378,7 @@ const TrialCard: React.FC<{ trial: Trial }> = ({ trial }) => {
         </div>
         <div className="bg-[rgba(30,40,60,0.6)] rounded px-1 py-0.5">
           <div className="text-[var(--ink-400)]">耗时</div>
-          <div className="text-[var(--jade-light)]">{trial.durationMonths}月</div>
+          <div className="text-[var(--jade-light)]">{trial.durationMonths}季度</div>
         </div>
       </div>
 
@@ -552,7 +552,7 @@ const ExplorationSection: React.FC<ExplorationSectionProps> = ({
                   <div className="flex-1">
                     <div className="text-sm text-sect-jade">{t.name}</div>
                     <div className="text-xs text-sect-jade/60">
-                      弟子: {disciple?.name ?? '未知'} | 已进行 {t.durationMonths} 个月
+                      弟子: {disciple?.name ?? '未知'} | 已进行 {t.durationMonths} 个季度
                     </div>
                   </div>
                   <div className="text-xs text-sky-400">
@@ -590,7 +590,7 @@ const ExplorationSection: React.FC<ExplorationSectionProps> = ({
                     <h3 className="font-display text-sect-jade">{region.name}</h3>
                     <div className="text-[10px] text-sect-jade/60 flex items-center gap-2">
                       <span>建议战力 ≥{region.minPower.toLocaleString()}</span>
-                      <span>耗时 {region.baseDurationMonths}月</span>
+                      <span>耗时 {region.baseDurationMonths}季度</span>
                     </div>
                   </div>
                 </div>
@@ -966,7 +966,7 @@ export const WorldPanel: React.FC = () => {
                       ? 'bg-[rgba(74,122,107,0.2)] border-[var(--jade-light)]/50 text-[var(--jade-light)]'
                       : 'border-[var(--ink-400)]/30 text-[var(--ink-300)] hover:border-[var(--jade-light)]/30'
                   }`}
-                  title={autoTrialEnabled ? '已开启：每月自动派遣空闲弟子执行可完成的试炼' : '点击开启：每月自动派遣空闲弟子执行可完成的试炼'}
+                  title={autoTrialEnabled ? '已开启：每季度自动派遣空闲弟子执行可完成的试炼' : '点击开启：每季度自动派遣空闲弟子执行可完成的试炼'}
                 >
                   <SectIcon name="talisman" size={12} strokeWidth={1.8} />
                   <span>自动试炼</span>
@@ -984,7 +984,7 @@ export const WorldPanel: React.FC = () => {
             <p className="text-sect-jade/50 text-xs mb-3 leading-relaxed">
               每年自动刷新适合本宗战力的试炼任务。派遣弟子执行可获取灵石、声望、原料、贡献等奖励。
               弟子战力越高成功率越大，失败可能受伤修为倒退。
-              {autoTrialEnabled && <span className="text-[var(--jade-light)]">已开启自动试炼：每月自动派遣空闲弟子执行可完成的试炼。</span>}
+              {autoTrialEnabled && <span className="text-[var(--jade-light)]">已开启自动试炼：每季度自动派遣空闲弟子执行可完成的试炼。</span>}
             </p>
 
             {trials.length === 0 ? (

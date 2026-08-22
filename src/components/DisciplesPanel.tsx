@@ -235,8 +235,8 @@ export const DisciplesPanel: React.FC = () => {
       list = [...list].sort((a, b) => calculateDiscipleCombatPower(b) - calculateDiscipleCombatPower(a));
     } else if (sortBy === 'joinDate') {
       list = [...list].sort((a, b) => {
-        const aTime = a.joinDate.year * 12 + a.joinDate.month;
-        const bTime = b.joinDate.year * 12 + b.joinDate.month;
+        const aTime = a.joinDate.year * 4 + a.joinDate.month;
+        const bTime = b.joinDate.year * 4 + b.joinDate.month;
         return aTime - bTime; // 最早入宗的排前面
       });
     }
@@ -735,7 +735,7 @@ export const DisciplesPanel: React.FC = () => {
                       <span className="text-[11px] text-sect-jade/80 font-medium">修炼速度</span>
                     </div>
                     <span className="font-display text-sect-gold text-sm">
-                      {selectedDisciple.cultivationSpeed.toFixed(1)}/月
+                      {selectedDisciple.cultivationSpeed.toFixed(1)}/季度
                     </span>
                   </div>
                   <ProgressBar
@@ -747,7 +747,7 @@ export const DisciplesPanel: React.FC = () => {
                   <div className="mt-2 pt-2 border-t border-sect-gold/10 text-xs space-y-1">
                     <div className="flex justify-between text-sect-jade/60">
                       <span>基础速度</span>
-                      <span>{getBaseCultivationSpeed(selectedDisciple).toFixed(1)}/月</span>
+                      <span>{getBaseCultivationSpeed(selectedDisciple).toFixed(1)}/季度</span>
                     </div>
                     {selectedDisciple.buffs.filter(b => b.type === 'cultivation' && b.value > 0).map(buff => (
                       <div key={buff.id} className="flex justify-between text-green-400">
@@ -795,14 +795,14 @@ export const DisciplesPanel: React.FC = () => {
                                 <span>无工作惩罚: -{selectedDisciple.maxSatisfactionLossWork}% (上限20%)</span>
                               </div>
                             ) : (
-                              <div className="text-green-400">✓ 有工作，每月恢复</div>
+                              <div className="text-green-400">✓ 有工作，每季度恢复</div>
                             )}
                             {selectedDisciple.maxSatisfactionLossResidence > 0 ? (
                               <div className="flex items-center gap-1 text-orange-400">
                                 <span>居所不匹配: -{selectedDisciple.maxSatisfactionLossResidence}% (上限40%)</span>
                               </div>
                             ) : (
-                              <div className="text-green-400">✓ 居所匹配，每月恢复</div>
+                              <div className="text-green-400">✓ 居所匹配，每季度恢复</div>
                             )}
                             {selectedDisciple.satisfaction < 60 && (
                               <div className="text-red-400 pt-1 border-t border-sect-gold/20 flex items-center gap-1.5">
@@ -1145,7 +1145,7 @@ export const DisciplesPanel: React.FC = () => {
                           ) : null}
                           <div className="border-t border-sect-gold/20 pt-1 flex justify-between">
                             <span className="text-sect-jade/60">灵力（修炼效率）</span>
-                            <span className="text-sect-gold">{selectedDisciple.cultivationSpeed.toFixed(1)}/月</span>
+                            <span className="text-sect-gold">{selectedDisciple.cultivationSpeed.toFixed(1)}/季度</span>
                           </div>
                         </div>
                       }
@@ -1157,7 +1157,7 @@ export const DisciplesPanel: React.FC = () => {
                           <span className="text-sect-jade/60 text-xs">生命/灵力</span>
                         </div>
                         <div className="text-sect-jade font-medium">{selectedDisciple.maxHp}</div>
-                        <div className="text-[10px] text-sect-gold/60">灵力 {selectedDisciple.cultivationSpeed.toFixed(1)}/月</div>
+                        <div className="text-[10px] text-sect-gold/60">灵力 {selectedDisciple.cultivationSpeed.toFixed(1)}/季度</div>
                       </div>
                     </Tooltip>
                     
@@ -1392,7 +1392,7 @@ export const DisciplesPanel: React.FC = () => {
                         <div key={buff.id} className="text-xs px-2 py-1 rounded bg-yellow-500/10 text-yellow-300/90 border border-yellow-500/20 flex items-center gap-1.5">
                           <span>{buff.name}</span>
                           <span className="text-yellow-200/60">+{buff.value}%</span>
-                          <span className="text-sect-jade/40">·{buff.remainingMonths}月</span>
+                          <span className="text-sect-jade/40">·{buff.remainingMonths}季度</span>
                         </div>
                       ))}
                     </div>
@@ -1418,7 +1418,7 @@ export const DisciplesPanel: React.FC = () => {
                     {selectedDisciple.talentDisplay?.rootBoneDesc}，{selectedDisciple.talentDisplay?.spiritRhythmDesc}，
                     {selectedDisciple.talentDisplay?.constitutionDesc}，{selectedDisciple.talentDisplay?.daoFateDesc}。
                     {CONSTITUTIONS.find(c => c.id === selectedDisciple.constitutionId) && `身具${CONSTITUTIONS.find(c => c.id === selectedDisciple.constitutionId)!.name}，`}
-                    于第{selectedDisciple.joinDate?.year ?? '?'}年{selectedDisciple.joinDate?.month ?? '?'}月入宗，现为{DiscipleStatusNames[selectedDisciple.status]}。
+                    于第{selectedDisciple.joinDate?.year ?? '?'}年{selectedDisciple.joinDate?.month ?? '?'}季度入宗，现为{DiscipleStatusNames[selectedDisciple.status]}。
                   </p>
                 </div>
 
@@ -1486,7 +1486,7 @@ export const DisciplesPanel: React.FC = () => {
                       events.push({
                         year: log.date.year,
                         month: log.date.month,
-                        sortKey: log.date.year * 12 + log.date.month,
+                        sortKey: log.date.year * 4 + log.date.month,
                         content: (
                           <div className="flex items-start gap-2 text-xs p-2 rounded bg-sect-ink-light/40">
                             <span className="shrink-0">{meta.icon}</span>
@@ -1508,8 +1508,8 @@ export const DisciplesPanel: React.FC = () => {
                       const rankColor = record.rank === 1 ? 'text-yellow-400' : record.rank === 2 ? 'text-gray-300' : record.rank === 3 ? 'text-orange-400' : 'text-sect-jade/50';
                       events.push({
                         year: record.year,
-                        month: 12, // 大比通常在年底，排在该年后部
-                        sortKey: record.year * 12 + 12,
+                        month: 4, // 大比通常在年底，排在该年后部
+                        sortKey: record.year * 4 + 4,
                         content: (
                           <div className="flex items-start gap-2 text-xs p-2 rounded bg-sect-ink-light/40">
                             <span className="shrink-0">🏆</span>
@@ -1539,7 +1539,7 @@ export const DisciplesPanel: React.FC = () => {
                         {events.map((evt, idx) => (
                           <div key={idx}>
                             <div className="text-[10px] text-sect-jade/40 mb-0.5">
-                              第{evt.year}年{evt.month > 12 ? '' : `${evt.month}月`}
+                              第{evt.year}年{evt.month > 4 ? '' : `${evt.month}季度`}
                             </div>
                             {evt.content}
                           </div>
@@ -1981,7 +1981,7 @@ export const DisciplesPanel: React.FC = () => {
                       return (
                         <div key={log.id} className="flex items-center gap-2 px-2 py-1.5 rounded bg-sect-ink/30 border border-sect-gold/5">
                           <span className="text-[10px] text-sect-jade/50 shrink-0 w-16 tabular-nums">
-                            {log.date.year}年{String(log.date.month).padStart(2, '0')}月
+                            {log.date.year}年{String(log.date.month).padStart(2, '0')}季度
                           </span>
                           <span className={`shrink-0 w-16 text-[10px] font-medium ${meta.color}`}>
                             {meta.name}

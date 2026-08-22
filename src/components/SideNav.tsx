@@ -71,10 +71,10 @@ export const SideNav: React.FC = () => {
         <button
           className="side-nav-item side-nav-next-turn"
           onClick={nextMonth}
-          title="推进至下一月"
+          title="推进至下一季度"
         >
           <SectIcon name="nextMonth" size={20} strokeWidth={2} />
-          <span className="side-nav-label">下一月</span>
+          <span className="side-nav-label">下一季度</span>
         </button>
       </div>
     </div>

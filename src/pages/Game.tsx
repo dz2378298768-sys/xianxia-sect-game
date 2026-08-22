@@ -27,6 +27,7 @@ import { EconomyPanel } from '@/components/EconomyPanel';
 import { EldersPanel } from '@/components/EldersPanel';
 import { AllocationPanel } from '@/components/AllocationPanel';
 import { SectIcon } from '@/components/icons/SectIcons';
+import { playClick, playConfirm, playCancel, playNotify, playLevelUp, playError } from '@/utils/sound';
 
 /**
  * 合并面板容器：affairs = overview + economy + rules + elders + combat
@@ -125,6 +126,18 @@ const GameLayout: React.FC = () => {
       prevPanelRef.current = null;
     }
   }, [activePanel]);
+
+  // 全局按键音效 - 点击按钮时播放 click 音
+  React.useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'BUTTON' || target.closest('button')) {
+        playClick();
+      }
+    };
+    document.addEventListener('click', handler);
+    return () => document.removeEventListener('click', handler);
+  }, []);
 
   const renderPanel = () => {
     switch (activePanel) {

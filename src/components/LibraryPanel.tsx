@@ -252,7 +252,7 @@ export const LibraryPanel: React.FC<LibraryPanelProps> = ({ buildingId }) => {
             {book.combatBonus > 0 && (
               <span className="text-red-300">战力+{book.combatBonus}%</span>
             )}
-            <span className="text-blue-300">{book.learnDays}月</span>
+            <span className="text-blue-300">{book.learnDays}季度</span>
             <span className="text-amber-300">{libraryCosts[book.tier]}贡献</span>
           </div>
 
@@ -662,7 +662,7 @@ const DeduceSection: React.FC<{
                 </span>
               </div>
               <div className="text-[10px] text-sect-jade/50 mt-1">
-                修+{disciple.deducingBook.cultivationBonus} · 战+{disciple.deducingBook.combatBonus} · 共 {disciple.deducingBook.totalMonths} 月
+                修+{disciple.deducingBook.cultivationBonus} · 战+{disciple.deducingBook.combatBonus} · 共 {disciple.deducingBook.totalMonths} 季度
               </div>
             </div>
             <Button variant="ghost" size="sm" onClick={handleCancel} className="shrink-0 !px-2">

@@ -306,16 +306,16 @@ export const OverviewPanel: React.FC = () => {
       <div className="p-3">
         <div className="grid grid-cols-2 gap-3">
           <div className="scroll-panel-dark p-3 text-center">
-            <div className="text-xs text-[var(--ink-400)]">月收入</div>
+            <div className="text-xs text-[var(--ink-400)]">季度收入</div>
             <div className="font-display text-lg text-green-400">+{totalOutput}</div>
           </div>
           <div className="scroll-panel-dark p-3 text-center">
-            <div className="text-xs text-[var(--ink-400)]">月支出</div>
+            <div className="text-xs text-[var(--ink-400)]">季度支出</div>
             <div className="font-display text-lg text-red-400">-{totalMaintenance}</div>
           </div>
         </div>
         <div className={`text-center font-display text-lg mt-3 ${netIncome >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-          月净收益 {netIncome >= 0 ? '+' : ''}{netIncome}
+          季度净收益 {netIncome >= 0 ? '+' : ''}{netIncome}
         </div>
       </div>
 
@@ -473,7 +473,7 @@ export const OverviewPanel: React.FC = () => {
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-medium text-[var(--ink-200)]">{entry.title}</span>
                       <span className="text-[10px] text-[var(--ink-400)] flex-shrink-0">
-                        第{entry.date.year}年{entry.date.month}月
+                        第{entry.date.year}年{entry.date.month}季度
                       </span>
                     </div>
                     <p className="text-[11px] text-[var(--ink-300)] mt-1 leading-relaxed">

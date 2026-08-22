@@ -175,8 +175,8 @@ export function generateTalentDisplay(talents: HiddenTalents): TalentDisplay {
   };
 }
 
-// 各境界基础寿命（年）
-const REALM_BASE_LIFESPAN = [80, 80, 110, 260, 560, 1060];
+// 各境界基础寿命（年）— 减半以控制修炼节奏，平庸弟子约 33 年寿命冲击化神
+const REALM_BASE_LIFESPAN = [40, 40, 55, 130, 280, 530];
 
 export function calculateLifespan(baseLifespan: number, realmIndex: number): number {
   // 基础寿命 = 境界寿命 + 体质加成

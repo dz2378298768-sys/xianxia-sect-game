@@ -357,7 +357,7 @@ export interface ChainEvent {
 /** 待触发的连锁事件（已计入延迟，等待激活） */
 export interface PendingChainEvent {
   chainId: string;
-  scheduledMonth: number;   // 计划触发月份（year * 12 + month）
+  scheduledMonth: number;   // 计划触发季度（year * 4 + month）
   event: ChainEvent;
 }
 

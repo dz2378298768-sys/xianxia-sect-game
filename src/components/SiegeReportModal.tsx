@@ -89,7 +89,7 @@ export const SiegeReportModal: React.FC = () => {
         </div>
 
         <div className="text-[11px] text-[var(--ink-300)]">
-          第 {report.date.year} 年 {report.date.month} 月
+          第 {report.date.year} 年 {report.date.month} 季度
         </div>
 
         {/* 战力对比 */}

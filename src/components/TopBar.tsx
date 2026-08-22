@@ -52,7 +52,7 @@ export const TopBar: React.FC = () => {
                 <span className="font-bold text-[var(--gold-100)]">{Math.floor(reputation)}</span>
                 <span className="text-[var(--ink-400)]">|</span>
                 <span className="text-[var(--gold-300)]">灵石</span>
-                <span className="font-bold text-[var(--gold-100)]">{Math.floor(spiritStones)}</span>
+                <span className={`font-bold ${spiritStones < 0 ? 'text-red-400' : 'text-[var(--gold-100)]'}`}>{Math.floor(spiritStones)}</span>
                 <span className="text-[var(--ink-400)]">|</span>
                 <span className="text-[var(--gold-300)]">正邪</span>
                 <span className={`font-bold ${karma > 0 ? 'text-emerald-400' : karma < 0 ? 'text-red-400' : 'text-[var(--ink-300)]'}`}>
@@ -64,7 +64,7 @@ export const TopBar: React.FC = () => {
 
           {/* 中央：年份和弟子数 */}
           <div className="flex items-center gap-2 text-[9px] text-[var(--ink-300)]">
-            <span>第{year}年{month}月</span>
+            <span>第{year}年{month}季度</span>
             <span className="text-[var(--ink-400)]">|</span>
             <span className="flex items-center gap-0.5">
               <SectIcon name="disciple" size={10} strokeWidth={1.6} />
@@ -117,7 +117,7 @@ export const TopBar: React.FC = () => {
                   <div className="text-[11px] text-sect-jade">存档位 {i + 1}</div>
                   {slot ? (
                     <div className="text-[10px] text-sect-jade/50 truncate">
-                      {slot.sectName} · 第{slot.year}年{slot.month}月 · {slot.sectLevel}
+                      {slot.sectName} · 第{slot.year}年{slot.month}季度 · {slot.sectLevel}
                     </div>
                   ) : (
                     <div className="text-[10px] text-sect-jade/30">空</div>

@@ -318,9 +318,9 @@ export const RulesPanel: React.FC = () => {
         <div className="space-y-4">
           <div className="flex items-center justify-between p-3 rounded-lg bg-sect-ink-light/30 border border-sect-gold/10">
             <div>
-              <div className="text-sm text-sect-jade">每月自动任命</div>
+              <div className="text-sm text-sect-jade">每季度自动任命</div>
               <div className="text-xs text-sect-jade/50 mt-1">
-                开启后，每月自动将符合「核心升长老」条件的核心弟子任命为长老
+                开启后，每季度自动将符合「核心升长老」条件的核心弟子任命为长老
               </div>
             </div>
             <button

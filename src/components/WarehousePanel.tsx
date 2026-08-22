@@ -44,9 +44,9 @@ interface MaterialInfo {
 
 // 基础原材料 + 特殊原材料信息映射
 const MATERIAL_INFOS: Record<string, MaterialInfo> = {
-  '灵草': { name: '灵草', description: '炼丹基础药材，杂役堂每月产出', iconName: 'herb', isBasic: true, price: 10, building: '丹堂' },
-  '玄铁': { name: '玄铁', description: '炼器基础矿石，杂役堂每月产出', iconName: 'artifactFlyingSword', isBasic: true, price: 15, building: '炼器堂' },
-  '灵纸': { name: '灵纸', description: '制符基础材料，杂役堂每月产出', iconName: 'scrollText', isBasic: true, price: 8, building: '符堂' },
+  '灵草': { name: '灵草', description: '炼丹基础药材，杂役堂每季度产出', iconName: 'herb', isBasic: true, price: 10, building: '丹堂' },
+  '玄铁': { name: '玄铁', description: '炼器基础矿石，杂役堂每季度产出', iconName: 'artifactFlyingSword', isBasic: true, price: 15, building: '炼器堂' },
+  '灵纸': { name: '灵纸', description: '制符基础材料，杂役堂每季度产出', iconName: 'scrollText', isBasic: true, price: 8, building: '符堂' },
 };
 
 // 基础材料名列表（用于渲染顺序）
@@ -663,7 +663,7 @@ export const WarehousePanel: React.FC = () => {
                             }}
                             className="wh-number-input"
                           />
-                          <span className="wh-autotrade-suffix">件时每月买入</span>
+                          <span className="wh-autotrade-suffix">件时每季度买入</span>
                           <input
                             type="number"
                             min={1}
@@ -694,7 +694,7 @@ export const WarehousePanel: React.FC = () => {
                             }}
                             className="wh-number-input"
                           />
-                          <span className="wh-autotrade-suffix">件时每月卖出</span>
+                          <span className="wh-autotrade-suffix">件时每季度卖出</span>
                           <input
                             type="number"
                             min={1}
@@ -709,7 +709,7 @@ export const WarehousePanel: React.FC = () => {
                           <span className="wh-autotrade-suffix">件</span>
                         </label>
                         <div className="wh-autotrade-tip">
-                          例：买入阈值填 5，则库存 ≤4 时每月最多买入设定件数；卖出阈值填 20，则库存 ≥21 时每月卖出。填 0 表示关闭该方向。
+                          例：买入阈值填 5，则库存 ≤4 时每季度最多买入设定件数；卖出阈值填 20，则库存 ≥21 时每季度卖出。填 0 表示关闭该方向。
                         </div>
                       </div>
                     </div>

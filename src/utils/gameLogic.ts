@@ -11,7 +11,7 @@ import { getRandomConstitution } from '@/data/constitutions';
 import { generateId, generateDiscipleName, randomInt, randomFloat, clamp } from '@/utils/random';
 import { generateTalentDisplay, calculateLifespan, calculateCultivationSpeed, generateSpiritRoots, calculateSpiritRootBonus } from '@/utils/calculations';
 import { canLearnBook, generateRandomBook } from '@/utils/bookGenerator';
-import type { MonthlyReport, GameDate, Notification, SectHistoryEntry, SectHistoryType, BuildingEvent, ChoiceEvent, ChainEvent, PendingChainEvent, CalamityEvent } from '@/types/game';
+import type { MonthlyReport, GameDate, Notification, SectHistoryEntry, SectHistoryType, BuildingEvent, ChoiceEvent, ChainEvent, PendingChainEvent, CalamityEvent, SectLevel } from '@/types/game';
 import { computeBuildingOutput, computeMaintenance, recomputeCultivationSpeed, computeMonthlyContribution } from '@/domain/balance';
 import { ARTIFACT_CONFIGS } from '@/data/artifacts';
 import { TALISMAN_CONFIGS } from '@/data/talismans';
@@ -529,15 +529,47 @@ export function generatePreferences(personality: Personality, background: Backgr
   return prefs;
 }
 
-export function createInitialDisciple(status: DiscipleStatus = 'servant', realm: Realm = 'mortal'): Disciple {
+// ===== 宗门等级影响弟子天赋概率 =====
+// 天赋等级：废材(1-20) 愚钝(21-35) 平庸(36-50) 中上(51-65) 优秀(66-80) 出类拔萃(81-90) 天才(91-100)
+const TALENT_TIER_PROB: Record<SectLevel, number[]> = {
+  founding: [10, 25, 40, 20, 5, 0, 0],
+  known:    [ 5, 15, 35, 30, 13, 2, 0],
+  famous:   [ 2,  8, 25, 35, 22, 7, 1],
+  dominant: [ 0,  3, 15, 32, 30, 15, 5],
+  eternal:  [ 0,  1,  8, 25, 32, 24, 10],
+};
+const TALENT_TIER_RANGES = [
+  { min: 1, max: 20 },
+  { min: 21, max: 35 },
+  { min: 36, max: 50 },
+  { min: 51, max: 65 },
+  { min: 66, max: 80 },
+  { min: 81, max: 90 },
+  { min: 91, max: 100 },
+];
+function generateTalentBySectLevel(sectLevel: SectLevel): number {
+  const probs = TALENT_TIER_PROB[sectLevel] || TALENT_TIER_PROB.founding;
+  const roll = Math.random() * 100;
+  let cumulative = 0;
+  for (let i = 0; i < probs.length; i++) {
+    cumulative += probs[i];
+    if (roll < cumulative) {
+      const range = TALENT_TIER_RANGES[i];
+      return randomInt(range.min, range.max);
+    }
+  }
+  return randomInt(1, 20);
+}
+
+export function createInitialDisciple(status: DiscipleStatus = 'servant', realm: Realm = 'mortal', sectLevel: SectLevel = 'founding'): Disciple {
   const spiritRoots = generateSpiritRoots();
   const constitution = getRandomConstitution();
   
   const hiddenTalents: HiddenTalents = {
-    rootBone: randomInt(20, 80),
-    spiritRhythm: randomInt(20, 80),
-    constitution: randomInt(20, 80),
-    daoFate: randomInt(20, 80),
+    rootBone: generateTalentBySectLevel(sectLevel),
+    spiritRhythm: generateTalentBySectLevel(sectLevel),
+    constitution: generateTalentBySectLevel(sectLevel),
+    daoFate: generateTalentBySectLevel(sectLevel),
     spiritRoots,
   };
   
@@ -2075,10 +2107,10 @@ export function generateChoiceEvent(
 
   // 根据月份加权选择季节事件
   const seasonPool: ChoiceEvent[] = [];
-  if (month >= 3 && month <= 5) seasonPool.push(seasonalEvents[0]); // 春季
-  if (month >= 6 && month <= 8) seasonPool.push(seasonalEvents[1]); // 夏季
-  if (month >= 9 && month <= 11) seasonPool.push(seasonalEvents[2]); // 秋季
-  if (month <= 2 || month === 12) seasonPool.push(seasonalEvents[3]); // 冬季
+  if (month === 1) seasonPool.push(seasonalEvents[0]); // 春季（一季度）
+  if (month === 2) seasonPool.push(seasonalEvents[1]); // 夏季（二季度）
+  if (month === 3) seasonPool.push(seasonalEvents[2]); // 秋季（三季度）
+  if (month === 4) seasonPool.push(seasonalEvents[3]); // 冬季（四季度）
 
   const pool: ChoiceEvent[] = [
     ...seasonPool,
@@ -2190,7 +2222,7 @@ const CHAIN_EVENT_CONFIGS: ChainEvent[] = [
 export function generateChainEvents(
   resolvedChoiceEventId: string,
   chosenLabel: string,
-  currentMonth: number, // year * 12 + month
+  currentMonth: number, // year * 4 + month
 ): PendingChainEvent[] {
   const pending: PendingChainEvent[] = [];
   for (const cfg of CHAIN_EVENT_CONFIGS) {
@@ -2399,8 +2431,8 @@ export function checkSectCollapse(
 ): { collapsed: boolean; reason: string } {
   if (disciples.filter(d => d.status !== 'mortal').length === 0)
     return { collapsed: true, reason: '宗门弟子全数离去，道统断绝。' };
-  if (monthsConsecutiveNegative >= 12 && spiritStones < -5000)
-    return { collapsed: true, reason: `宗门连续 ${monthsConsecutiveNegative} 个月灵石赤字，负债累累，宗门解散。` };
+  if (monthsConsecutiveNegative >= 4 && spiritStones < -5000)
+    return { collapsed: true, reason: `宗门连续 ${monthsConsecutiveNegative} 个季度灵石赤字，负债累累，宗门解散。` };
   if (reputation <= -500)
     return { collapsed: true, reason: '宗门声名狼藉，为正道所不容，被联合剿灭。' };
   return { collapsed: false, reason: '' };
@@ -2510,7 +2542,7 @@ export function processMonthlyEmergentEvents(
  * 处理弟子死亡与叛逃，返回统一结构让 nextMonth 合并库存、事件、宗门历史。
  *
  * 规则：
- * - 寿终：age >= maxAge（年龄按年数存储，每月 + 1/12）
+ * - 寿终：age >= maxAge（年龄按年数存储，每季度 + 1/4）
  * - 叛逃：满意度连续 N 月 < 阈值 → 按身份概率触发；叛逃时按 1–3 倍身份月收入带走灵石
  * - 死亡时遗产：师傅→道侣→同门好友 →全部归仓库
  * - 叛逃时：背包/装备不带走（按用户选"少量灵石"），仅扣灵石

@@ -121,7 +121,7 @@ export const EconomyPanel: React.FC = () => {
               <TrendingUp className="text-green-400" size={24} />
             </div>
             <div>
-              <div className="text-sect-jade/60 text-xs">月收入</div>
+              <div className="text-sect-jade/60 text-xs">季度收入</div>
               <div className="font-display text-xl text-green-400">
                 +{totalSpiritStoneIncome}
               </div>
@@ -135,7 +135,7 @@ export const EconomyPanel: React.FC = () => {
               <TrendingDown className="text-red-400" size={24} />
             </div>
             <div>
-              <div className="text-sect-jade/60 text-xs">月支出</div>
+              <div className="text-sect-jade/60 text-xs">季度支出</div>
               <div className="font-display text-xl text-red-400">
                 -{totalMaintenance}
               </div>
@@ -144,14 +144,14 @@ export const EconomyPanel: React.FC = () => {
         </Card>
       </div>
 
-      {/* 近12月灵石余额折线图 */}
-      <Card title="近12月灵石余额">
+      {/* 近12季度灵石余额折线图 */}
+      <Card title="近12季度灵石余额">
         {(() => {
           const data = spiritStoneHistory.slice(-12);
           if (data.length < 2) {
             return (
               <div className="text-sect-jade/50 text-sm text-center py-8">
-                至少需要2个月数据才能绘制趋势图（当前 {data.length} 个月）
+                至少需要2个季度数据才能绘制趋势图（当前 {data.length} 个季度）
               </div>
             );
           }
@@ -211,14 +211,14 @@ export const EconomyPanel: React.FC = () => {
         })()}
       </Card>
 
-      {/* 近12月月净收益折线图（单独一张，避免与余额数值差太大被压缩） */}
-      <Card title="近12月月净收益">
+      {/* 近12季度季度净收益折线图（单独一张，避免与余额数值差太大被压缩） */}
+      <Card title="近12季度季度净收益">
         {(() => {
           const data = spiritStoneHistory.slice(-12);
           if (data.length < 2) {
             return (
               <div className="text-sect-jade/50 text-sm text-center py-8">
-                至少需要2个月数据才能绘制趋势图（当前 {data.length} 个月）
+                至少需要2个季度数据才能绘制趋势图（当前 {data.length} 个季度）
               </div>
             );
           }
@@ -273,7 +273,7 @@ export const EconomyPanel: React.FC = () => {
               <div className="flex items-center justify-center gap-6 mt-2 text-xs text-sect-jade/70" style={{ fontSize: isMobile ? 13 : 12 }}>
                 <span className="flex items-center gap-2">
                   <span style={{ display: 'inline-block', width: 20, height: 4, background: '#34d399' }} />
-                  月净收益
+                  季度净收益
                 </span>
               </div>
             </div>
@@ -329,7 +329,7 @@ export const EconomyPanel: React.FC = () => {
             </div>
             <div className="text-sect-jade/60 text-xs">灵草</div>
             <div className="font-display text-sect-herb-light">{herbInventory} 株</div>
-            <div className="text-xs text-green-400 mt-1">+{totalHerbIncome}/月</div>
+            <div className="text-xs text-green-400 mt-1">+{totalHerbIncome}/季度</div>
           </div>
           <div className="text-center p-3 rounded-lg bg-sect-ink-light/30">
             <div className="mb-1 flex justify-center" style={{ color: 'var(--ink-200, #c8c8d0)' }}>
@@ -337,7 +337,7 @@ export const EconomyPanel: React.FC = () => {
             </div>
             <div className="text-sect-jade/60 text-xs">灵铁</div>
             <div className="font-display" style={{ color: 'var(--ink-100, #e0e0e8)' }}>{ironInventory} 块</div>
-            <div className="text-xs text-green-400 mt-1">+{totalIronIncome}/月</div>
+            <div className="text-xs text-green-400 mt-1">+{totalIronIncome}/季度</div>
           </div>
           <div className="text-center p-3 rounded-lg bg-sect-ink-light/30">
             <div className="text-sect-gold mb-1 flex justify-center">
@@ -345,7 +345,7 @@ export const EconomyPanel: React.FC = () => {
             </div>
             <div className="text-sect-jade/60 text-xs">符纸</div>
             <div className="font-display text-sect-gold">{paperInventory} 张</div>
-            <div className="text-xs text-green-400 mt-1">+{totalPaperIncome}/月</div>
+            <div className="text-xs text-green-400 mt-1">+{totalPaperIncome}/季度</div>
           </div>
           <div className="text-center p-3 rounded-lg bg-sect-ink-light/30">
             <div className="text-sect-gold mb-1 flex justify-center">
@@ -353,7 +353,7 @@ export const EconomyPanel: React.FC = () => {
             </div>
             <div className="text-sect-jade/60 text-xs">杂役弟子</div>
             <div className="font-display text-sect-jade">{servantCount} 人</div>
-            <div className="text-xs text-red-400 mt-1">-{servantStipend}/月</div>
+            <div className="text-xs text-red-400 mt-1">-{servantStipend}/季度</div>
           </div>
           <div className="text-center p-3 rounded-lg bg-sect-ink-light/30">
             <div className="text-sect-spirit mb-1 flex justify-center">
@@ -368,7 +368,7 @@ export const EconomyPanel: React.FC = () => {
             </div>
             <div className="text-sect-jade/60 text-xs">净收益</div>
             <div className={`font-display ${netIncome >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-              {netIncome >= 0 ? '+' : ''}{netIncome}/月
+              {netIncome >= 0 ? '+' : ''}{netIncome}/季度
             </div>
           </div>
         </div>

@@ -73,7 +73,7 @@ export const NotificationPanel: React.FC = () => {
                         {notification.content}
                       </div>
                       <div className="text-xs text-sect-jade/40 mt-1">
-                        第 {notification.timestamp.year} 年 {notification.timestamp.month} 月
+                        第 {notification.timestamp.year} 年 {notification.timestamp.month} 季度
                       </div>
                     </div>
                     {!notification.read && (

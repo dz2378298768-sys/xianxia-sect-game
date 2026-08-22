@@ -714,7 +714,7 @@ export const useGameStore = create<GameState>()(
           ? state.disciples.map(d => ({ ...d, satisfaction: Math.max(0, Math.min(100, d.satisfaction + satChange)) }))
           : state.disciples;
         // 生成连锁事件
-        const currentMonthTotal = state.year * 12 + state.month;
+        const currentMonthTotal = state.year * 4 + state.month;
         const newChainEvents = generateChainEvents(
           state.choiceEvent.id,
           choice.label,
@@ -1817,7 +1817,7 @@ export const useGameStore = create<GameState>()(
             .map(buff => ({ ...buff, remainingMonths: buff.remainingMonths - 1 }))
             .filter(buff => buff.remainingMonths > 0);
 
-          d2 = { ...d2, age: d2.age + 1 / 12 };
+          d2 = { ...d2, age: d2.age + 1 / 4 };
 
           return d2;
         });
@@ -2102,7 +2102,7 @@ export const useGameStore = create<GameState>()(
         // 敌对/附庸门派不参与好感度自动回归（已是特殊关系）
         const yearStartFavorDecay: { name: string; before: number; after: number }[] = [];
         month += 1;
-        if (month > 12) {
+        if (month > 4) {
           month = 1;
           year += 1;
           karmaYearlyRecover = 1;  // 跨年恢复 1 点正邪度
@@ -2886,6 +2886,13 @@ export const useGameStore = create<GameState>()(
 
             if (bought > 0 || sold > 0) {
               autoTradeRecords.push({ id: shopItemId, name: item.name, bought, sold, cost, gain });
+              // 将自动交易收支加入月度结算明细
+              if (cost > 0) {
+                spiritStoneExpense.push({ source: `自动买入-${item.name}`, amount: cost });
+              }
+              if (gain > 0) {
+                spiritStoneIncome.push({ source: `自动卖出-${item.name}`, amount: gain });
+              }
             }
           }
         }
@@ -2977,7 +2984,7 @@ export const useGameStore = create<GameState>()(
         const pendingChoiceEvent = emergentResult.choiceEvent;
 
         // 处理连锁事件：检查到期的连锁事件
-        const currentMonthTotal = year * 12 + month;
+        const currentMonthTotal = year * 4 + month;
         const { activated: activatedChainEvents, remaining: remainingChainEvents } = processPendingChainEvents(
           state.pendingChainEvents,
           currentMonthTotal,
@@ -3056,7 +3063,7 @@ export const useGameStore = create<GameState>()(
           // 计算自预警开始经过的月数
           const startYear = warning.warningStartYear ?? year;
           const startMonth = warning.warningStartMonth ?? month;
-          const monthsSinceWarning = (year - startYear) * 12 + (month - startMonth);
+          const monthsSinceWarning = (year - startYear) * 4 + (month - startMonth);
           if (monthsSinceWarning < warning.warningMonths) continue; // 预警期未到，继续等待
           // 预警到期触发
           newNotifications.push(createNotification(
@@ -3077,6 +3084,15 @@ export const useGameStore = create<GameState>()(
           collapsed: emergentResult.collapsed,
           collapseReason: emergentResult.collapseReason,
         };
+        // 灵石 ≤ -5000 时弹出警告
+        if (finalSpiritStones <= -5000 && !emergentResult.collapsed) {
+          newNotifications.push(createNotification(
+            'danger',
+            '灵石枯竭警告',
+            `连续四季度灵石负 5000，游戏将失败！`,
+            { year, month },
+          ));
+        }
 
         // 贡献值流水：将本月新记录合并到状态头部，最多保留 5000 条（避免存档无限膨胀）
         const mergedContributionLogs = [...pendingContributionLogs, ...state.contributionLogs].slice(0, 5000);
@@ -3468,7 +3484,7 @@ export const useGameStore = create<GameState>()(
         const maxTries = 20;
         const candidateCount = 4;
         for (let i = 0; i < maxTries && candidates.length < candidateCount; i++) {
-          const c = createInitialDisciple('mortal', 'mortal');
+          const c = createInitialDisciple('mortal', 'mortal', state.sectLevel);
           c.joinDate = { year: state.year, month: state.month };
           c.status = 'servant';
           c.realm = 'qi';
@@ -3485,7 +3501,7 @@ export const useGameStore = create<GameState>()(
         }
         // 保证至少有 3 个：合规不足则补随机
         while (candidates.length < 3) {
-          const c = createInitialDisciple('mortal', 'mortal');
+          const c = createInitialDisciple('mortal', 'mortal', state.sectLevel);
           c.joinDate = { year: state.year, month: state.month };
           c.status = 'servant';
           c.realm = 'qi';
