@@ -398,7 +398,7 @@ const TournamentResultView: React.FC<{ result: TournamentResult; current?: boole
           <SectIcon name="trophy" size={13} strokeWidth={1.8} />
           {sessionLabel}{scopeText}{freqText}战报
         </div>
-        <span className="text-[10px] text-sect-jade/50">第{result.date.year}年{result.date.month}季度</span>
+        <span className="text-[10px] text-sect-jade/50">第{result.date.year}年{['春', '夏', '秋', '冬'][result.date.month - 1]}</span>
       </div>
 
       <div className="flex items-center gap-3 mb-1.5 text-[11px]">

@@ -95,7 +95,7 @@ export const SectInfoDrawer: React.FC = () => {
             <SectIcon name="temple" size={18} strokeWidth={1.8} className="text-[var(--gold-300)]" />
             <span className="font-display text-[var(--gold-200)] text-sm">宗门总览</span>
             <span className="text-[10px] text-[var(--ink-400)]">
-              {year}年{month}季度
+              {year}年{['春', '夏', '秋', '冬'][month - 1]}
             </span>
           </div>
           <button

@@ -67,7 +67,7 @@ export const BottomNav: React.FC = () => {
               <SectIcon name="nextMonth" size={18} strokeWidth={2} />
             </span>
             <span className="nav-next-turn-label">
-              第{year}年{month}季度
+              第{year}年{['春', '夏', '秋', '冬'][month - 1]}
             </span>
           </button>
         </span>

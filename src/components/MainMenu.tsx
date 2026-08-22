@@ -335,7 +335,7 @@ const SaveSlotCard: React.FC<{
         </div>
         <div className="flex items-center gap-2 text-[10px] text-[var(--ink-300)]">
           <span className="flex items-center gap-0.5">
-            <Clock size={10} /> {slot.year}年{slot.month}季度
+            <Clock size={10} /> {slot.year}年{['春', '夏', '秋', '冬'][slot.month - 1]}
           </span>
           <span className="flex items-center gap-0.5">
             <Users size={10} /> {slot.discipleCount}

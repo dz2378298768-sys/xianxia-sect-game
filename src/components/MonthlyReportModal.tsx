@@ -24,7 +24,7 @@ export const MonthlyReportModal: React.FC = () => {
     <Modal
       isOpen={showReport}
       onClose={dismissReport}
-      title={`季度简报 · 第 ${monthlyReport.date.year} 年 ${monthlyReport.date.month} 季度`}
+      title={`季度简报 · 第 ${monthlyReport.date.year} 年 ${['春', '夏', '秋', '冬'][monthlyReport.date.month - 1]}`}
       size="lg"
     >
       <div className="space-y-2">

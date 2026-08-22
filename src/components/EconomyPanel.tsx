@@ -192,7 +192,7 @@ export const EconomyPanel: React.FC = () => {
                 ))}
                 {data.map((d, i) => (
                   <text key={i} x={xOf(i)} y={H - padB + 26} textAnchor="middle" fontSize={fsX} fill="rgba(212,210,180,0.6)">
-                    {d.year}.{d.month}
+                    {d.year}.{['春', '夏', '秋', '冬'][d.month - 1]}
                   </text>
                 ))}
                 <path d={path} fill="none" stroke="#d4af37" strokeWidth={strokeW} strokeLinejoin="round" strokeLinecap="round" />
@@ -262,7 +262,7 @@ export const EconomyPanel: React.FC = () => {
                 )}
                 {data.map((d, i) => (
                   <text key={i} x={xOf(i)} y={H - padB + 26} textAnchor="middle" fontSize={fsX} fill="rgba(212,210,180,0.6)">
-                    {d.year}.{d.month}
+                    {d.year}.{['春', '夏', '秋', '冬'][d.month - 1]}
                   </text>
                 ))}
                 <path d={path} fill="none" stroke="#34d399" strokeWidth={strokeW} strokeLinejoin="round" strokeLinecap="round" />

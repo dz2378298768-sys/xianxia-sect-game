@@ -45,7 +45,7 @@ export const VictoryModal: React.FC = () => {
           </div>
           <p className="text-sm text-sect-jade/80 leading-relaxed">
             于第 <span className="text-sect-gold font-display">{victoryInfo.year}</span> 年
-            <span className="text-sect-gold font-display"> {victoryInfo.month}</span> 季度，
+            <span className="text-sect-gold font-display"> {['春', '夏', '秋', '冬'][victoryInfo.month - 1]}</span>，
             战胜通天塔，白日飞升，踏足仙界。
           </p>
           <p className="text-xs text-sect-jade/50 mt-2">

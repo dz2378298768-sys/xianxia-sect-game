@@ -64,7 +64,7 @@ export const TopBar: React.FC = () => {
 
           {/* 中央：年份和弟子数 */}
           <div className="flex items-center gap-2 text-[9px] text-[var(--ink-300)]">
-            <span>第{year}年{month}季度</span>
+            <span>第{year}年{['春', '夏', '秋', '冬'][month - 1]}</span>
             <span className="text-[var(--ink-400)]">|</span>
             <span className="flex items-center gap-0.5">
               <SectIcon name="disciple" size={10} strokeWidth={1.6} />
@@ -117,7 +117,7 @@ export const TopBar: React.FC = () => {
                   <div className="text-[11px] text-sect-jade">存档位 {i + 1}</div>
                   {slot ? (
                     <div className="text-[10px] text-sect-jade/50 truncate">
-                      {slot.sectName} · 第{slot.year}年{slot.month}季度 · {slot.sectLevel}
+                      {slot.sectName} · 第{slot.year}年{['春', '夏', '秋', '冬'][slot.month - 1]} · {slot.sectLevel}
                     </div>
                   ) : (
                     <div className="text-[10px] text-sect-jade/30">空</div>

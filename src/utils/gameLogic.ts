@@ -13,6 +13,11 @@ import { generateTalentDisplay, calculateLifespan, calculateCultivationSpeed, ge
 import { canLearnBook, generateRandomBook } from '@/utils/bookGenerator';
 import type { MonthlyReport, GameDate, Notification, SectHistoryEntry, SectHistoryType, BuildingEvent, ChoiceEvent, ChainEvent, PendingChainEvent, CalamityEvent, SectLevel } from '@/types/game';
 import { computeBuildingOutput, computeMaintenance, recomputeCultivationSpeed, computeMonthlyContribution } from '@/domain/balance';
+
+/** 将季度数字(1-4)转为季节名称 */
+export function getSeasonName(month: number): string {
+  return ['春', '夏', '秋', '冬'][month - 1] ?? '';
+}
 import { ARTIFACT_CONFIGS } from '@/data/artifacts';
 import { TALISMAN_CONFIGS } from '@/data/talismans';
 import { BEAST_CONFIGS } from '@/data/beasts';

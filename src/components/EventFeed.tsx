@@ -122,7 +122,7 @@ export const EventFeed: React.FC = () => {
                   <span className="event-feed-title-text">{n.title}</span>
                   <span className="event-feed-desc">{n.content}</span>
                   <div className="event-feed-time">
-                    第 {n.timestamp.year} 年 {n.timestamp.month} 季度
+                    第 {n.timestamp.year} 年 {['春', '夏', '秋', '冬'][n.timestamp.month - 1]}
                   </div>
                 </div>
               </div>

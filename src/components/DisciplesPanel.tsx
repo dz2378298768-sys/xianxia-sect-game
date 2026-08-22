@@ -1539,7 +1539,7 @@ export const DisciplesPanel: React.FC = () => {
                         {events.map((evt, idx) => (
                           <div key={idx}>
                             <div className="text-[10px] text-sect-jade/40 mb-0.5">
-                              第{evt.year}年{evt.month > 4 ? '' : `${evt.month}季度`}
+                              第{evt.year}年{evt.month > 4 ? '' : ['春', '夏', '秋', '冬'][evt.month - 1]}
                             </div>
                             {evt.content}
                           </div>
