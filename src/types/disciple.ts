@@ -383,6 +383,8 @@ export interface Disciple {
   preferences?: DisciplePreference; // 喜好偏好
   // 藏经阁自动推演开关
   disableAutoDeduce?: boolean;      // true=不自动推演（默认false即允许自动推演，但新增弟子默认关）
+  // 战力经验系统：满经验100时获得5%战力加成，可通过演武场/大比/试炼/探索获取
+  combatExperience?: number;        // 当前战力经验值 0-100
 }
 
 export interface PromotionRules {

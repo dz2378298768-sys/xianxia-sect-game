@@ -656,6 +656,14 @@ function applyTournamentRewards(
           break;
       }
     });
+
+    // 大比战力经验奖励：冠军+10，亚军+5，季军+3
+    if (championDisciple) {
+      const expGain = result.ourRank === 1 ? 10 : result.ourRank === 2 ? 5 : 3;
+      const currentExp = championDisciple.combatExperience || 0;
+      const newExp = Math.min(100, currentExp + expGain);
+      championDisciple.combatExperience = newExp;
+    }
   }
 
   return { newSpiritStones, newReputation, newPillInventory, newDisciples, contributionChanges };
@@ -749,13 +757,13 @@ export const useGameStore = create<GameState>()(
         const baseRewards: TrialReward = (() => {
           switch (region.id) {
             case 'outer':
-              return { spiritStones: 10, reputation: 3, herbs: 5, description: '探索收获（灵石+10，声望+3，灵草+5）' };
+              return { spiritStones: 10, reputation: 3, herbs: 5, combatExperience: 3, description: '探索收获（灵石+10，声望+3，灵草+5，战力经验+3）' };
             case 'forest':
-              return { spiritStones: 30, reputation: 8, herbs: 10, iron: 3, description: '探索收获（灵石+30，声望+8，灵草+10，灵铁+3）' };
+              return { spiritStones: 30, reputation: 8, herbs: 10, iron: 3, combatExperience: 5, description: '探索收获（灵石+30，声望+8，灵草+10，灵铁+3，战力经验+5）' };
             case 'ruins':
-              return { spiritStones: 80, reputation: 15, iron: 8, paper: 5, specialMaterials: [{ name: '灵玉', amount: 1 }], description: '探索收获（灵石+80，声望+15，灵铁+8，符纸+5，灵玉×1）' };
+              return { spiritStones: 80, reputation: 15, iron: 8, paper: 5, specialMaterials: [{ name: '灵玉', amount: 1 }], combatExperience: 8, description: '探索收获（灵石+80，声望+15，灵铁+8，符纸+5，灵玉×1，战力经验+8）' };
             case 'secret':
-              return { spiritStones: 200, reputation: 30, herbs: 20, iron: 15, paper: 10, specialMaterials: [{ name: '空冥石', amount: 1 }, { name: '七宝砂', amount: 1 }], description: '探索收获（灵石+200，声望+30，灵草+20，灵铁+15，符纸+10，空冥石×1，七宝砂×1）' };
+              return { spiritStones: 200, reputation: 30, herbs: 20, iron: 15, paper: 10, specialMaterials: [{ name: '空冥石', amount: 1 }, { name: '七宝砂', amount: 1 }], combatExperience: 12, description: '探索收获（灵石+200，声望+30，灵草+20，灵铁+15，符纸+10，空冥石×1，七宝砂×1，战力经验+12）' };
             default:
               return { spiritStones: 10, reputation: 3, description: '探索收获' };
           }
@@ -983,15 +991,14 @@ export const useGameStore = create<GameState>()(
           const assignedDisciples = disciples.filter(d => building.assignedDisciples.includes(d.id));
           const output = calculateBuildingOutput(building, assignedDisciples);
 
-          // 宗门流派/天赋树产出加成
-          let outputMul = 1;
-          if (schoolBonuses.spiritStoneOutputBonus && output.spiritStones > 0) outputMul = 1 + (schoolBonuses.spiritStoneOutputBonus || 0) / 100;
-          if (schoolBonuses.pillOutputBonus && output.pills > 0) outputMul = Math.max(outputMul, 1 + (schoolBonuses.pillOutputBonus || 0) / 100);
-          if (schoolBonuses.artifactOutputBonus && output.artifacts > 0) outputMul = Math.max(outputMul, 1 + (schoolBonuses.artifactOutputBonus || 0) / 100);
-          if (schoolBonuses.talismanOutputBonus && output.talismans > 0) outputMul = Math.max(outputMul, 1 + (schoolBonuses.talismanOutputBonus || 0) / 100);
+          // 宗门流派/天赋树产出加成（各类型独立计算）
+          const ssMul = 1 + (schoolBonuses.spiritStoneOutputBonus || 0) / 100;
+          const pillMul = 1 + (schoolBonuses.pillOutputBonus || 0) / 100;
+          const artifactMul = 1 + (schoolBonuses.artifactOutputBonus || 0) / 100;
+          const talismanMul = 1 + (schoolBonuses.talismanOutputBonus || 0) / 100;
 
           if (output.spiritStones > 0) {
-            const mulAmount = Math.floor(output.spiritStones * outputMul);
+            const mulAmount = Math.floor(output.spiritStones * ssMul);
             totalSpiritStoneIncome += mulAmount;
             spiritStoneIncome.push({ source: building.name, amount: mulAmount });
           }
@@ -1072,19 +1079,22 @@ export const useGameStore = create<GameState>()(
             }
 
             if (prod.pillType) {
+              const actualQty = Math.max(1, Math.floor(prod.quantity * pillMul));
               const existing = accPillInventory.find(p => p.type === prod.pillType);
-              if (existing) existing.quantity += prod.quantity;
-              else accPillInventory.push({ type: prod.pillType, quantity: prod.quantity });
+              if (existing) existing.quantity += actualQty;
+              else accPillInventory.push({ type: prod.pillType, quantity: actualQty });
               accHerbs -= prod.herbsConsumed;
             } else if (prod.artifactType) {
+              const actualQty = Math.max(1, Math.floor(prod.quantity * artifactMul));
               const existing = accArtifactInventory.find(a => a.type === prod.artifactType);
-              if (existing) existing.quantity += prod.quantity;
-              else accArtifactInventory.push({ type: prod.artifactType, quantity: prod.quantity });
+              if (existing) existing.quantity += actualQty;
+              else accArtifactInventory.push({ type: prod.artifactType, quantity: actualQty });
               accIron -= prod.ironConsumed;
             } else if (prod.talismanType) {
+              const actualQty = Math.max(1, Math.floor(prod.quantity * talismanMul));
               const existing = accTalismanInventory.find(t => t.type === prod.talismanType);
-              if (existing) existing.quantity += prod.quantity;
-              else accTalismanInventory.push({ type: prod.talismanType, quantity: prod.quantity });
+              if (existing) existing.quantity += actualQty;
+              else accTalismanInventory.push({ type: prod.talismanType, quantity: actualQty });
               accPaper -= prod.paperConsumed;
             }
           }
@@ -1822,6 +1832,35 @@ export const useGameStore = create<GameState>()(
           return d2;
         });
 
+        // ===== 演武场修炼：弟子消耗贡献获取战力经验 =====
+        const trainingGround = currentBuildings.find(b => b.type === 'training_ground' && b.status === 'active');
+        if (trainingGround) {
+          const trainingDisciples = updatedDisciples.map(d => {
+            if (trainingGround.assignedDisciples.includes(d.id)) {
+              const cost = 20;
+              if (d.contributionPoints >= cost) {
+                const currentExp = d.combatExperience || 0;
+                const gain = 5;
+                const newExp = Math.min(100, currentExp + gain);
+                let dNew = { ...d, contributionPoints: d.contributionPoints - cost, combatExperience: newExp };
+                // 首次达到满经验
+                if (currentExp < 100 && newExp >= 100) {
+                  newNotifications.push(createNotification(
+                    'success', '战力大成',
+                    `${d.name} 在演武场苦修终有所成，战力经验圆满！战力+5%。`,
+                    { year, month },
+                  ));
+                }
+                return dNew;
+              }
+            }
+            return d;
+          });
+          // 替代 updatedDisciples
+          updatedDisciples.length = 0;
+          updatedDisciples.push(...trainingDisciples);
+        }
+
         // ===== 自然流失：寿命死亡 + 叛逃（替代旧版 "status=mortal 粗暴离开"） =====
         // processDiscipleDepartures 内部会：
         //   · age >= maxAge 判定寿终；连续低满意度判定叛逃
@@ -2251,28 +2290,69 @@ export const useGameStore = create<GameState>()(
           }
         }
 
-        // 天下宗门自然发展：每月战力随时间增长
-        // 高等级宗门增长更快；附庸宗门因被压制增长缓慢
+        // 天下宗门自然发展：每月战力随时间增长，每年年初根据本宗战力重新校准
+        // 设计原则：
+        //   1. 月度增长基于等级基准战力（固定值），避免复利指数爆炸
+        //   2. 每年年初根据本宗当前战力，重新校准各宗门战力至合理范围
+        //   3. 校准采用追赶机制（移动 30% 差距），避免突变，保持平滑
+        //   4. 各等级宗门保持不同战力区间，让玩家每个阶段都有可挑战的对手
         {
-          const levelGrowthMul: Record<SectLevel, number> = {
-            founding: 0.5,
-            known: 0.8,
-            famous: 1.2,
-            dominant: 1.8,
-            eternal: 2.5,
+          // 各等级基准战力（用于月度线性增长）
+          const levelBaseCombat: Record<SectLevel, number> = {
+            founding: 200,
+            known: 1000,
+            famous: 5000,
+            dominant: 25000,
+            eternal: 100000,
           };
+          const levelGrowthMul: Record<SectLevel, number> = {
+            founding: 1.0,
+            known: 1.5,
+            famous: 2.5,
+            dominant: 4.0,
+            eternal: 6.0,
+          };
+          // 年份加速：平滑增长，每 20 年增长因子翻倍，难度递增更自然
+          const yearMul = 1 + year * 0.05;
+          // 各等级宗门相对本宗战力的目标倍率范围
+          // 玩家每个阶段都有对应的可挑战对手，而非全部碾压或被碾压
+          const levelTargetRange: Record<SectLevel, [number, number]> = {
+            founding: [0.3, 0.8],    // 弱于本宗，可附庸
+            known: [0.5, 1.5],       // 与本宗相当
+            famous: [1.0, 3.0],      // 强于本宗，需努力
+            dominant: [2.0, 5.0],    // 远强于本宗，大敌
+            eternal: [4.0, 10.0],    // 终局威胁
+          };
+          // 本宗当前战力（用于年度校准）
+          const playerCombatPower = calculateSectCombatPower(
+            finalDisciples, currentBuildings, schoolBonuses,
+          ).totalPower;
           refreshedOtherSects = refreshedOtherSects.map(s => {
             const baseMul = levelGrowthMul[s.level] ?? 1.0;
+            const base = levelBaseCombat[s.level] ?? 200;
             // 附庸宗门被压榨，增长效率仅 30%
             const vassalMul = s.diplomaticStatus === 'vassal' ? 0.3 : 1.0;
             // 同盟宗门交流密切，增长略快（+20%）
             const allyMul = s.diplomaticStatus === 'ally' ? 1.2 : 1.0;
-            // 基础月增长：战力的 1.5% × 系数，下限 5
+            // 月度增长 = 基准战力 × 3% × 系数 × 年份加速，下限 10
             const growth = Math.max(
-              5,
-              Math.floor(s.combatPower * 0.015 * baseMul * vassalMul * allyMul),
+              10,
+              Math.floor(base * 0.03 * baseMul * vassalMul * allyMul * yearMul),
             );
-            return { ...s, combatPower: s.combatPower + growth };
+            let newPower = s.combatPower + growth;
+            // 每年年初重新校准：向基于本宗战力的目标范围靠拢
+            if (month === 1) {
+              const [minMul, maxMul] = levelTargetRange[s.level] ?? [0.5, 1.0];
+              const targetMin = Math.floor(playerCombatPower * minMul);
+              const targetMax = Math.max(targetMin + 1, Math.floor(playerCombatPower * maxMul));
+              const target = targetMin + Math.floor(Math.random() * (targetMax - targetMin));
+              // 向目标追赶 30% 的差距，平滑过渡
+              const diff = target - newPower;
+              newPower = newPower + Math.floor(diff * 0.3);
+              // 最低保底 10
+              newPower = Math.max(10, newPower);
+            }
+            return { ...s, combatPower: newPower };
           });
         }
 
@@ -2510,7 +2590,6 @@ export const useGameStore = create<GameState>()(
         const currentUnlocked = [...state.unlockedExplorationRegions];
         EXPLORATION_REGIONS.forEach(region => {
           if (currentUnlocked.includes(region.id)) return;
-          const completedTrials = state.trials.filter(t => t.status === 'completed' && t.type === region.trialType);
           // 首个区域（宗门周边）初始已解锁，跳过
           if (region.id === 'outer') return;
           // 前置区域
@@ -2632,13 +2711,15 @@ export const useGameStore = create<GameState>()(
               }
               // 探索地图碎片掉落
               if (trial.type === 'explore_forest' && Math.random() < 0.3) {
+                const prevFragments = accMapFragments;
                 accMapFragments += 1;
                 trialNotifs.push(createNotification(
                   'success', '发现地图碎片',
                   `弟子 ${disciple.name} 在妖兽森林中发现了一块古老的地图碎片（${accMapFragments}/3）。`,
                   { year, month },
                 ));
-                if (accMapFragments >= 3) {
+                // 仅在首次达到3块时触发"拼合完成"通知
+                if (prevFragments < 3 && accMapFragments >= 3) {
                   trialNotifs.push(createNotification(
                     'success', '地图拼合完成',
                     '三块地图碎片拼合完成！古战场遗迹的入口位置已标记在图中。',
@@ -2654,7 +2735,7 @@ export const useGameStore = create<GameState>()(
                   { year, month },
                 ));
               }
-              if (r.contributionPoints || r.satisfaction) {
+              if (r.contributionPoints || r.satisfaction || r.combatExperience) {
                 finalDisciples = finalDisciples.map(d => {
                   if (d.id !== disciple.id) return d;
                   const patch: Partial<Disciple> = { onTrialId: null };
@@ -2667,6 +2748,18 @@ export const useGameStore = create<GameState>()(
                     );
                   }
                   if (r.satisfaction) patch.satisfaction = Math.min(100, d.satisfaction + r.satisfaction);
+                  if (r.combatExperience) {
+                    const currentExp = d.combatExperience || 0;
+                    const newExp = Math.min(100, currentExp + r.combatExperience);
+                    patch.combatExperience = newExp;
+                    if (currentExp < 100 && newExp >= 100) {
+                      trialNotifs.push(createNotification(
+                        'success', '战力大成',
+                        `${d.name} 在试炼中突破极限，战力经验圆满！战力+5%。`,
+                        { year, month },
+                      ));
+                    }
+                  }
                   return { ...d, ...patch };
                 });
               } else {
@@ -2731,10 +2824,10 @@ export const useGameStore = create<GameState>()(
           // 创建新的探索试炼
           const baseRewardsForAuto: TrialReward = (() => {
             switch (region.id) {
-              case 'outer': return { spiritStones: 10, reputation: 3, herbs: 5, description: '探索收获（灵石+10，声望+3，灵草+5）' };
-              case 'forest': return { spiritStones: 30, reputation: 8, herbs: 10, iron: 3, description: '探索收获（灵石+30，声望+8，灵草+10，灵铁+3）' };
-              case 'ruins': return { spiritStones: 80, reputation: 15, iron: 8, paper: 5, specialMaterials: [{ name: '灵玉', amount: 1 }], description: '探索收获（灵石+80，声望+15，灵铁+8，符纸+5，灵玉×1）' };
-              case 'secret': return { spiritStones: 200, reputation: 30, herbs: 20, iron: 15, paper: 10, specialMaterials: [{ name: '空冥石', amount: 1 }, { name: '七宝砂', amount: 1 }], description: '探索收获（灵石+200，声望+30，灵草+20，灵铁+15，符纸+10，空冥石×1，七宝砂×1）' };
+              case 'outer': return { spiritStones: 10, reputation: 3, herbs: 5, combatExperience: 3, description: '探索收获（灵石+10，声望+3，灵草+5，战力经验+3）' };
+              case 'forest': return { spiritStones: 30, reputation: 8, herbs: 10, iron: 3, combatExperience: 5, description: '探索收获（灵石+30，声望+8，灵草+10，灵铁+3，战力经验+5）' };
+              case 'ruins': return { spiritStones: 80, reputation: 15, iron: 8, paper: 5, specialMaterials: [{ name: '灵玉', amount: 1 }], combatExperience: 8, description: '探索收获（灵石+80，声望+15，灵铁+8，符纸+5，灵玉×1，战力经验+8）' };
+              case 'secret': return { spiritStones: 200, reputation: 30, herbs: 20, iron: 15, paper: 10, specialMaterials: [{ name: '空冥石', amount: 1 }, { name: '七宝砂', amount: 1 }], combatExperience: 12, description: '探索收获（灵石+200，声望+30，灵草+20，灵铁+15，符纸+10，空冥石×1，七宝砂×1，战力经验+12）' };
               default: return { spiritStones: 10, reputation: 3, description: '探索收获' };
             }
           })();
@@ -2794,8 +2887,13 @@ export const useGameStore = create<GameState>()(
               return accTalismanInventory.find(t => t.type === item.talismanType)?.quantity ?? 0;
             if (item.beastType)
               return newBeastInventory.find(b => b.type === item.beastType)?.quantity ?? 0;
-            if (item.materialName)
-              return accSpecialMaterials[item.materialName] ?? 0;
+            if (item.materialName) {
+              const mn = item.materialName;
+              if (mn === '灵草') return accHerbs;
+              if (mn === '玄铁' || mn === '灵铁' || mn === '矿石') return accIron;
+              if (mn === '灵纸' || mn === '符纸') return accPaper;
+              return accSpecialMaterials[mn] ?? 0;
+            }
             return 0;
           };
           const addStock = (item: typeof SHOP_ITEMS[number]) => {
@@ -2816,7 +2914,11 @@ export const useGameStore = create<GameState>()(
               if (idx >= 0) newBeastInventory[idx] = { ...newBeastInventory[idx], quantity: newBeastInventory[idx].quantity + 1 };
               else newBeastInventory.push({ type: item.beastType!, quantity: 1 });
             } else if (item.materialName) {
-              accSpecialMaterials[item.materialName] = (accSpecialMaterials[item.materialName] ?? 0) + 1;
+              const mn = item.materialName;
+              if (mn === '灵草') accHerbs += 1;
+              else if (mn === '玄铁' || mn === '灵铁' || mn === '矿石') accIron += 1;
+              else if (mn === '灵纸' || mn === '符纸') accPaper += 1;
+              else accSpecialMaterials[mn] = (accSpecialMaterials[mn] ?? 0) + 1;
             }
           };
           const removeStock = (item: typeof SHOP_ITEMS[number]) => {
@@ -2837,7 +2939,11 @@ export const useGameStore = create<GameState>()(
                 b.type === item.beastType ? { ...b, quantity: Math.max(0, b.quantity - 1) } : b,
               ).filter(b => b.quantity > 0);
             } else if (item.materialName) {
-              accSpecialMaterials[item.materialName] = Math.max(0, (accSpecialMaterials[item.materialName] ?? 0) - 1);
+              const mn = item.materialName;
+              if (mn === '灵草') accHerbs = Math.max(0, accHerbs - 1);
+              else if (mn === '玄铁' || mn === '灵铁' || mn === '矿石') accIron = Math.max(0, accIron - 1);
+              else if (mn === '灵纸' || mn === '符纸') accPaper = Math.max(0, accPaper - 1);
+              else accSpecialMaterials[mn] = Math.max(0, (accSpecialMaterials[mn] ?? 0) - 1);
             }
           };
           const sellPriceOf = (item: typeof SHOP_ITEMS[number]): number =>
@@ -3092,6 +3198,39 @@ export const useGameStore = create<GameState>()(
             `连续四季度灵石负 5000，游戏将失败！`,
             { year, month },
           ));
+        }
+
+        // ===== 宗门交易月度处理 =====
+        // 交易中的宗门：每月扣维护费（累加至投资总额），好感度+1（上限20）
+        // 已关闭交易的宗门：好感度每月-1（降至0为止）
+        const MAINTENANCE_FEE = 10; // 每月维护费
+        let tradeMaintenanceTotal = 0;
+        refreshedOtherSects = refreshedOtherSects.map(s => {
+          if (s.tradeActive) {
+            tradeMaintenanceTotal += MAINTENANCE_FEE;
+            const newTradeBonus = Math.min(20, s.tradeFavorBonus + 1);
+            const newFav = Math.max(0, Math.min(100, (s.baseFavorability ?? 50) + (s.karmaFavorApplied ?? 0) + newTradeBonus));
+            return {
+              ...s,
+              tradeInvestment: s.tradeInvestment + MAINTENANCE_FEE,
+              tradeFavorBonus: newTradeBonus,
+              favorability: newFav,
+            };
+          }
+          if (!s.tradeActive && s.tradeFavorBonus > 0) {
+            const newTradeBonus = Math.max(0, s.tradeFavorBonus - 1);
+            const newFav = Math.max(0, Math.min(100, (s.baseFavorability ?? 50) + (s.karmaFavorApplied ?? 0) + newTradeBonus));
+            return {
+              ...s,
+              tradeFavorBonus: newTradeBonus,
+              favorability: newFav,
+            };
+          }
+          return s;
+        });
+        finalSpiritStones -= tradeMaintenanceTotal;
+        if (tradeMaintenanceTotal > 0) {
+          spiritStoneExpense.push({ source: '交易维护费', amount: tradeMaintenanceTotal });
         }
 
         // 贡献值流水：将本月新记录合并到状态头部，最多保留 5000 条（避免存档无限膨胀）
@@ -4532,40 +4671,68 @@ export const useGameStore = create<GameState>()(
         const state = get();
         const sect = state.otherSects.find(s => s.id === sectId);
         if (!sect) return false;
-        // 开启交易：扣 50 灵石，开通后维持交易关系；提醒玩家可在合适时机手动结束获取一次性收益
+        // 与敌人不可交易
+        if (sect.relation === 'hostile' || sect.diplomaticStatus === 'rival') {
+          return false;
+        }
         if (!sect.tradeActive) {
-          const cost = 50;
-          if (state.spiritStones < cost) return false;
+          // ---- 开启交易 ----
+          // 每年只可互动一次
+          if (sect.lastInteractionYear === state.year) return false;
+          // 记录当前战力作为结算基准，开通交易（无初始费用，每月付维护费）
           const newSects = state.otherSects.map(s =>
-            s.id === sectId ? { ...s, tradeActive: true } : s,
+            s.id === sectId
+              ? {
+                  ...s,
+                  tradeActive: true,
+                  tradeFavorBonus: 0,
+                  tradeInvestment: 0,
+                  combatPowerAtTradeStart: s.combatPower,
+                  lastInteractionYear: state.year,
+                }
+              : s,
           );
           const openNotif = createNotification(
             'info', '交易开启',
-            `已与「${sect.name}」建立交易通道（消耗 50 灵石）。结束时将按对方战力一次性获得少量灵石与 1 点声望，请在合适时机手动结束。`,
+            `已与「${sect.name}」建立交易通道。每月自动扣除维护费并累加投资，每回合好感度+1（上限20）。关闭交易时按对方战力增长与投资总额结算收益。`,
             { year: state.year, month: state.month },
           );
           set({
             otherSects: newSects,
-            spiritStones: state.spiritStones - cost,
             notifications: [openNotif, ...state.notifications].slice(0, 50),
           });
           return true;
         } else {
-          // 结束交易：收益 = 对方战力 ×0.3% + 5（最低 5）；声望 +1
-          const income = Math.max(5, Math.floor(sect.combatPower * 0.003) + 5);
-          const repGain = 1;
+          // ---- 关闭交易（结算） ----
+          const growthRatio = sect.combatPowerAtTradeStart > 0
+            ? sect.combatPower / sect.combatPowerAtTradeStart
+            : 1;
+          // 收益 = 投资总额 × 战力增长率（对面战力增长10%则回收110%）
+          const income = Math.floor(sect.tradeInvestment * growthRatio);
+          // 投资本金返还（已包含在 income 中）
+          const profit = income - sect.tradeInvestment;
           const newSects = state.otherSects.map(s =>
-            s.id === sectId ? { ...s, tradeActive: false } : s,
+            s.id === sectId
+              ? {
+                  ...s,
+                  tradeActive: false,
+                  tradeFavorBonus: Math.min(20, s.tradeFavorBonus), // 保留已有好感加成，后续每月下降
+                  tradeInvestment: 0,
+                  combatPowerAtTradeStart: 0,
+                  favorability: Math.max(0, Math.min(100, (s.baseFavorability ?? 50) + (s.karmaFavorApplied ?? 0) + Math.min(20, s.tradeFavorBonus))),
+                }
+              : s,
           );
+          const profitStr = profit >= 0 ? `净赚 ${profit} 灵石` : `亏损 ${Math.abs(profit)} 灵石`;
           const closeNotif = createNotification(
-            'success', '交易结算',
-            `与「${sect.name}」的交易圆满结束，本次获利 ${income} 灵石、${repGain} 点声望。`,
+            profit >= 0 ? 'success' : 'warning',
+            '交易结算',
+            `与「${sect.name}」的交易结束，回收 ${income} 灵石（${profitStr}）。`,
             { year: state.year, month: state.month },
           );
           set({
             otherSects: newSects,
             spiritStones: state.spiritStones + income,
-            reputation: state.reputation + repGain,
             notifications: [closeNotif, ...state.notifications].slice(0, 50),
           });
           return true;
@@ -4964,10 +5131,20 @@ export const useGameStore = create<GameState>()(
           }
           // 原材料类：增加特殊材料库存
           else if (item.materialName) {
-            patch.specialMaterials = {
-              ...state.specialMaterials,
-              [item.materialName]: (state.specialMaterials[item.materialName] ?? 0) + 1,
-            };
+            const mn = item.materialName;
+            // 基础材料走专用字段
+            if (mn === '灵草') {
+              patch.herbInventory = state.herbInventory + 1;
+            } else if (mn === '玄铁' || mn === '灵铁' || mn === '矿石') {
+              patch.ironInventory = state.ironInventory + 1;
+            } else if (mn === '灵纸' || mn === '符纸') {
+              patch.paperInventory = state.paperInventory + 1;
+            } else {
+              patch.specialMaterials = {
+                ...state.specialMaterials,
+                [mn]: (state.specialMaterials[mn] ?? 0) + 1,
+              };
+            }
           }
 
           return patch;
@@ -4992,14 +5169,18 @@ export const useGameStore = create<GameState>()(
         else if (item.talismanType) { inv = state.talismanInventory; type = item.talismanType; }
         else if (item.beastType) { inv = state.beastInventory; type = item.beastType; }
         let have = inv?.find(i => i.type === type)?.quantity ?? 0;
-        // 原材料库存校验
+        // 原材料库存校验：基础材料走专用字段，特殊材料走 specialMaterials
         if (item.materialName) {
-          have = state.specialMaterials[item.materialName] ?? 0;
+          const mn = item.materialName;
+          if (mn === '灵草') have = state.herbInventory;
+          else if (mn === '玄铁' || mn === '灵铁' || mn === '矿石') have = state.ironInventory;
+          else if (mn === '灵纸' || mn === '符纸') have = state.paperInventory;
+          else have = state.specialMaterials[mn] ?? 0;
         }
         if (have <= 0) return { success: false, reason: '库存不足' };
 
-        // 出售价 = floor(售价 * 0.5)（与 beast.ts 注释约定一致）
-        const gain = Math.floor(item.price * 0.5);
+        // 出售价 = 优先用 sellPrice，未设置则 fallback floor(price * 0.5)
+        const gain = item.sellPrice ?? Math.floor(item.price * 0.5);
 
         set(state => {
           const patch: Partial<GameState> = {
@@ -5010,10 +5191,19 @@ export const useGameStore = create<GameState>()(
           else if (item.talismanType) patch.talismanInventory = removeItem(state.talismanInventory, item.talismanType);
           else if (item.beastType) patch.beastInventory = removeItem(state.beastInventory, item.beastType);
           else if (item.materialName) {
-            patch.specialMaterials = {
-              ...state.specialMaterials,
-              [item.materialName]: Math.max(0, (state.specialMaterials[item.materialName] ?? 0) - 1),
-            };
+            const mn = item.materialName;
+            if (mn === '灵草') {
+              patch.herbInventory = Math.max(0, state.herbInventory - 1);
+            } else if (mn === '玄铁' || mn === '灵铁' || mn === '矿石') {
+              patch.ironInventory = Math.max(0, state.ironInventory - 1);
+            } else if (mn === '灵纸' || mn === '符纸') {
+              patch.paperInventory = Math.max(0, state.paperInventory - 1);
+            } else {
+              patch.specialMaterials = {
+                ...state.specialMaterials,
+                [mn]: Math.max(0, (state.specialMaterials[mn] ?? 0) - 1),
+              };
+            }
           }
           return patch;
         });

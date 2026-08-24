@@ -13,11 +13,6 @@ import { generateTalentDisplay, calculateLifespan, calculateCultivationSpeed, ge
 import { canLearnBook, generateRandomBook } from '@/utils/bookGenerator';
 import type { MonthlyReport, GameDate, Notification, SectHistoryEntry, SectHistoryType, BuildingEvent, ChoiceEvent, ChainEvent, PendingChainEvent, CalamityEvent, SectLevel } from '@/types/game';
 import { computeBuildingOutput, computeMaintenance, recomputeCultivationSpeed, computeMonthlyContribution } from '@/domain/balance';
-
-/** 将季度数字(1-4)转为季节名称 */
-export function getSeasonName(month: number): string {
-  return ['春', '夏', '秋', '冬'][month - 1] ?? '';
-}
 import { ARTIFACT_CONFIGS } from '@/data/artifacts';
 import { TALISMAN_CONFIGS } from '@/data/talismans';
 import { BEAST_CONFIGS } from '@/data/beasts';
@@ -464,16 +459,17 @@ export function getCaveMansionUpgradeCost(currentLevel: number): { spiritStones:
 export const MAINTENANCE_COST_TABLE: Record<string, number[]> = {
   mountain_gate: [15, 30, 60, 100, 150, 220, 300, 400, 550, 750],
   lecture_hall: [10, 25, 50],
-  servant_hall: [10, 10, 10, 10, 10, 10, 10, 10, 10, 10],
+  servant_hall: [15, 25, 40, 55, 75, 100, 130, 165, 205, 250],
   outer_residence: [10, 20, 40],
   inner_residence: [15, 30, 60],
   core_residence: [20, 40, 80],
   secret_library: [30, 60, 120, 200],
-  pill_hall: [25, 55, 110],
-  sutra_hall: [30, 65, 130],
-  artifact_hall: [20, 45, 90],
+  pill_hall: [35, 70, 140],
+  sutra_hall: [45, 90, 180],
+  artifact_hall: [30, 60, 120],
   array_hall: [20, 45, 90],
-  spirit_beast_garden: [40, 85, 170],
+  spirit_beast_garden: [55, 110, 220],
+  training_ground: [30],
   cave_mansion: [30, 60, 120, 240, 400],
   skyscraper_tower: [0, 0, 0, 0, 0, 0, 0, 0, 0],
 };
@@ -636,6 +632,8 @@ export function createInitialDisciple(status: DiscipleStatus = 'servant', realm:
     tournamentHistory: [],
     // 自动推演默认关闭，避免藏经阁爆库
     disableAutoDeduce: true,
+    // 战力经验初始为0
+    combatExperience: 0,
   };
 
   // 生成弟子个性化数据
@@ -902,15 +900,12 @@ export function attemptBreakthrough(disciple: Disciple, hasPill: boolean = false
 }
 
 export function processMonthlyCultivation(disciple: Disciple): Disciple {
-  if (disciple.status === 'mortal' || disciple.status === 'servant') {
-    if (disciple.realm === 'mortal') {
-      const required = getStageBreakthroughRequired('mortal', disciple.realmStage);
-      return {
-        ...disciple,
-        realmProgress: Math.min(required, disciple.realmProgress + disciple.cultivationSpeed * 2),
-      };
-    }
-    return disciple;
+  if (disciple.realm === 'mortal') {
+    const required = getStageBreakthroughRequired('mortal', disciple.realmStage);
+    return {
+      ...disciple,
+      realmProgress: Math.min(required, disciple.realmProgress + disciple.cultivationSpeed * 2),
+    };
   }
 
   if (disciple.isBreakingThrough) {
@@ -1271,7 +1266,10 @@ export function calculateDiscipleCombatPower(disciple: Disciple): number {
     if (cfg?.combatPowerBonus) equipmentBonus += cfg.combatPowerBonus;
   }
 
-  return Math.floor(basePower * (1 + totalBookBonus / 100) + equipmentBonus);
+  // 战力经验加成：满经验100 → +5%战力（线性缩放）
+  const combatExpBonus = ((disciple.combatExperience || 0) / 100) * 5;
+
+  return Math.floor(basePower * (1 + totalBookBonus / 100 + combatExpBonus / 100) + equipmentBonus);
 }
 
 // ===== 战力构成明细（带回源） =====

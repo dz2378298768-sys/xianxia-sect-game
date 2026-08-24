@@ -27,6 +27,8 @@ import { CombatPowerBreakdownView } from '@/components/CombatPowerBreakdown';
 import { CONSTITUTIONS, RARITY_COLORS, RARITY_NAMES } from '@/data/constitutions';
 import type { Constitution } from '@/data/constitutions';
 import { SectIcon } from '@/components/icons/SectIcons';
+import { getRootBoneEffectiveness } from '@/data/buildings';
+import { applySatisfactionPenalty } from '@/domain/balance';
 
 function getRealmColor(realm: string): string {
   const colors: Record<string, string> = {
@@ -164,12 +166,25 @@ export function getTalentCardClasses(tier: TalentTier): {
   }
 }
 
-function getBaseCultivationSpeed(disciple: any): number {
-  const totalBonus = disciple.buffs
+/** 计算有效修炼速度（含 buff/功法加成 + 满意度惩罚，与实际月度增长一致） */
+function getEffectiveCultivationSpeed(disciple: any): { base: number; effective: number; totalBonus: number; satMultiplier: number } {
+  const base = disciple.cultivationSpeed;
+  const rootBoneEff = getRootBoneEffectiveness(disciple.hiddenTalents?.rootBone ?? 50);
+  // buff 加成（居所/讲经堂等）
+  const buffSum = (disciple.buffs ?? [])
     .filter((b: any) => b.type === 'cultivation')
     .reduce((sum: number, b: any) => sum + b.value, 0);
-  const satisfactionPenalty = (100 - disciple.satisfaction) * 0.02;
-  return disciple.cultivationSpeed / (1 + totalBonus / 100) / (1 - satisfactionPenalty);
+  // 功法加成
+  let techniqueBonus = 0;
+  if (disciple.learnedTechnique) {
+    const t = disciple.learnedTechnique;
+    techniqueBonus = t.isLearned ? t.cultivationBonus : t.cultivationBonus * (t.progress / 100);
+  }
+  const totalBonus = (buffSum + techniqueBonus) * rootBoneEff;
+  const clampedBonus = Math.max(-50, Math.min(250, totalBonus));
+  const satMultiplier = applySatisfactionPenalty(base, disciple.satisfaction) / base;
+  const effective = base * satMultiplier * (1 + clampedBonus / 100);
+  return { base, effective, totalBonus: clampedBonus, satMultiplier };
 }
 
 // 头像组件统一使用 ui/Avatar（DiscipleAvatar / SimpleAvatar），不再在此文件内重复定义
@@ -728,41 +743,58 @@ export const DisciplesPanel: React.FC = () => {
                 </div>
                 
                 {/* 修炼速度 */}
-                <div className="rounded-xl border border-sect-gold/15 bg-gradient-to-br from-sect-ink-light/30 to-sect-ink-light/10 p-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[14px]">✨</span>
-                      <span className="text-[11px] text-sect-jade/80 font-medium">修炼速度</span>
-                    </div>
-                    <span className="font-display text-sect-gold text-sm">
-                      {selectedDisciple.cultivationSpeed.toFixed(1)}/季度
-                    </span>
-                  </div>
-                  <ProgressBar
-                    value={Math.min(100, selectedDisciple.cultivationSpeed * 2)}
-                    max={100}
-                    color="spirit"
-                  />
-                  {/* 加成明细 */}
-                  <div className="mt-2 pt-2 border-t border-sect-gold/10 text-xs space-y-1">
-                    <div className="flex justify-between text-sect-jade/60">
-                      <span>基础速度</span>
-                      <span>{getBaseCultivationSpeed(selectedDisciple).toFixed(1)}/季度</span>
-                    </div>
-                    {selectedDisciple.buffs.filter(b => b.type === 'cultivation' && b.value > 0).map(buff => (
-                      <div key={buff.id} className="flex justify-between text-green-400">
-                        <span>{buff.name}</span>
-                        <span>+{buff.value}%</span>
+                {(() => {
+                  const speedInfo = getEffectiveCultivationSpeed(selectedDisciple);
+                  return (
+                    <div className="rounded-xl border border-sect-gold/15 bg-gradient-to-br from-sect-ink-light/30 to-sect-ink-light/10 p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[14px]">✨</span>
+                          <span className="text-[11px] text-sect-jade/80 font-medium">修炼速度</span>
+                        </div>
+                        <span className="font-display text-sect-gold text-sm">
+                          {speedInfo.effective.toFixed(1)}/季度
+                        </span>
                       </div>
-                    ))}
-                    {selectedDisciple.satisfaction < 100 && (
-                      <div className="flex justify-between text-red-400">
-                        <span>满意度惩罚</span>
-                        <span>-{(100 - selectedDisciple.satisfaction) * 2}%</span>
+                      <ProgressBar
+                        value={Math.min(100, speedInfo.effective * 2)}
+                        max={100}
+                        color="spirit"
+                      />
+                      {/* 加成明细 */}
+                      <div className="mt-2 pt-2 border-t border-sect-gold/10 text-xs space-y-1">
+                        <div className="flex justify-between text-sect-jade/60">
+                          <span>基础速度</span>
+                          <span>{speedInfo.base.toFixed(1)}/季度</span>
+                        </div>
+                        {selectedDisciple.buffs.filter(b => b.type === 'cultivation' && b.value > 0).map(buff => (
+                          <div key={buff.id} className="flex justify-between text-green-400">
+                            <span>{buff.name}</span>
+                            <span>+{buff.value}%</span>
+                          </div>
+                        ))}
+                        {selectedDisciple.learnedTechnique && (
+                          <div className="flex justify-between text-green-400">
+                            <span>功法加成（{selectedDisciple.learnedTechnique.name}）</span>
+                            <span>+{selectedDisciple.learnedTechnique.cultivationBonus}%</span>
+                          </div>
+                        )}
+                        {selectedDisciple.satisfaction < 100 && (
+                          <div className="flex justify-between text-red-400">
+                            <span>满意度惩罚</span>
+                            <span>-{(100 - selectedDisciple.satisfaction) * 2}%</span>
+                          </div>
+                        )}
+                        {speedInfo.totalBonus !== 0 && (
+                          <div className="flex justify-between border-t border-sect-gold/10 pt-1 text-sect-jade">
+                            <span>季度修为增长</span>
+                            <span>≈{Math.floor(speedInfo.effective)}/季度</span>
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                </div>
+                    </div>
+                  );
+                })()}
                 
                 {/* 满意度 */}
                 <div className="rounded-xl border border-sect-gold/15 bg-gradient-to-br from-sect-ink-light/30 to-sect-ink-light/10 p-3">
@@ -1145,7 +1177,7 @@ export const DisciplesPanel: React.FC = () => {
                           ) : null}
                           <div className="border-t border-sect-gold/20 pt-1 flex justify-between">
                             <span className="text-sect-jade/60">灵力（修炼效率）</span>
-                            <span className="text-sect-gold">{selectedDisciple.cultivationSpeed.toFixed(1)}/季度</span>
+                            <span className="text-sect-gold">{getEffectiveCultivationSpeed(selectedDisciple).effective.toFixed(1)}/季度</span>
                           </div>
                         </div>
                       }
@@ -1157,7 +1189,7 @@ export const DisciplesPanel: React.FC = () => {
                           <span className="text-sect-jade/60 text-xs">生命/灵力</span>
                         </div>
                         <div className="text-sect-jade font-medium">{selectedDisciple.maxHp}</div>
-                        <div className="text-[10px] text-sect-gold/60">灵力 {selectedDisciple.cultivationSpeed.toFixed(1)}/季度</div>
+                        <div className="text-[10px] text-sect-gold/60">灵力 {getEffectiveCultivationSpeed(selectedDisciple).effective.toFixed(1)}/季度</div>
                       </div>
                     </Tooltip>
                     

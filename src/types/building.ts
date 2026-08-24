@@ -9,6 +9,7 @@ export type BuildingType =
   | 'array_hall'
   | 'spirit_beast_garden'
   | 'skyscraper_tower'
+  | 'training_ground'
   | 'outer_residence'
   | 'inner_residence'
   | 'core_residence'
@@ -36,6 +37,7 @@ export const BuildingTypeNames: Record<BuildingType, string> = {
   array_hall: '阵堂',
   spirit_beast_garden: '灵兽原',
   skyscraper_tower: '通天塔',
+  training_ground: '演武场',
   outer_residence: '外门居所',
   inner_residence: '内门居所',
   core_residence: '核心居所',

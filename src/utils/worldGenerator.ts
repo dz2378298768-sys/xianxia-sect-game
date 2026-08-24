@@ -174,6 +174,9 @@ export function generateOtherSect(playerLevel: SectLevel, playerAlignment: SectA
     karmaFavorApplied: 0, // 初始尚未扣好感
     diplomaticStatus: 'neutral',
     tradeActive: false,
+    tradeFavorBonus: 0,
+    tradeInvestment: 0,
+    combatPowerAtTradeStart: 0,
     truceUntilYear: null,
     lastInteractionYear: null,
   };
@@ -199,7 +202,7 @@ export function generateOtherSects(count: number, playerLevel: SectLevel, player
 // 好感度小幅波动只改 baseFavorability，并保持 favorability = clamp(base + karmaApplied)
 export function refreshSectRelations(sects: OtherSect[]): OtherSect[] {
   return sects.map(sect => {
-    // 对老存档补齐字段（karmaFavorApplied / baseFavorability）
+    // 对老存档补齐字段（karmaFavorApplied / baseFavorability / tradeFavorBonus）
     const baseFav =
       typeof (sect as OtherSect).baseFavorability === 'number'
         ? (sect as OtherSect).baseFavorability
@@ -208,6 +211,7 @@ export function refreshSectRelations(sects: OtherSect[]): OtherSect[] {
       typeof (sect as OtherSect).karmaFavorApplied === 'number'
         ? (sect as OtherSect).karmaFavorApplied
         : 0;
+    const tradeBonus = (sect as OtherSect).tradeFavorBonus ?? 0;
 
     // 15%概率关系变动
     if (Math.random() < 0.15) {
@@ -223,8 +227,9 @@ export function refreshSectRelations(sects: OtherSect[]): OtherSect[] {
         ...sect,
         baseFavorability: newBase,
         karmaFavorApplied: karmaApplied,
+        tradeFavorBonus: tradeBonus,
         relation: relations[newIdx],
-        favorability: Math.max(0, Math.min(100, newBase + karmaApplied)),
+        favorability: Math.max(0, Math.min(100, newBase + karmaApplied + tradeBonus)),
       };
     }
     // 不变动关系时也补齐字段，避免老存档缺字段
@@ -236,8 +241,14 @@ export function refreshSectRelations(sects: OtherSect[]): OtherSect[] {
         ...sect,
         baseFavorability: baseFav,
         karmaFavorApplied: karmaApplied,
-        favorability: Math.max(0, Math.min(100, baseFav + karmaApplied)),
+        tradeFavorBonus: tradeBonus,
+        favorability: Math.max(0, Math.min(100, baseFav + karmaApplied + tradeBonus)),
       };
+    }
+    // 即使不需要补齐老字段，也确保 favorability 包含 tradeFavorBonus
+    const currentFav = Math.max(0, Math.min(100, baseFav + karmaApplied + tradeBonus));
+    if (sect.favorability !== currentFav) {
+      return { ...sect, favorability: currentFav };
     }
     return sect;
   });
@@ -431,7 +442,7 @@ function generateTrialReward(type: TrialType, difficulty: TrialDifficulty, mul: 
 
   // 类型特色奖励
   if (type === 'town') {
-    // 城镇：给原料 + 贡献
+    // 城镇：给原料 + 贡献 + 少量战力经验
     const herbs = Math.floor(randomInt(5, 15) * mul);
     reward.herbs = herbs;
     descParts.push(`${herbs}灵草`);
@@ -443,8 +454,11 @@ function generateTrialReward(type: TrialType, difficulty: TrialDifficulty, mul: 
     const contrib = Math.floor(randomInt(20, 50) * mul);
     reward.contributionPoints = contrib;
     descParts.push(`${contrib}贡献`);
+    const combatExp = Math.floor(randomInt(2, 5) * Math.min(mul, 3));
+    reward.combatExperience = combatExp;
+    descParts.push(`${combatExp}战力经验`);
   } else if (type === 'monster') {
-    // 妖物：给灵铁/符纸 + 贡献 + 满意度，偶尔掉落战斗相关特殊材料
+    // 妖物：给灵铁/符纸 + 贡献 + 满意度 + 战力经验，偶尔掉落战斗相关特殊材料
     const iron = Math.floor(randomInt(5, 12) * mul);
     reward.iron = iron;
     descParts.push(`${iron}灵铁`);
@@ -459,6 +473,10 @@ function generateTrialReward(type: TrialType, difficulty: TrialDifficulty, mul: 
     const sat = Math.floor(randomInt(5, 15) * Math.min(mul, 3));
     reward.satisfaction = sat;
     descParts.push(`${sat}满意度`);
+    // 妖物战斗经验更多
+    const combatExp = Math.floor(randomInt(5, 10) * Math.min(mul, 3));
+    reward.combatExperience = combatExp;
+    descParts.push(`${combatExp}战力经验`);
     // 妖物有 35% 概率掉落 1 种战斗相关特殊材料（龟甲/精钢/朱砂/玄铁粉/冰晶等）
     if (Math.random() < 0.35) {
       const monsterDrops = SPECIAL_MATERIALS.filter(m =>
@@ -491,6 +509,10 @@ function generateTrialReward(type: TrialType, difficulty: TrialDifficulty, mul: 
     const sat = Math.floor(randomInt(10, 25) * Math.min(mul, 3));
     reward.satisfaction = sat;
     descParts.push(`${sat}满意度`);
+    // 秘境战斗经验最丰富
+    const combatExp = Math.floor(randomInt(10, 15) * Math.min(mul, 3));
+    reward.combatExperience = combatExp;
+    descParts.push(`${combatExp}战力经验`);
     // 秘境额外掉落特殊材料（60% 概率掉 1~2 种）
     if (Math.random() < 0.6) {
       const dropCount = randomInt(1, 2);

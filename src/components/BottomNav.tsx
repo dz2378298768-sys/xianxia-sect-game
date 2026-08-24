@@ -21,6 +21,7 @@ const NAV_ITEMS: NavItem[] = [
 
 export const BottomNav: React.FC = () => {
   const { activePanel, setActivePanel } = useUIStore();
+  const { toggleShop } = useUIStore();
   const { nextMonth, year, month } = useGameStore();
 
   const handleNavClick = useCallback((key: PanelType) => {

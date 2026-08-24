@@ -87,6 +87,7 @@ function getBuildingIcon(type: string) {
     case 'array_hall': return <Zap size={24} />;
     case 'spirit_beast_garden': return <TreePine size={24} />;
     case 'skyscraper_tower': return <Crown size={24} />;
+    case 'training_ground': return <Swords size={24} />;
     default: return <Building2 size={24} />;
   }
 }
@@ -1273,6 +1274,44 @@ export const BuildingsPanel: React.FC = () => {
                         </Button>
                       </div>
                     </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {selectedBuilding.type === 'training_ground' && (() => {
+              const trainingDisciples = disciples.filter(d => selectedBuilding.assignedDisciples.includes(d.id));
+              return (
+                <div className="bg-gradient-to-br from-orange-500/10 to-red-600/5 border border-orange-400/40 rounded p-2 text-[11px] space-y-2">
+                  <div className="font-display text-orange-300 flex items-center gap-1">
+                    <Swords size={12} />演武场 · 战力修炼
+                  </div>
+                  <div className="space-y-0.5 text-sect-jade/80 leading-snug">
+                    <div>✓ 每名弟子每月消耗 <span className="text-orange-300 font-mono">20</span> 贡献点</div>
+                    <div>✓ 每月获得 <span className="text-orange-300 font-mono">5</span> 战力经验</div>
+                    <div>★ 满 100 战力经验再 +<span className="text-yellow-300 font-mono">5%</span> 战力加成</div>
+                    <div className="text-[10px] text-sect-jade/50">（大比、试炼、探索也可获得战力经验）</div>
+                  </div>
+                  {trainingDisciples.length > 0 && (
+                    <div className="space-y-0.5">
+                      <div className="text-[10px] text-orange-300/80">修炼弟子：</div>
+                      {trainingDisciples.map(d => {
+                        const exp = d.combatExperience || 0;
+                        const progress = exp >= 100 ? '圆满' : `${exp}/100`;
+                        return (
+                          <div key={d.id} className="flex items-center gap-1.5 px-1.5 py-0.5 bg-sect-ink-light/40 rounded">
+                            <SimpleAvatar seed={d.avatarSeed} name={d.name} status={d.status} realm={d.realm} size={16} />
+                            <span className="text-sect-jade text-[11px]">{d.name}</span>
+                            <span className="ml-auto text-[10px] text-orange-300/80">
+                              战力经验 {progress}{exp >= 100 ? ' ✓' : ''}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {trainingDisciples.length === 0 && (
+                    <div className="text-[10px] text-sect-jade/50">暂无弟子在此修炼，请分配弟子到演武场。</div>
                   )}
                 </div>
               );

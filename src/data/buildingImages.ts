@@ -14,6 +14,7 @@ export const BUILDING_IMAGE_MAP: Record<string, string> = {
   spirit_beast_garden: '/buildings/spirit-beast-garden.jpg',
   cave_mansion: '/buildings/cave-mansion.jpg',
   skyscraper_tower: '/buildings/skyscraper-tower.jpg',
+  training_ground: '/buildings/training-ground.jpg',
 };
 
 export function getBuildingImage(type: string): string | undefined {

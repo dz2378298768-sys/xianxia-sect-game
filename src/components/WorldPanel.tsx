@@ -302,27 +302,54 @@ const WorldSectCard: React.FC<{ sect: OtherSect; ourCombatPower: number }> = ({ 
           {/* 交易 */}
           <div>
             <div className="text-[10px] text-[var(--ink-400)] mb-1">交易</div>
-            <button
-              onClick={() => {
-                const ok = store.toggleSectTrade(sect.id);
-                if (!ok && !sect.tradeActive) showMsg('灵石不足！需50灵石');
-              }}
-              className={`w-full text-[10px] py-1.5 rounded border transition-all flex items-center justify-center gap-1 ${
-                sect.tradeActive
-                  ? 'bg-[var(--gold-300)]/15 text-[var(--gold-300)] border-[var(--gold-300)]/40 hover:bg-[var(--gold-300)]/25'
-                  : 'bg-[var(--ink-400)]/10 text-[var(--ink-300)] border-[var(--ink-400)]/20 hover:border-[var(--gold-300)]/30'
-              }`}
-            >
-              <SectIcon name="gem" size={11} strokeWidth={1.8} />
-              {sect.tradeActive
-                ? `结束交易（预估 +${Math.max(5, Math.floor(sect.combatPower * 0.003) + 5)} 灵石 / +1 声望）`
-                : '开启交易（-50灵石）'}
-            </button>
-            <div className="text-[9px] text-[var(--ink-500)] mt-0.5 leading-tight">
-              {sect.tradeActive
-                ? `结束收益按对方当前战力结算：战力×0.3% + 5（最低5）+ 1 声望`
-                : `开通消耗 50 灵石，结束时一次性获得少量灵石与 1 点声望`}
-            </div>
+            {sect.relation === 'hostile' || sect.diplomaticStatus === 'rival' ? (
+              <div className="w-full text-[10px] py-1.5 rounded border border-red-400/30 text-red-400/60 bg-red-400/5 flex items-center justify-center gap-1 cursor-not-allowed">
+                <SectIcon name="sword" size={11} strokeWidth={1.8} />
+                敌对宗门，不可交易
+              </div>
+            ) : sect.tradeActive ? (
+              <>
+                <div className="text-[9px] text-[var(--gold-300)]/80 mb-1 leading-tight">
+                  已投资：{sect.tradeInvestment} 灵石 | 好感加成：+{sect.tradeFavorBonus} | 月维护费：10灵石
+                </div>
+                <button
+                  onClick={() => {
+                    const ok = store.toggleSectTrade(sect.id);
+                    if (!ok) showMsg('结算失败');
+                  }}
+                  className="w-full text-[10px] py-1.5 rounded border transition-all flex items-center justify-center gap-1 bg-[var(--gold-300)]/15 text-[var(--gold-300)] border-[var(--gold-300)]/40 hover:bg-[var(--gold-300)]/25"
+                >
+                  <SectIcon name="gem" size={11} strokeWidth={1.8} />
+                  {sect.combatPowerAtTradeStart > 0
+                    ? `结束交易（预估回收 ${Math.floor(sect.tradeInvestment * (sect.combatPower / sect.combatPowerAtTradeStart))} 灵石）`
+                    : '结束交易'}
+                </button>
+                <div className="text-[9px] text-[var(--ink-500)] mt-0.5 leading-tight">
+                  回收 = 投资 × 对方战力增长率，战力增长越多收益越高
+                </div>
+              </>
+            ) : sect.lastInteractionYear === store.year ? (
+              <div className="w-full text-[10px] py-1.5 rounded border border-[var(--ink-400)]/20 text-[var(--ink-500)] bg-[var(--ink-400)]/5 flex items-center justify-center gap-1 cursor-not-allowed">
+                <SectIcon name="gem" size={11} strokeWidth={1.8} />
+                今年已互动（每年仅一次）
+              </div>
+            ) : (
+              <>
+                <button
+                  onClick={() => {
+                    const ok = store.toggleSectTrade(sect.id);
+                    if (!ok) showMsg('今年已互动或条件不满足');
+                  }}
+                  className="w-full text-[10px] py-1.5 rounded border transition-all flex items-center justify-center gap-1 bg-[var(--ink-400)]/10 text-[var(--ink-300)] border-[var(--ink-400)]/20 hover:border-[var(--gold-300)]/30"
+                >
+                  <SectIcon name="gem" size={11} strokeWidth={1.8} />
+                  开启交易
+                </button>
+                <div className="text-[9px] text-[var(--ink-500)] mt-0.5 leading-tight">
+                  每月维护费10灵石，每回合好感+1（上限20），关闭时按战力增长结算
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

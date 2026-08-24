@@ -173,7 +173,10 @@ export interface OtherSect {
   baseFavorability: number;  // 基础好感度（不含正邪度修正，来自赠送/侮辱/同盟/讨伐等手动互动与天然关系）
   karmaFavorApplied: number; // 已因正邪度累计施加的好感修正（负数）。注意：是「总量一次性」而非每月累计
   diplomaticStatus: DiplomaticStatus;  // 外交状态
-  tradeActive: boolean;      // 是否正在交易
+  tradeActive: boolean;              // 是否正在交易
+  tradeFavorBonus: number;           // 交易累计好感加成（上限20），关闭后每月下降
+  tradeInvestment: number;           // 已投入灵石总额（每月维护费累加），关闭时结算收益
+  combatPowerAtTradeStart: number;   // 开启交易时的对方战力，用于结算时计算增长率
   truceUntilYear: number | null; // 停战至哪一年（null 表示无停战）
   lastInteractionYear: number | null; // 上次与本宗互动的年份（null 表示未互动过）；每宗门每年只能互动一次
 }
@@ -240,6 +243,7 @@ export interface TrialReward {
   specialMaterials?: { name: string; amount: number }[]; // 特殊材料（秘境掉落）
   contributionPoints?: number; // 弟子贡献点
   satisfaction?: number;       // 弟子满意度
+  combatExperience?: number;   // 战力经验
   description: string;         // 奖励描述
 }
 

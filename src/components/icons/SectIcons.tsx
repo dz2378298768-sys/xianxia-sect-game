@@ -290,6 +290,18 @@ export const IconYinyang: React.FC<IconProps> = ({ size = 24, className = '', st
   </svg>
 );
 
+// 演武场 —— 擂台+双剑交叉
+export const IconTrainingGround: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
+  <svg {...baseProps(size, className, strokeWidth)}>
+    <rect x="6" y="14" width="12" height="6" rx="1" />
+    <path d="M10 14 L10 10 M14 14 L14 10" />
+    <path d="M10 10 L14 10" />
+    <path d="M8 5 L12 9 L16 5" />
+    <path d="M8 7 L8 5 M16 7 L16 5" />
+    <path d="M4 12 L6 12 M18 12 L20 12" />
+  </svg>
+);
+
 // 手机/移动端
 export const IconMobile: React.FC<IconProps> = ({ size = 24, className = '', strokeWidth = 1.8 }) => (
   <svg {...baseProps(size, className, strokeWidth)}>
@@ -725,7 +737,8 @@ export type IconName =
   // 灵兽专属
   | 'beastSpiritFox' | 'beastMysticTurtle' | 'beastFireCrow'
   | 'beastJadeRabbit' | 'beastGoldenRoc' | 'beastIceSerpent'
-  | 'beastEarthBear';
+  | 'beastEarthBear'
+  | 'trainingGround';
 
 const ICON_MAP: Record<IconName, React.FC<IconProps>> = {
   list: IconList,
@@ -808,6 +821,7 @@ const ICON_MAP: Record<IconName, React.FC<IconProps>> = {
   beastGoldenRoc: IconBeastGoldenRoc,
   beastIceSerpent: IconBeastIceSerpent,
   beastEarthBear: IconBeastEarthBear,
+  trainingGround: IconTrainingGround,
 };
 
 export const SectIcon: React.FC<IconProps & { name: IconName }> = ({ name, size, className, strokeWidth }) => {

@@ -152,11 +152,11 @@ describe('computeBuildingOutput — 状态', () => {
 });
 
 describe('computeMaintenance — 单一来源，无双重计费', () => {
-  it('杂役堂各级维护费恒为 10（表设计意图，非随等级线性增长）', () => {
-    expect(computeMaintenance('servant_hall', 1)).toBe(10);
-    expect(computeMaintenance('servant_hall', 2)).toBe(10);
-    expect(computeMaintenance('servant_hall', 3)).toBe(10);
-    expect(computeMaintenance('servant_hall', 4)).toBe(10);
+  it('杂役堂维护费按等级递增：15 / 25 / 40 / 55', () => {
+    expect(computeMaintenance('servant_hall', 1)).toBe(15);
+    expect(computeMaintenance('servant_hall', 2)).toBe(25);
+    expect(computeMaintenance('servant_hall', 3)).toBe(40);
+    expect(computeMaintenance('servant_hall', 4)).toBe(55);
   });
 
   it('山门维护费按表逐级递增：15 / 30 / 60', () => {
@@ -165,11 +165,15 @@ describe('computeMaintenance — 单一来源，无双重计费', () => {
     expect(computeMaintenance('mountain_gate', 3)).toBe(60);
   });
 
-  it('丹堂 L2 维护费为表值 55，而非 base×1.75 的双重计费值', () => {
+  it('丹堂 L2 维护费为表值 70，而非 base×1.75 的双重计费值', () => {
     // 旧实现：baseMaintenanceCost 被覆写为 55 后再 ×1.75 = 96（错误）
-    // 新实现：单一查表 = 55
-    expect(computeMaintenance('pill_hall', 2)).toBe(55);
+    // 新实现：单一查表 = 70
+    expect(computeMaintenance('pill_hall', 2)).toBe(70);
     expect(computeMaintenance('pill_hall', 2)).not.toBe(55 * 1.75);
+  });
+
+  it('演武场维护费为 30（单级建筑）', () => {
+    expect(computeMaintenance('training_ground', 1)).toBe(30);
   });
 
   it('超出表范围按末两级差值线性外推', () => {
@@ -264,11 +268,11 @@ describe('recomputeLifespan — 突破后寿命随境界重算', () => {
     expect(foundationLife).toBeGreaterThan(qiLife);
   });
 
-  it('金丹寿命远高于筑基（境界寿命表 260 vs 110）', () => {
+  it('金丹寿命远高于筑基（境界寿命表 130 vs 55）', () => {
     const d = makeDisciple({ hiddenTalents: talents(50, 50, 50) });
     const foundationLife = recomputeLifespan(atRealm(d, 'foundation'));
     const goldenLife = recomputeLifespan(atRealm(d, 'golden'));
-    expect(goldenLife - foundationLife).toBeGreaterThanOrEqual(150);
+    expect(goldenLife - foundationLife).toBeGreaterThanOrEqual(60);
   });
 
   it('体质越高寿命越长', () => {

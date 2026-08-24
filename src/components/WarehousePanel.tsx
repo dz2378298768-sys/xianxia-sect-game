@@ -135,6 +135,10 @@ interface ItemData {
   isMaterial?: boolean;  // 是否原材料
   materialName?: string; // 原材料原名
   referencePrice?: number; // 贡献兑换参考价
+  // 配方解锁相关（仅丹药/法器/符箓）
+  recipeShopItemId?: string;
+  recipePrice?: number;
+  recipeUnlocked?: boolean;
 }
 
 export const WarehousePanel: React.FC = () => {
@@ -144,6 +148,7 @@ export const WarehousePanel: React.FC = () => {
     disciples, exchangeItemByDisciple, giftItemToDisciple,
     buyShopItem, sellShopItem, autoTrade, setAutoTradeRule, toggleAutoTrade,
     exchangeMaterialByDisciple,
+    unlockedPillRecipes, unlockedArtifactRecipes, unlockedTalismanRecipes,
   } = useGameStore();
   const [activeTab, setActiveTab] = useState<WarehouseTab>('pills');
   // 选中物品的详情弹窗（替代原生 title hover，手机端无 hover）
@@ -212,6 +217,8 @@ export const WarehousePanel: React.FC = () => {
     if (activeTab === 'pills') {
       return Object.values(PILL_CONFIGS).map(p => {
         const shop = SHOP_ITEMS.find(i => i.id === `pill:${p.type}`);
+        const recipeShopId = `pill_recipe:${p.type}`;
+        const recipeShop = SHOP_ITEMS.find(i => i.id === recipeShopId);
         return {
           id: p.type,
           name: p.name,
@@ -224,12 +231,17 @@ export const WarehousePanel: React.FC = () => {
           shopItemId: shop?.id,
           buyPrice: shop?.price,
           sellPrice: shop?.sellPrice,
+          recipeShopItemId: recipeShopId,
+          recipePrice: recipeShop?.price,
+          recipeUnlocked: unlockedPillRecipes.includes(p.type as any),
         };
       });
     }
     if (activeTab === 'artifacts') {
       return Object.values(ARTIFACT_CONFIGS).map(a => {
         const shop = SHOP_ITEMS.find(i => i.id === `artifact:${a.type}`);
+        const recipeShopId = `artifact_recipe:${a.type}`;
+        const recipeShop = SHOP_ITEMS.find(i => i.id === recipeShopId);
         return {
           id: a.type,
           name: a.name,
@@ -243,12 +255,17 @@ export const WarehousePanel: React.FC = () => {
           shopItemId: shop?.id,
           buyPrice: shop?.price,
           sellPrice: shop?.sellPrice,
+          recipeShopItemId: recipeShopId,
+          recipePrice: recipeShop?.price,
+          recipeUnlocked: unlockedArtifactRecipes.includes(a.type as any),
         };
       });
     }
     if (activeTab === 'talismans') {
       return Object.values(TALISMAN_CONFIGS).map(t => {
         const shop = SHOP_ITEMS.find(i => i.id === `talisman:${t.type}`);
+        const recipeShopId = `talisman_recipe:${t.type}`;
+        const recipeShop = SHOP_ITEMS.find(i => i.id === recipeShopId);
         return {
           id: t.type,
           name: t.name,
@@ -262,6 +279,9 @@ export const WarehousePanel: React.FC = () => {
           shopItemId: shop?.id,
           buyPrice: shop?.price,
           sellPrice: shop?.sellPrice,
+          recipeShopItemId: recipeShopId,
+          recipePrice: recipeShop?.price,
+          recipeUnlocked: unlockedTalismanRecipes.includes(t.type as any),
         };
       });
     }
@@ -715,6 +735,50 @@ export const WarehousePanel: React.FC = () => {
                     </div>
                   );
                 })()}
+              </div>
+            )}
+
+            {/* ===== 配方解锁（仅丹药/法器/符箓） ===== */}
+            {selectedItem.recipeShopItemId && (
+              <div className="wh-trade-block">
+                <div className="wh-trade-title">
+                  <SectIcon name="scrollText" size={13} className="text-sect-gold" />
+                  <span>生产配方</span>
+                </div>
+                {selectedItem.recipeUnlocked ? (
+                  <div className="flex items-center gap-2 text-emerald-400 text-xs py-2">
+                    <span>✓ 配方已解锁，可在建造面板设置生产目标</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-2 py-1">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs text-[var(--ink-300)]">
+                        花费 <span className="text-sect-spirit font-bold">{selectedItem.recipePrice?.toLocaleString() ?? '?'}</span> 灵石解锁配方
+                      </div>
+                      {selectedItem.materials && selectedItem.materials.length > 0 && (
+                        <div className="text-[10px] text-[var(--ink-400)] mt-0.5">
+                          炼制需：{selectedItem.materials.map(m => `${m.name}×${m.amount}`).join('、')}
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      className="wh-trade-btn wh-trade-btn--buy"
+                      disabled={!selectedItem.recipePrice || spiritStones < selectedItem.recipePrice}
+                      onClick={() => {
+                        if (!selectedItem.recipeShopItemId) return;
+                        const r = buyShopItem(selectedItem.recipeShopItemId);
+                        showToast(
+                          r.success
+                            ? `已解锁「${selectedItem.name}」配方！`
+                            : `解锁失败：${r.reason || '未知'}`,
+                        );
+                      }}
+                    >
+                      购买配方
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 

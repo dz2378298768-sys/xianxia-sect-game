@@ -76,6 +76,7 @@ function workerTalentScore(type: string, t: { rootBone: number; spiritRhythm: nu
     case 'spirit_beast_garden':return daoFate * 1.0 + rootBone * 0.3;
     case 'mountain_gate':      return daoFate * 0.5 + 10;
     case 'lecture_hall':       return spiritRhythm * 0.6 + rootBone * 0.4 + 15;
+    case 'training_ground':    return rootBone * 0.8 + daoFate * 0.4 + 20;
     default:                   return 30;
   }
 }
@@ -282,6 +283,7 @@ export const BUILDING_CONTRIBUTION_BONUS: Record<string, number> = {
   array_hall: 7,           // 阵堂
   spirit_beast_garden: 7,  // 灵兽原
   secret_library: 0,       // 藏经阁：无额外贡献（推演功法在 nextMonth 中单独处理）
+  training_ground: 0,       // 演武场：消耗贡献修炼，不产出贡献
 };
 
 /** 按建筑类型，弟子主属性对贡献的额外加成（鼓励按天赋选堂口） */
