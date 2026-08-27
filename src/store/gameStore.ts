@@ -3,8 +3,8 @@ import { persist } from 'zustand/middleware';
 import { useUIStore } from '@/store/uiStore';
 import type { Disciple, PromotionRules } from '@/types/disciple';
 import { DiscipleStatusNames, RealmNames, RealmOrder, getRealmDisplay } from '@/types/disciple';
-import type { Building, BuildingType } from '@/types/building';
-import { BuildingTypeNames } from '@/types/building';
+import type { Building, BuildingType, ProductionTarget } from '@/types/building';
+import { BuildingTypeNames, getAvailableSlots } from '@/types/building';
 import { RESIDENCE_TYPES } from '@/types/building';
 import { BUILDING_CONFIGS, BookTierNames } from '@/data/buildings';
 import type { BookConfig, BookTier, BookType } from '@/data/buildings';
@@ -23,7 +23,7 @@ import {
 import type { Trial, TrialReward, ContributionLog, ContributionLogType, SectHistoryEntry, AutoTradeRule, ChoiceEvent, BuildingEvent, ExplorationEncounter, TrialType, ChainEvent, PendingChainEvent, SectSchool, CalamityEvent } from '@/types/game';
 import {
   createInitialDisciple, createInitialBuildings, getDefaultPromotionRules, autoAssignBuilding,
-  autoAssignResidence, getResidenceUpgradeCost, getResidenceCapacityByLevel, getCaveMansionUpgradeCost,
+  autoAssignResidence, getResidenceUpgradeCost, getResidenceCapacityByLevel, getTrainingGroundCapacityByLevel, getCaveMansionUpgradeCost,
   monthlyReassign,
   autoAssignManagers, autoLearnTechniqueOnBreakthrough, pickUpgradeBook,
   getMaintenanceCostByLevel, calculateLectureBonus, SKYSCRAPER_TOWER_COMBAT_POWER,
@@ -55,7 +55,7 @@ import type { SiegeReportData } from '@/store/siegeReport';
 import type { TournamentConfig, TournamentResult, TournamentFrequency, FrequencyTournamentConfig } from '@/types/tournament';
 import { TournamentRewardTypeNames } from '@/types/tournament';
 import {
-  runTournament, shouldTournamentTrigger, getDefaultTournamentConfig,
+  runTournament, shouldTournamentTrigger, getDefaultTournamentConfig, generateInterSectRewards, rewardToText,
 } from '@/utils/tournament';
 import {
   saveToSlot as saveToSlotUtil, loadFromSlot as loadFromSlotUtil,
@@ -205,6 +205,7 @@ interface GameState {
   refreshOtherSects: () => void; // 刷新其他宗门列表
   toggleFollowDisciple: (discipleId: string) => void; // 关注/取消关注弟子
   appointElder: (discipleId: string) => { success: boolean; reason?: string }; // 任命核心弟子为长老
+  resignElder: (discipleId: string) => { success: boolean; reason?: string }; // 卸任长老，降为核心弟子
   setAutoAppointElder: (enabled: boolean) => void; // 设置自动任命长老开关
   setDiscipleAutoDeduce: (discipleId: string, disable: boolean) => void; // 设置弟子自动推演开关
   updateSectTournamentFreqConfig: (frequency: TournamentFrequency, config: Partial<FrequencyTournamentConfig>) => void;   // 更新山门大比指定频率配置
@@ -589,6 +590,7 @@ function applyTournamentRewards(
   let newDisciples = state.disciples.map(d => ({ ...d }));
   // 贡献变化明细：调用方据此写 contributionLogs（避免此函数依赖闭包）
   const contributionChanges: { discipleId: string; amount: number; balance: number; description: string }[] = [];
+  const isSect = result.scope === 'sect';
 
   if (result.ourRank > 0) {
     const earnedRewards = freqConfig.rewards.filter(r => r.rank === result.ourRank as 1 | 2 | 3);
@@ -625,7 +627,13 @@ function applyTournamentRewards(
     earnedRewards.forEach(reward => {
       switch (reward.type) {
         case 'spiritStones':
-          newSpiritStones += reward.amount;
+          if (isSect) {
+            // 宗门内大比：灵石从宗门库存扣除，发给弟子
+            newSpiritStones = Math.max(0, newSpiritStones - reward.amount);
+          } else {
+            // 宗门间大比：灵石从外部获得
+            newSpiritStones += reward.amount;
+          }
           break;
         case 'reputation':
           newReputation += reward.amount;
@@ -646,11 +654,21 @@ function applyTournamentRewards(
           break;
         case 'pill':
           if (reward.pillType) {
-            const existing = newPillInventory.find(p => p.type === reward.pillType);
-            if (existing) {
-              existing.quantity += reward.amount;
+            if (isSect) {
+              // 宗门内大比：丹药从库存扣除，发给弟子（检查库存是否足够）
+              const existing = newPillInventory.find(p => p.type === reward.pillType);
+              if (existing) {
+                const actualDeduct = Math.min(reward.amount, existing.quantity);
+                existing.quantity -= actualDeduct;
+              }
             } else {
-              newPillInventory.push({ type: reward.pillType, quantity: reward.amount });
+              // 宗门间大比：丹药从外部获得
+              const existing = newPillInventory.find(p => p.type === reward.pillType);
+              if (existing) {
+                existing.quantity += reward.amount;
+              } else {
+                newPillInventory.push({ type: reward.pillType, quantity: reward.amount });
+              }
             }
           }
           break;
@@ -667,6 +685,37 @@ function applyTournamentRewards(
   }
 
   return { newSpiritStones, newReputation, newPillInventory, newDisciples, contributionChanges };
+}
+
+/** 生产建筑初始解锁时自动设置默认生产目标 */
+function getDefaultProductionTargets(type: BuildingType, state: GameState): ProductionTarget[] {
+  // 非生产建筑无需默认生产目标
+  const config = BUILDING_CONFIGS[type];
+  if (!config || config.category !== 'production') return [];
+
+  // 根据建筑类型设置基础物品
+  const baseItem = (() => {
+    switch (type) {
+      case 'pill_hall':
+        // 默认生产筑基丹（最基础的丹药）
+        return { pillType: 'foundation_pill' as const };
+      case 'sutra_hall':
+        // 炼器堂默认生产飞剑（最基础的法器）
+        return { artifactType: 'flying_sword' as const };
+      case 'artifact_hall':
+        // 符堂默认生产火符（最基础的符箓）
+        return { talismanType: 'fire_talisman' as const };
+      default:
+        return null;
+    }
+  })();
+
+  if (!baseItem) return [];
+  // 槽位 0 设置默认目标，其余槽位留空
+  const slots: ProductionTarget[] = [baseItem];
+  const maxSlots = getAvailableSlots(1);
+  while (slots.length < maxSlots) slots.push({});
+  return slots;
 }
 
 export const useGameStore = create<GameState>()(
@@ -1130,22 +1179,66 @@ export const useGameStore = create<GameState>()(
           }
         }
 
-        // 附庸宗门上贡：每月给予玩家 10% 宗门收入灵石
+        // 附庸宗门上贡：好感度≥30 的附庸才会主动上贡，每月给予玩家 10% 宗门收入灵石
         const vassalSects = refreshedOtherSects.filter(s => s.diplomaticStatus === 'vassal');
-        if (vassalSects.length > 0) {
-          const tributeTotal = vassalSects.reduce((sum, s) => {
-            // 附庸上贡 = 对方战力 * 0.01 的灵石（模拟其10%收入）
-            return sum + Math.floor(s.combatPower * 0.1);
-          }, 0);
-          if (tributeTotal > 0) {
-            totalSpiritStoneIncome += tributeTotal;
-            spiritStoneIncome.push({ source: '附庸上贡', amount: tributeTotal });
-            newNotifications.push(createNotification(
-              'success', '附庸上贡',
-              `${vassalSects.length} 个附庸宗门上贡 ${tributeTotal} 灵石。`,
-              { year, month },
-            ));
+        let tributeTotal = 0;
+        const payingVassals: string[] = [];
+        const rebelliousVassals: string[] = [];
+        vassalSects.forEach(s => {
+          const fav = s.favorability ?? 50;
+          if (fav >= 30) {
+            // 附庸上贡 = 对方战力 * 0.05 * (好感度/100) 的灵石（好感度越高上贡越多）
+            tributeTotal += Math.floor(s.combatPower * 0.05 * (fav / 100));
+            payingVassals.push(s.name);
+          } else {
+            rebelliousVassals.push(s.name);
           }
+        });
+        if (tributeTotal > 0) {
+          totalSpiritStoneIncome += tributeTotal;
+          spiritStoneIncome.push({ source: '附庸上贡', amount: tributeTotal });
+          newNotifications.push(createNotification(
+            'success', '附庸上贡',
+            `${payingVassals.length} 个附庸宗门上贡 ${tributeTotal} 灵石。`,
+            { year, month },
+          ));
+        }
+        if (rebelliousVassals.length > 0) {
+          const label = rebelliousVassals.slice(0, 3).map(n => `「${n}」`).join('、') +
+            (rebelliousVassals.length > 3 ? `等${rebelliousVassals.length}家` : '');
+          newNotifications.push(createNotification(
+            'warning', '附庸抗命',
+            `${label}附庸好感度过低，拒绝上贡！`,
+            { year, month },
+          ));
+        }
+
+        // 附庸好感度月度变化：被武力征服的附庸好感度会随时间慢慢恢复
+        // 好感度<50 时每月 +1 向中立恢复，≥50 后每月约 +0.33（30%概率+1）缓慢增长，上限 70
+        if (vassalSects.length > 0) {
+          refreshedOtherSects = refreshedOtherSects.map(s => {
+            if (s.diplomaticStatus !== 'vassal') return s;
+            const baseFav = s.baseFavorability ?? 50;
+            let newBase = baseFav;
+            if (baseFav < 50) {
+              // 好感度低于中立：快速恢复，每月+1
+              newBase = Math.min(50, baseFav + 1);
+            } else if (baseFav < 70) {
+              // 好感度已达中立以上：缓慢增长，30%概率+1（月均约0.33）
+              if (Math.random() < 0.3) {
+                newBase = Math.min(70, baseFav + 1);
+              }
+            }
+            // 好感度≥70 则不再增长（上限）
+            if (newBase !== baseFav) {
+              return {
+                ...s,
+                baseFavorability: newBase,
+                favorability: Math.max(0, Math.min(100, newBase)),
+              };
+            }
+            return s;
+          });
         }
 
         // 宿敌宗门进攻：每月有概率被宿敌攻击
@@ -1835,12 +1928,18 @@ export const useGameStore = create<GameState>()(
         // ===== 演武场修炼：弟子消耗贡献获取战力经验 =====
         const trainingGround = currentBuildings.find(b => b.type === 'training_ground' && b.status === 'active');
         if (trainingGround) {
+          // 等级效益：Lv1=耗20贡+5经验, Lv2=耗18贡+7经验, Lv3=耗15贡+10经验
+          const TRAINING_COST_TABLE: Record<number, { cost: number; gain: number }> = {
+            1: { cost: 20, gain: 5 },
+            2: { cost: 18, gain: 7 },
+            3: { cost: 15, gain: 10 },
+          };
+          const lv = Math.min(trainingGround.level, 3);
+          const { cost, gain } = TRAINING_COST_TABLE[lv] || TRAINING_COST_TABLE[1];
           const trainingDisciples = updatedDisciples.map(d => {
             if (trainingGround.assignedDisciples.includes(d.id)) {
-              const cost = 20;
               if (d.contributionPoints >= cost) {
                 const currentExp = d.combatExperience || 0;
-                const gain = 5;
                 const newExp = Math.min(100, currentExp + gain);
                 let dNew = { ...d, contributionPoints: d.contributionPoints - cost, combatExperience: newExp };
                 // 首次达到满经验
@@ -2195,7 +2294,8 @@ export const useGameStore = create<GameState>()(
           breakthroughEvents,
           promotionEvents,
           newDisciples,
-          reputationChange
+          reputationChange,
+          depResult.departureList,
         );
         
         breakthroughEvents.forEach(bt => {
@@ -2415,10 +2515,13 @@ export const useGameStore = create<GameState>()(
           for (const freq of FREQUENCIES) {
             const freqConfig = state.interSectTournamentConfig[freq];
             if (shouldTournamentTrigger(freq, freqConfig, year, month, interSectYears[freq])) {
+              // 宗门间大比：奖励固定随机生成，不由玩家配置
+              const generatedRewards = generateInterSectRewards(freq, year);
+              const interConfig = { ...freqConfig, rewards: generatedRewards };
               const result = runTournament({
                 scope: 'inter-sect',
                 frequency: freq,
-                config: freqConfig,
+                config: interConfig,
                 disciples: finalDisciples,
                 otherSects: refreshedOtherSects,
                 date: { year, month },
@@ -2428,7 +2531,7 @@ export const useGameStore = create<GameState>()(
               const rewards = applyTournamentRewards(
                 { ...state, spiritStones: finalSpiritStones, reputation: finalReputation, pillInventory: finalPillInventory, disciples: finalDisciples } as GameState,
                 result,
-                freqConfig,
+                interConfig,
               );
               finalSpiritStones = rewards.newSpiritStones;
               finalReputation = rewards.newReputation;
@@ -3484,6 +3587,9 @@ export const useGameStore = create<GameState>()(
         let newCapacity = building.discipleCapacity;
         if (isCaveMansion || isResidence) {
           newCapacity = getResidenceCapacityByLevel(building.type, newLevel);
+        } else if (building.type === 'training_ground') {
+          // 演武场容量：Lv1=5, Lv2=8, Lv3=12
+          newCapacity = getTrainingGroundCapacityByLevel(newLevel);
         } else if (building.discipleCapacity > 0) {
           // 非居所功能建筑升级也增加容量
           newCapacity = building.discipleCapacity + 10;
@@ -3551,6 +3657,8 @@ export const useGameStore = create<GameState>()(
         let newCapacity = building.discipleCapacity;
         if (isCaveMansion || isResidence) {
           newCapacity = getResidenceCapacityByLevel(building.type, newLevel);
+        } else if (building.type === 'training_ground') {
+          newCapacity = getTrainingGroundCapacityByLevel(newLevel);
         } else if (building.discipleCapacity > 0) {
           newCapacity = Math.max(0, building.discipleCapacity - 10);
         }
@@ -3718,7 +3826,7 @@ export const useGameStore = create<GameState>()(
       getBuildingById: (id: string) => {
         return get().buildings.find(b => b.id === id);
       },
-      
+
       buildBuilding: (type: string): boolean => {
         const state = get();
         const config = BUILDING_CONFIGS[type as BuildingType];
@@ -3759,6 +3867,8 @@ export const useGameStore = create<GameState>()(
           minDiscipleStatus: config.minDiscipleStatus,
           monthlyContributionCost: config.monthlyContributionCost,
           unlockRequirement: config.unlockRequirement,
+          // 生产建筑初始解锁时自动设置默认生产目标
+          productionTargets: getDefaultProductionTargets(type as BuildingType, get()),
         };
 
         set(state => ({
@@ -4472,6 +4582,33 @@ export const useGameStore = create<GameState>()(
         return { success: true };
       },
 
+      // 卸任长老：长老降为核心弟子，好感度-30，从管理建筑移除
+      resignElder: (discipleId: string) => {
+        const state = get();
+        const disciple = state.disciples.find(d => d.id === discipleId);
+        if (!disciple) return { success: false, reason: '弟子不存在' };
+        if (disciple.status !== 'elder') return { success: false, reason: '仅长老可卸任' };
+
+        // 从管理建筑移除
+        let newBuildings = state.buildings.map(b => ({
+          ...b,
+          managerId: b.managerId === discipleId ? null : b.managerId,
+        }));
+
+        // 满意度-30
+        const newSatisfaction = Math.max(0, Math.min(100, (disciple.satisfaction ?? 80) - 30));
+
+        set({
+          disciples: state.disciples.map(d =>
+            d.id === discipleId
+              ? { ...d, status: 'core' as DiscipleStatus, satisfaction: newSatisfaction }
+              : d
+          ),
+          buildings: newBuildings,
+        });
+        return { success: true };
+      },
+
       setAutoAppointElder: (enabled: boolean) => {
         set({ autoAppointElder: enabled });
       },
@@ -4571,17 +4708,20 @@ export const useGameStore = create<GameState>()(
         if (!shouldTournamentTrigger(frequency, freqConfig, state.year, state.month, state.lastInterSectTournamentYears[frequency])) {
           return null;
         }
+        // 宗门间大比：奖励固定随机生成，不由玩家配置
+        const generatedRewards = generateInterSectRewards(frequency, state.year);
+        const interConfig = { ...freqConfig, rewards: generatedRewards };
         const result = runTournament({
           scope: 'inter-sect',
           frequency,
-          config: freqConfig,
+          config: interConfig,
           disciples: state.disciples,
           otherSects: state.otherSects,
           date: { year: state.year, month: state.month },
         });
 
         const { newSpiritStones, newReputation, newPillInventory, newDisciples, contributionChanges } =
-          applyTournamentRewards(state, result, freqConfig);
+          applyTournamentRewards(state, result, interConfig);
 
         // 构造贡献值流水记录
         const currentDate = { year: state.year, month: state.month };
@@ -4969,11 +5109,11 @@ export const useGameStore = create<GameState>()(
             title: '讨伐附庸',
             description: `击败「${sect.name}」并将其收为附庸，获得 100 灵石、10 声望。`,
           };
-          // 收为附庸：好感+20（改基础好感），附庸不参与正邪度好感修正（下月会重置 karmaFavorApplied=0）
+          // 收为附庸：好感-20（武力征服导致怨恨），附庸不参与正邪度好感修正
           const vassBase =
             typeof sect.baseFavorability === 'number' ? sect.baseFavorability : (sect.favorability ?? 50) - (sect.karmaFavorApplied ?? 0);
           const vassApplied = typeof sect.karmaFavorApplied === 'number' ? sect.karmaFavorApplied : 0;
-          const newVassBase = Math.min(100, vassBase + 20);
+          const newVassBase = Math.max(0, vassBase - 20);
           const newVassFav = Math.max(0, Math.min(100, newVassBase + vassApplied));
           set({
             karma: Math.max(-100, state.karma - 15),

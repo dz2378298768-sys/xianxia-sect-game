@@ -13,7 +13,7 @@ import {
   TournamentFrequencyNames, TournamentRewardTypeNames,
   TournamentFrequencyIntervals,
 } from '@/types/tournament';
-import { getDivisionName } from '@/utils/tournament';
+import { getDivisionName, generateInterSectRewards, rewardToText } from '@/utils/tournament';
 import type { Realm, DiscipleStatus } from '@/types/disciple';
 import { RealmOrder, RealmNames, DiscipleStatusNames } from '@/types/disciple';
 import type { PillType } from '@/types/pill';
@@ -225,112 +225,173 @@ export const TournamentPanel: React.FC<TournamentPanelProps> = ({ scope }) => {
                       <SectIcon name="trophy" size={12} strokeWidth={1.8} className="text-sect-gold/70" />
                       获胜奖励
                     </div>
-                    <button
-                      disabled={!freqConfig.enabled}
-                      onClick={() => toggleEditor(freq)}
-                      className={`text-[11px] text-sect-gold/80 hover:text-sect-gold ${!freqConfig.enabled ? 'opacity-40 cursor-not-allowed' : ''}`}
-                    >
-                      {editorOpen ? '收起' : '编辑'}
-                    </button>
+                    {isSect && (
+                      <button
+                        disabled={!freqConfig.enabled}
+                        onClick={() => toggleEditor(freq)}
+                        className={`text-[11px] text-sect-gold/80 hover:text-sect-gold ${!freqConfig.enabled ? 'opacity-40 cursor-not-allowed' : ''}`}
+                      >
+                        {editorOpen ? '收起' : '编辑'}
+                      </button>
+                    )}
                   </div>
 
-                  {!editorOpen ? (
-                    <div className="space-y-0.5">
-                      {([1, 2, 3] as const).map(rank => {
-                        const rewardList = freqConfig.rewards.filter(r => r.rank === rank);
-                        return (
-                          <div key={rank} className="flex items-start gap-2 text-[11px]">
-                            <span className={`${RANK_COLORS[rank]} font-medium w-10 shrink-0`}>{RANK_LABELS[rank]}</span>
-                            {rewardList.length > 0 ? (
-                              <span className="text-sect-jade/80 leading-relaxed">
-                                {rewardList.map(r => (
-                                  r.type === 'pill'
-                                    ? `${PillTypeNames[r.pillType as PillType] ?? '丹药'} ×${r.amount}`
-                                    : `${TournamentRewardTypeNames[r.type]} +${r.amount}`
-                                )).join('、')}
-                              </span>
-                            ) : (
-                              <span className="text-sect-jade/40 italic">无奖励</span>
-                            )}
+                  {(() => {
+                    // 宗门间大比：展示固定随机奖励，不可编辑
+                    if (!isSect) {
+                      const generatedRewards = generateInterSectRewards(freq, year);
+                      return (
+                        <div className="space-y-1">
+                          {([1, 2, 3] as const).map(rank => {
+                            const rewardList = generatedRewards.filter(r => r.rank === rank);
+                            if (rewardList.length === 0) return null;
+                            return (
+                              <div key={rank} className="flex items-center gap-2 text-[11px] bg-sect-ink-light/20 rounded px-2 py-1">
+                                <span className={`${RANK_COLORS[rank]} font-medium w-10 shrink-0`}>
+                                  {RANK_LABELS[rank]}
+                                </span>
+                                <div className="flex flex-wrap gap-1">
+                                  {rewardList.map((r, ri) => (
+                                    <span key={ri} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-sect-gold/10 border border-sect-gold/20 text-sect-jade/80">
+                                      {r.type === 'pill' && <SectIcon name="cultivate" size={10} className="text-sect-pill" />}
+                                       {r.type === 'spiritStones' && <SectIcon name="gem" size={10} className="text-sect-gold" />}
+                                      {r.type === 'reputation' && <SectIcon name="world" size={10} className="text-blue-400" />}
+                                      {r.type === 'contribution' && <SectIcon name="disciple" size={10} className="text-green-400" />}
+                                      {rewardToText(r)}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })}
+                          <div className="text-[10px] text-sect-jade/40 italic pl-2">
+                            ※ 每年奖励随年份自动变化
                           </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="space-y-1.5 p-2 rounded bg-sect-ink-light/30 border border-sect-gold/15">
-                      {([1, 2, 3] as const).map(rank => {
-                        const list = freqConfig.rewards.filter(r => r.rank === rank);
-                        // 为每个名次显示 2 个槽位：基础 + 额外
-                        const slots = list.length === 0 ? [null] : list;
-                        return (
-                          <div key={rank} className="space-y-1">
-                            <div className={`${RANK_COLORS[rank]} text-[11px] font-medium`}>{RANK_LABELS[rank]}</div>
-                            {slots.map((_r, i) => {
-                              const reward = list[i];
-                              const key = `${rank}-${i}`;
-                              // 对于超过已有数量的新 slot 提供添加按钮
-                              if (!reward && i === 0) {
-                                // 空槽位：展示添加器
+                        </div>
+                      );
+                    }
+
+                    // 宗门内大比：可编辑，但奖励从宗门库存扣除
+                    return !editorOpen ? (
+                      <div className="space-y-0.5">
+                        {([1, 2, 3] as const).map(rank => {
+                          const rewardList = freqConfig.rewards.filter(r => r.rank === rank);
+                          return (
+                            <div key={rank} className="flex items-start gap-2 text-[11px]">
+                              <span className={`${RANK_COLORS[rank]} font-medium w-10 shrink-0`}>{RANK_LABELS[rank]}</span>
+                              {rewardList.length > 0 ? (
+                                <span className="text-sect-jade/80 leading-relaxed">
+                                  {rewardList.map(r => (
+                                    r.type === 'pill'
+                                      ? `${PillTypeNames[r.pillType as PillType] ?? '丹药'} ×${r.amount}`
+                                      : `${TournamentRewardTypeNames[r.type]} +${r.amount}`
+                                  )).join('、')}
+                                </span>
+                              ) : (
+                                <span className="text-sect-jade/40 italic">无奖励</span>
+                              )}
+                            </div>
+                          );
+                        })}
+                        <div className="text-[10px] text-amber-400/60 italic pl-2">
+                          ※ 奖励从宗门库存扣除
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-2 p-2.5 rounded-lg bg-sect-ink-light/30 border border-sect-gold/20 shadow-inner">
+                        <div className="text-[10px] text-amber-400/70 mb-1 flex items-center gap-1">
+                          <SectIcon name="gem" size={10} className="text-amber-400" />
+                          编辑奖励（奖励从宗门库存扣除）
+                        </div>
+                        {([1, 2, 3] as const).map(rank => {
+                          const list = freqConfig.rewards.filter(r => r.rank === rank);
+                          const slots = list.length === 0 ? [null] : list;
+                          return (
+                            <div key={rank} className="space-y-1">
+                              <div className={`${RANK_COLORS[rank]} text-[11px] font-medium flex items-center gap-1`}>
+                                <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                                {RANK_LABELS[rank]}
+                              </div>
+                              {slots.map((_r, i) => {
+                                const reward = list[i];
+                                const key = `${rank}-${i}`;
+                                if (!reward && i === 0) {
+                                  return (
+                                    <div key={key} className="flex items-center gap-1.5 flex-wrap pl-3">
+                                      <div className="relative">
+                                        <select
+                                          value="contribution"
+                                          onChange={e => handleRewardChange(rank, 'type', e.target.value)}
+                                          className="appearance-none bg-sect-ink/80 text-sect-jade text-[10px] rounded-md px-2 py-1 pr-5 border border-sect-gold/30 focus:border-sect-gold/60 focus:ring-1 focus:ring-sect-gold/30 outline-none cursor-pointer"
+                                        >
+                                          {REWARD_TYPES.map(t => (
+                                            <option key={t} value={t}>{TournamentRewardTypeNames[t]}</option>
+                                          ))}
+                                        </select>
+                                        <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-sect-gold/50 text-[8px] pointer-events-none">▼</span>
+                                      </div>
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        value={0}
+                                        onChange={e => handleRewardChange(rank, 'amount', e.target.value)}
+                                        placeholder="数量"
+                                        className="bg-sect-ink/80 text-sect-jade text-[10px] rounded-md px-2 py-1 border border-sect-gold/30 focus:border-sect-gold/60 focus:ring-1 focus:ring-sect-gold/30 outline-none w-14 text-center"
+                                      />
+                                      <button
+                                        onClick={() => handleRewardChange(rank, 'amount', '1')}
+                                        className="text-[10px] text-sect-gold/60 hover:text-sect-gold px-1"
+                                      >
+                                        + 添加
+                                      </button>
+                                    </div>
+                                  );
+                                }
+                                if (!reward) return null;
                                 return (
-                                  <div key={key} className="flex items-center gap-1.5 flex-wrap pl-2">
-                                    <select
-                                      value="contribution"
-                                      onChange={e => handleRewardChange(rank, 'type', e.target.value)}
-                                      className="bg-sect-ink text-sect-jade text-[10px] rounded px-1 py-0 border border-sect-gold/30"
-                                    >
-                                      {REWARD_TYPES.map(t => (
-                                        <option key={t} value={t}>{TournamentRewardTypeNames[t]}</option>
-                                      ))}
-                                    </select>
+                                  <div key={key} className="flex items-center gap-1.5 flex-wrap pl-3">
+                                    <div className="relative">
+                                      <select
+                                        value={reward.type}
+                                        onChange={e => handleRewardChange(rank, 'type', e.target.value)}
+                                        className="appearance-none bg-sect-ink/80 text-sect-jade text-[10px] rounded-md px-2 py-1 pr-5 border border-sect-gold/30 focus:border-sect-gold/60 focus:ring-1 focus:ring-sect-gold/30 outline-none cursor-pointer"
+                                      >
+                                        {REWARD_TYPES.map(t => (
+                                          <option key={t} value={t}>{TournamentRewardTypeNames[t]}</option>
+                                        ))}
+                                      </select>
+                                      <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-sect-gold/50 text-[8px] pointer-events-none">▼</span>
+                                    </div>
+                                    {reward.type === 'pill' && (
+                                      <div className="relative">
+                                        <select
+                                          value={reward.pillType ?? 'foundation_pill'}
+                                          onChange={e => handleRewardChange(rank, 'pillType', e.target.value)}
+                                          className="appearance-none bg-sect-ink/80 text-sect-jade text-[10px] rounded-md px-2 py-1 pr-5 border border-sect-gold/30 focus:border-sect-gold/60 focus:ring-1 focus:ring-sect-gold/30 outline-none cursor-pointer"
+                                        >
+                                          {PILL_OPTIONS.map(p => (
+                                            <option key={p} value={p}>{PillTypeNames[p]}</option>
+                                          ))}
+                                        </select>
+                                        <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-sect-gold/50 text-[8px] pointer-events-none">▼</span>
+                                      </div>
+                                    )}
                                     <input
                                       type="number"
                                       min={0}
-                                      value={0}
+                                      value={reward.amount}
                                       onChange={e => handleRewardChange(rank, 'amount', e.target.value)}
-                                      placeholder="数量"
-                                      className="bg-sect-ink text-sect-jade text-[10px] rounded px-1 py-0 border border-sect-gold/30 w-12"
+                                      className="bg-sect-ink/80 text-sect-jade text-[10px] rounded-md px-2 py-1 border border-sect-gold/30 focus:border-sect-gold/60 focus:ring-1 focus:ring-sect-gold/30 outline-none w-14 text-center"
                                     />
                                   </div>
                                 );
-                              }
-                              if (!reward) return null;
-                              return (
-                                <div key={key} className="flex items-center gap-1.5 flex-wrap pl-2">
-                                  <select
-                                    value={reward.type}
-                                    onChange={e => handleRewardChange(rank, 'type', e.target.value)}
-                                    className="bg-sect-ink text-sect-jade text-[10px] rounded px-1 py-0 border border-sect-gold/30"
-                                  >
-                                    {REWARD_TYPES.map(t => (
-                                      <option key={t} value={t}>{TournamentRewardTypeNames[t]}</option>
-                                    ))}
-                                  </select>
-                                  {reward.type === 'pill' && (
-                                    <select
-                                      value={reward.pillType ?? 'foundation_pill'}
-                                      onChange={e => handleRewardChange(rank, 'pillType', e.target.value)}
-                                      className="bg-sect-ink text-sect-jade text-[10px] rounded px-1 py-0 border border-sect-gold/30"
-                                    >
-                                      {PILL_OPTIONS.map(p => (
-                                        <option key={p} value={p}>{PillTypeNames[p]}</option>
-                                      ))}
-                                    </select>
-                                  )}
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    value={reward.amount}
-                                    onChange={e => handleRewardChange(rank, 'amount', e.target.value)}
-                                    className="bg-sect-ink text-sect-jade text-[10px] rounded px-1 py-0 border border-sect-gold/30 w-12"
-                                  />
-                                </div>
-                              );
-                            })}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                              })}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* 底部：时间信息 + 立即举办 */}

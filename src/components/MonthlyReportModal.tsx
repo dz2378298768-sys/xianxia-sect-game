@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import {
   TrendingUp, TrendingDown, Users, Sparkles,
-  Star, CheckCircle, XCircle
+  Star, CheckCircle, XCircle, Skull, DoorOpen
 } from 'lucide-react';
 
 export const MonthlyReportModal: React.FC = () => {
@@ -113,6 +113,42 @@ export const MonthlyReportModal: React.FC = () => {
                   <Badge variant="spirit">{p.to}</Badge>
                   <span className="text-sect-jade/80">
                     <span className="text-sect-gold">{p.discipleName}</span> 从 {p.from} 晋升
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 离宗记录：死亡/叛逃/卸任 */}
+        {monthlyReport.departures.length > 0 && (
+          <div>
+            <h3 className="font-display text-sect-gold mb-1 flex items-center gap-1 text-xs">
+              <DoorOpen size={12} />
+              离宗记录 ({monthlyReport.departures.length})
+            </h3>
+            <div className="space-y-1">
+              {monthlyReport.departures.map((d, i) => (
+                <div key={i} className={`flex items-center gap-1 text-xs px-1.5 py-0.5 rounded ${
+                  d.reason === 'death' ? 'bg-gray-500/10' :
+                  d.reason === 'defect' ? 'bg-red-500/10' :
+                  'bg-orange-500/10'
+                }`}>
+                  {d.reason === 'death' ? (
+                    <Skull size={12} className="text-gray-400 shrink-0" />
+                  ) : d.reason === 'defect' ? (
+                    <DoorOpen size={12} className="text-red-400 shrink-0" />
+                  ) : (
+                    <DoorOpen size={12} className="text-orange-400 shrink-0" />
+                  )}
+                  <span className="text-sect-jade/80">
+                    <span className={
+                      d.reason === 'death' ? 'text-gray-400' :
+                      d.reason === 'defect' ? 'text-red-300' :
+                      'text-orange-300'
+                    }>{d.name}</span>
+                    <span className="text-sect-jade/50"> · {d.status}</span>
+                    <span className="text-sect-jade/60"> — {d.detail}</span>
                   </span>
                 </div>
               ))}

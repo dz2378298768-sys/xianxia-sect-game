@@ -54,7 +54,7 @@ export const Modal: React.FC<ModalProps> = ({
             </button>
           </div>
         )}
-        <div className="p-4 max-h-[85vh] overflow-y-auto modal-content">
+        <div className="p-4 max-h-[85vh] overflow-y-auto modal-content pb-[70px]">
           {children}
         </div>
       </div>

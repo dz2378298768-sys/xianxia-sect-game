@@ -208,7 +208,7 @@ const GameLayout: React.FC = () => {
               </button>
             </div>
             {/* 面板内容 */}
-            <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 panel-scrollbar">
+            <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 panel-scrollbar pb-[70px]">
               {renderPanel()}
             </div>
           </div>

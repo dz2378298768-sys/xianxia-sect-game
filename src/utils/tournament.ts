@@ -310,3 +310,67 @@ export function getDefaultTournamentConfig(scope: 'sect' | 'inter-sect'): Tourna
     every10years: getDefaultFrequencyConfig(scope, 'every10years'),
   };
 }
+
+// 宗门间大比：每年随机生成固定奖励（不由玩家配置）
+const INTER_SECT_YEARLY_PILL_POOL: PillType[] = ['foundation_pill', 'golden_pill', 'recovery_pill'];
+const INTER_SECT_5Y_PILL_POOL: PillType[] = ['golden_pill', 'nascent_pill', 'longevity_pill'];
+const INTER_SECT_10Y_PILL_POOL: PillType[] = ['nascent_pill', 'spirit_pill', 'longevity_pill'];
+
+export function generateInterSectRewards(
+  frequency: TournamentFrequency,
+  year: number,
+): TournamentReward[] {
+  // 随年份递增的奖励系数
+  const era = Math.floor(year / 50) + 1;
+  const baseMult = Math.min(3, 0.5 + era * 0.3);
+  const baseStone = Math.floor(200 * baseMult);
+  const baseRep = Math.floor(15 * baseMult);
+
+  // 用年份做确定性种子，保证同一年每年奖励相同
+  function seededRandom(offset: number): number {
+    const x = Math.sin((year * 31 + offset) * 9301 + 49297) * 49297;
+    return x - Math.floor(x);
+  }
+
+  // 根据频率生成个性化的奖励池
+  const rewards: TournamentReward[] = [];
+
+  if (frequency === 'yearly') {
+    const pill = INTER_SECT_YEARLY_PILL_POOL[Math.floor(seededRandom(0) * INTER_SECT_YEARLY_PILL_POOL.length)];
+    rewards.push(
+      { type: 'spiritStones', amount: Math.floor(baseStone * 1.0), rank: 1 },
+      { type: 'reputation', amount: Math.floor(baseRep * 0.8), rank: 1 },
+      { type: 'pill', amount: 1, pillType: pill, rank: 1 },
+      { type: 'spiritStones', amount: Math.floor(baseStone * 0.5), rank: 2 },
+      { type: 'reputation', amount: Math.floor(baseRep * 0.4), rank: 2 },
+      { type: 'spiritStones', amount: Math.floor(baseStone * 0.25), rank: 3 },
+    );
+  } else if (frequency === 'every5years') {
+    const pill = INTER_SECT_5Y_PILL_POOL[Math.floor(seededRandom(1) * INTER_SECT_5Y_PILL_POOL.length)];
+    rewards.push(
+      { type: 'spiritStones', amount: Math.floor(baseStone * 2.5), rank: 1 },
+      { type: 'reputation', amount: Math.floor(baseRep * 2.0), rank: 1 },
+      { type: 'pill', amount: 2, pillType: pill, rank: 1 },
+      { type: 'spiritStones', amount: Math.floor(baseStone * 1.25), rank: 2 },
+      { type: 'reputation', amount: Math.floor(baseRep * 1.0), rank: 2 },
+      { type: 'spiritStones', amount: Math.floor(baseStone * 0.6), rank: 3 },
+      { type: 'reputation', amount: Math.floor(baseRep * 0.5), rank: 3 },
+    );
+  } else {
+    // every10years
+    const pill = INTER_SECT_10Y_PILL_POOL[Math.floor(seededRandom(2) * INTER_SECT_10Y_PILL_POOL.length)];
+    const bigPill = INTER_SECT_10Y_PILL_POOL[Math.floor(seededRandom(3) * INTER_SECT_10Y_PILL_POOL.length)];
+    rewards.push(
+      { type: 'spiritStones', amount: Math.floor(baseStone * 5.0), rank: 1 },
+      { type: 'reputation', amount: Math.floor(baseRep * 4.0), rank: 1 },
+      { type: 'pill', amount: 3, pillType: bigPill, rank: 1 },
+      { type: 'spiritStones', amount: Math.floor(baseStone * 2.5), rank: 2 },
+      { type: 'reputation', amount: Math.floor(baseRep * 2.0), rank: 2 },
+      { type: 'pill', amount: 1, pillType: pill, rank: 2 },
+      { type: 'spiritStones', amount: Math.floor(baseStone * 1.25), rank: 3 },
+      { type: 'reputation', amount: Math.floor(baseRep * 1.0), rank: 3 },
+    );
+  }
+
+  return rewards;
+}

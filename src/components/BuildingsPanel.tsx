@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/Badge';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Modal } from '@/components/ui/Modal';
 import {
-  Building2, Wrench, Users, ArrowUp, ArrowDown, Power,
+  Building2, Wrench, Users, ArrowUp, ArrowDown, Power, PowerOff,
   Lock, Gem, Star, DoorOpen, Heart, Sparkles,
   TrendingUp, Plus, Shield, BookOpen, FlaskConical,
   Hammer, Scroll, Zap, TreePine, Crown, Info, X, Swords
@@ -1281,16 +1281,26 @@ export const BuildingsPanel: React.FC = () => {
 
             {selectedBuilding.type === 'training_ground' && (() => {
               const trainingDisciples = disciples.filter(d => selectedBuilding.assignedDisciples.includes(d.id));
+              const lv = selectedBuilding.level;
+              const costTable = { 1: 20, 2: 18, 3: 15 };
+              const gainTable = { 1: 5, 2: 7, 3: 10 };
+              const cost = costTable[lv as keyof typeof costTable] || 20;
+              const gain = gainTable[lv as keyof typeof gainTable] || 5;
               return (
                 <div className="bg-gradient-to-br from-orange-500/10 to-red-600/5 border border-orange-400/40 rounded p-2 text-[11px] space-y-2">
                   <div className="font-display text-orange-300 flex items-center gap-1">
-                    <Swords size={12} />演武场 · 战力修炼
+                    <Swords size={12} />演武场 · 战力修炼 <span className="text-[10px] text-sect-jade/50">Lv.{lv}</span>
                   </div>
                   <div className="space-y-0.5 text-sect-jade/80 leading-snug">
-                    <div>✓ 每名弟子每月消耗 <span className="text-orange-300 font-mono">20</span> 贡献点</div>
-                    <div>✓ 每月获得 <span className="text-orange-300 font-mono">5</span> 战力经验</div>
+                    <div>✓ 每名弟子每月消耗 <span className="text-orange-300 font-mono">{cost}</span> 贡献点</div>
+                    <div>✓ 每月获得 <span className="text-orange-300 font-mono">{gain}</span> 战力经验</div>
                     <div>★ 满 100 战力经验再 +<span className="text-yellow-300 font-mono">5%</span> 战力加成</div>
                     <div className="text-[10px] text-sect-jade/50">（大比、试炼、探索也可获得战力经验）</div>
+                    {lv < 3 && (
+                      <div className="text-[10px] text-orange-400/60 mt-1">
+                        Lv{lv + 1} 效果：耗{gainTable[(lv + 1) as keyof typeof gainTable] || 15}贡 +{costTable[(lv + 1) as keyof typeof costTable] || 10}经验
+                      </div>
+                    )}
                   </div>
                   {trainingDisciples.length > 0 && (
                     <div className="space-y-0.5">
@@ -1377,7 +1387,6 @@ export const BuildingsPanel: React.FC = () => {
                     const c = selectedBuilding.upgradeCosts[selectedBuilding.level - 2];
                     if (c) refundStones = c.spiritStones;
                   }
-                  if (refundStones <= 0) return null;
                   return (
                     <div className="rounded-lg border border-red-500/20 bg-gradient-to-br from-red-500/5 to-transparent p-2.5">
                       <div className="flex items-center justify-between mb-2">
@@ -1389,17 +1398,19 @@ export const BuildingsPanel: React.FC = () => {
                             Lv.{selectedBuilding.level} → Lv.{selectedBuilding.level - 1}
                           </div>
                         </div>
-                        <div className="flex items-center gap-2 text-[11px] text-emerald-400 shrink-0 flex-wrap justify-end">
-                          <span className="flex items-center gap-1"><Gem size={12} /> {refundStones}</span>
-                          {(() => {
-                            const r = isCave
-                              ? 0
-                              : isRes
-                              ? getResidenceUpgradeCost({ ...selectedBuilding, level: selectedBuilding.level - 1 })?.reputation ?? 0
-                              : selectedBuilding.upgradeCosts[selectedBuilding.level - 2]?.reputation ?? 0;
-                            return r > 0 ? <span className="flex items-center gap-1 text-blue-300"><Star size={12} /> {r}</span> : null;
-                          })()}
-                        </div>
+                        {refundStones > 0 && (
+                          <div className="flex items-center gap-2 text-[11px] text-emerald-400 shrink-0 flex-wrap justify-end">
+                            <span className="flex items-center gap-1"><Gem size={12} /> {refundStones}</span>
+                            {(() => {
+                              const r = isCave
+                                ? 0
+                                : isRes
+                                ? getResidenceUpgradeCost({ ...selectedBuilding, level: selectedBuilding.level - 1 })?.reputation ?? 0
+                                : selectedBuilding.upgradeCosts[selectedBuilding.level - 2]?.reputation ?? 0;
+                              return r > 0 ? <span className="flex items-center gap-1 text-blue-300"><Star size={12} /> {r}</span> : null;
+                            })()}
+                          </div>
+                        )}
                       </div>
                       <Button
                         variant="ghost"
@@ -1417,6 +1428,35 @@ export const BuildingsPanel: React.FC = () => {
                     </div>
                   );
                 })()}
+
+                {/* 关闭/启用切换 */}
+                <div className="rounded-lg border border-sect-ink-light/40 bg-sect-ink-light/10 p-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      {selectedBuilding.status === 'active' ? (
+                        <PowerOff size={14} className="text-red-400" />
+                      ) : (
+                        <Power size={14} className="text-emerald-400" />
+                      )}
+                      <span className="text-[11px] text-sect-jade/80">
+                        {selectedBuilding.status === 'active' ? '运行中' : '已关闭'}
+                      </span>
+                    </div>
+                    <Button
+                      variant={selectedBuilding.status === 'active' ? 'ghost' : 'gold'}
+                      size="sm"
+                      className="text-[10px] py-0.5 px-2"
+                      onClick={() => toggleBuilding(selectedBuilding.id)}
+                    >
+                      {selectedBuilding.status === 'active' ? '关闭' : '启用'}
+                    </Button>
+                  </div>
+                  {selectedBuilding.status === 'closed' && (
+                    <div className="text-[10px] text-yellow-400/70 mt-1.5">
+                      已关闭的建筑不会产生维护费，但也不会产出任何资源
+                    </div>
+                  )}
+                </div>
 
                 <div className="divider-gold !my-0" />
 

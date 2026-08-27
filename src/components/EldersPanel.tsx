@@ -3,14 +3,15 @@ import { useGameStore } from '@/store/gameStore';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
-import { Crown, Users, Building2, Star, Award, X, Swords } from 'lucide-react';
+import { Crown, Users, Building2, Star, Award, X, Swords, LogOut } from 'lucide-react';
 import { RESIDENCE_TYPES } from '@/types/building';
 import { calculateDiscipleCombatPower } from '@/utils/gameLogic';
 
 export const EldersPanel: React.FC = () => {
-  const { disciples, buildings, challengeCaveMansion } = useGameStore();
+  const { disciples, buildings, challengeCaveMansion, resignElder } = useGameStore();
   const [showVacantModal, setShowVacantModal] = useState(false);
   const [showChallengeModal, setShowChallengeModal] = useState(false);
+  const [confirmResignId, setConfirmResignId] = useState<string | null>(null);
   
   const elders = disciples.filter(d => d.status === 'elder');
   const elderCandidates = disciples.filter(d => 
@@ -119,6 +120,14 @@ export const EldersPanel: React.FC = () => {
                       贡献 {Math.floor(elder.contributionPoints)}
                     </div>
                   </div>
+                  <button
+                    className="text-xs text-red-400/70 hover:text-red-300 flex items-center gap-1 px-2 py-1 rounded hover:bg-red-500/10 transition-colors"
+                    onClick={() => setConfirmResignId(elder.id)}
+                    title="卸任长老，降为核心弟子（满意度-30）"
+                  >
+                    <LogOut size={12} />
+                    卸任
+                  </button>
                 </div>
               );
             })}
@@ -274,6 +283,39 @@ export const EldersPanel: React.FC = () => {
               );
             })
           )}
+        </div>
+      </Modal>
+
+      {/* 卸任确认弹窗 */}
+      <Modal
+        isOpen={confirmResignId !== null}
+        onClose={() => setConfirmResignId(null)}
+        title="卸任长老"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-sect-jade/80 text-sm">
+            确认让该长老卸任？卸任后降为核心弟子，<span className="text-red-400">满意度 -30</span>。
+          </p>
+          <div className="flex justify-end gap-2">
+            <button
+              className="px-3 py-1.5 text-xs rounded bg-sect-ink-light/50 text-sect-jade/60 hover:text-sect-jade transition-colors"
+              onClick={() => setConfirmResignId(null)}
+            >
+              取消
+            </button>
+            <button
+              className="px-3 py-1.5 text-xs rounded bg-red-500/20 text-red-300 hover:bg-red-500/30 transition-colors"
+              onClick={() => {
+                if (confirmResignId) {
+                  resignElder(confirmResignId);
+                  setConfirmResignId(null);
+                }
+              }}
+            >
+              确认卸任
+            </button>
+          </div>
         </div>
       </Modal>
     </div>

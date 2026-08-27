@@ -68,7 +68,7 @@ export const ShopPanel: React.FC = () => {
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[80] px-4" onClick={() => setShopOpen(false)}>
       <div
-        className="max-w-2xl w-full max-h-[85vh] scroll-panel-dark p-4 slide-in-up flex flex-col"
+        className="max-w-2xl w-full max-h-[85vh] scroll-panel-dark p-4 slide-in-up flex flex-col pb-[70px]"
         onClick={e => e.stopPropagation()}
       >
         {/* 头部 */}

@@ -443,6 +443,14 @@ export function getResidenceCapacityByLevel(type: string, level: number): number
   return level * 10;
 }
 
+// 演武场容量：Lv1=5, Lv2=8, Lv3=12
+export function getTrainingGroundCapacityByLevel(level: number): number {
+  if (level <= 0) return 0;
+  const TABLE = [5, 8, 12];
+  const idx = Math.min(level - 1, TABLE.length - 1);
+  return TABLE[idx];
+}
+
 // 洞府专属升级费用（因其 maxLevel=5，不参与普通居所通用 3 级递增表）
 export function getCaveMansionUpgradeCost(currentLevel: number): { spiritStones: number } | null {
   const COSTS: Record<number, number> = {
@@ -469,7 +477,7 @@ export const MAINTENANCE_COST_TABLE: Record<string, number[]> = {
   artifact_hall: [30, 60, 120],
   array_hall: [20, 45, 90],
   spirit_beast_garden: [55, 110, 220],
-  training_ground: [30],
+  training_ground: [30, 60, 120],
   cave_mansion: [30, 60, 120, 240, 400],
   skyscraper_tower: [0, 0, 0, 0, 0, 0, 0, 0, 0],
 };
@@ -985,7 +993,8 @@ export function generateMonthlyReport(
   breakthroughs: { discipleId: string; discipleName: string; from: string; to: string; success: boolean }[],
   promotions: { discipleId: string; discipleName: string; from: string; to: string }[],
   newDisciples: { id: string; name: string; status: string }[],
-  reputationChange: number
+  reputationChange: number,
+  departures: { name: string; status: string; reason: 'death' | 'defect' | 'resign'; detail: string }[] = [],
 ): MonthlyReport {
   return {
     date,
@@ -994,6 +1003,7 @@ export function generateMonthlyReport(
     breakthroughs,
     promotions,
     newDisciples,
+    departures,
     events: [],
     reputationChange,
   };
@@ -1719,6 +1729,8 @@ export interface DiscipleDepartureResult {
     iron: number;
     paper: number;
   };
+  /** 结构化离开事件列表（用于月度简报展示） */
+  departureList: { name: string; status: string; reason: 'death' | 'defect'; detail: string }[];
 }
 
 /** 为 depart 事件创建一条宗门历史记录 */
@@ -2583,6 +2595,7 @@ export function processDiscipleDepartures(
       iron: 0,
       paper: 0,
     },
+    departureList: [],
   };
 
   const totalDisciples = inputDisciples.length;
@@ -2713,6 +2726,12 @@ export function processDiscipleDepartures(
         date,
       ));
       result.sectHistories.push(makeDepartureHistory('disciple_death', date, dep, detail));
+      result.departureList.push({
+        name: dep.name,
+        status: DiscipleStatusNames[dep.status as DiscipleStatus],
+        reason: 'death',
+        detail: `寿终正寝，${detail}`,
+      });
 
       // 师傅寿终时触发衣钵继承
       const inheritanceResult = processMasterInheritance(dep, result.survivors, createNotification, date, Math.random);
@@ -2731,6 +2750,12 @@ export function processDiscipleDepartures(
         date,
       ));
       result.sectHistories.push(makeDepartureHistory('disciple_defect', date, dep, detail));
+      result.departureList.push({
+        name: dep.name,
+        status: DiscipleStatusNames[dep.status as DiscipleStatus],
+        reason: 'defect',
+        detail,
+      });
     }
   }
 

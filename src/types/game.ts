@@ -136,6 +136,7 @@ export interface MonthlyReport {
   breakthroughs: { discipleId: string; discipleName: string; from: string; to: string; success: boolean }[];
   promotions: { discipleId: string; discipleName: string; from: string; to: string }[];
   newDisciples: { id: string; name: string; status: string }[];
+  departures: { name: string; status: string; reason: 'death' | 'defect' | 'resign'; detail: string }[];
   events: string[];
   reputationChange: number;
 }
