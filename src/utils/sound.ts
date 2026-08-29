@@ -1,6 +1,9 @@
 /**
  * 程序化音效 - 使用 Web Audio API 生成，无需外部音频文件
+ * 音效开关由设置面板控制（通过 audio.ts 的 isSfxEnabled 判断）
  */
+
+import { isSfxEnabled } from './audio';
 
 let audioCtx: AudioContext | null = null;
 
@@ -16,6 +19,7 @@ function getCtx(): AudioContext {
 
 /** 按键点击声 */
 export function playClick() {
+  if (!isSfxEnabled()) return;
   const ctx = getCtx();
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
@@ -31,6 +35,7 @@ export function playClick() {
 
 /** 确认/接受 */
 export function playConfirm() {
+  if (!isSfxEnabled()) return;
   const ctx = getCtx();
   [523, 659, 784].forEach((freq, i) => {
     const osc = ctx.createOscillator();
@@ -49,6 +54,7 @@ export function playConfirm() {
 
 /** 取消/关闭 */
 export function playCancel() {
+  if (!isSfxEnabled()) return;
   const ctx = getCtx();
   [400, 300].forEach((freq, i) => {
     const osc = ctx.createOscillator();
@@ -67,6 +73,7 @@ export function playCancel() {
 
 /** 通知/事件出现 */
 export function playNotify() {
+  if (!isSfxEnabled()) return;
   const ctx = getCtx();
   [660, 880].forEach((freq, i) => {
     const osc = ctx.createOscillator();
@@ -85,6 +92,7 @@ export function playNotify() {
 
 /** 升级/突破 */
 export function playLevelUp() {
+  if (!isSfxEnabled()) return;
   const ctx = getCtx();
   [523, 659, 784, 1047].forEach((freq, i) => {
     const osc = ctx.createOscillator();
@@ -103,6 +111,7 @@ export function playLevelUp() {
 
 /** 错误提示 */
 export function playError() {
+  if (!isSfxEnabled()) return;
   const ctx = getCtx();
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();

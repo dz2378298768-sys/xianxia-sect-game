@@ -4,6 +4,7 @@ import { SectLevelNames, SectLevelOrder } from '@/types/game';
 import { useUIStore } from '@/store/uiStore';
 import { SectIcon } from '@/components/icons/SectIcons';
 import { getSlots, SAVE_SLOT_COUNT, type SaveSlotMeta } from '@/utils/saveSlots';
+import { isMusicEnabled, isSfxEnabled, setMusicEnabled, setSfxEnabled } from '@/utils/audio';
 
 export const TopBar: React.FC = () => {
   const { year, month, sectName, sectLevel, reputation, spiritStones, karma, disciples, herbInventory, ironInventory, paperInventory, setReturnToMenuConfirm, newGame, saveToSlot, redeemCodeUsed, useRedeemCode, grantAdReward, adRewardTotal } = useGameStore();
@@ -15,6 +16,9 @@ export const TopBar: React.FC = () => {
   const [showRedeemCode, setShowRedeemCode] = useState(false);
   const [redeemInput, setRedeemInput] = useState('');
   const [redeemResult, setRedeemResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [musicOn, setMusicOn] = useState(isMusicEnabled());
+  const [sfxOn, setSfxOn] = useState(isSfxEnabled());
 
   const refreshSlots = () => setSlots(getSlots());
   useEffect(() => { refreshSlots(); }, [showSavePicker]);
@@ -93,6 +97,9 @@ export const TopBar: React.FC = () => {
                 <button className="text-[11px] text-left px-2 py-1.5 rounded hover:bg-sect-ink-light/50 text-sect-jade" onClick={() => { setMenuOpen(false); grantAdReward(); }} disabled={adRewardTotal <= 0}>
                   广告奖励({adRewardTotal})
                 </button>
+                <button className="text-[11px] text-left px-2 py-1.5 rounded hover:bg-sect-ink-light/50 text-sect-jade" onClick={() => { setMenuOpen(false); setShowSettings(true); }}>
+                  设置
+                </button>
                 <div className="border-t border-sect-ink-light/30 my-1" />
                 <button className="text-[11px] text-left px-2 py-1.5 rounded hover:bg-red-500/10 text-red-400" onClick={() => { setMenuOpen(false); setReturnToMenuConfirm(true); }}>
                   返回主菜单
@@ -165,6 +172,60 @@ export const TopBar: React.FC = () => {
       {saveToast && (
         <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 bg-sect-gold/20 border border-sect-gold/30 px-3 py-1 rounded text-[10px] text-sect-gold whitespace-nowrap">
           {saveToast}
+        </div>
+      )}
+
+      {/* 设置弹窗 */}
+      {showSettings && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 px-4" onClick={() => setShowSettings(false)}>
+          <div className="scroll-panel-dark slide-in-up max-w-xs w-full p-4 flex flex-col gap-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="font-display text-sm" style={{ color: 'var(--gold-200)' }}>设置</h3>
+              <button className="text-[var(--ink-300)] hover:text-[var(--gold-200)] text-xs" onClick={() => setShowSettings(false)}>关闭</button>
+            </div>
+
+            {/* 音乐开关 */}
+            <div className="flex items-center justify-between p-3 rounded bg-sect-ink-light/20">
+              <div className="flex items-center gap-2">
+                <span className="text-base">🎵</span>
+                <div>
+                  <div className="text-[12px] text-sect-jade">背景音乐</div>
+                  <div className="text-[10px] text-sect-jade/50">两首修仙配乐循环播放</div>
+                </div>
+              </div>
+              <button
+                className={`relative w-12 h-6 rounded-full transition-colors ${musicOn ? 'bg-sect-gold/50' : 'bg-sect-ink-light/50'}`}
+                onClick={() => {
+                  const next = !musicOn;
+                  setMusicOn(next);
+                  setMusicEnabled(next);
+                }}
+              >
+                <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${musicOn ? 'translate-x-6' : 'translate-x-0.5'}`} />
+              </button>
+            </div>
+
+            {/* 音效开关 */}
+            <div className="flex items-center justify-between p-3 rounded bg-sect-ink-light/20">
+              <div className="flex items-center gap-2">
+                <span className="text-base">🔊</span>
+                <div>
+                  <div className="text-[12px] text-sect-jade">音效</div>
+                  <div className="text-[10px] text-sect-jade/50">按键点击、通知等操作音效</div>
+                </div>
+              </div>
+              <button
+                className={`relative w-12 h-6 rounded-full transition-colors ${sfxOn ? 'bg-sect-gold/50' : 'bg-sect-ink-light/50'}`}
+                onClick={() => {
+                  const next = !sfxOn;
+                  setSfxOn(next);
+                  setSfxEnabled(next);
+                }}
+              >
+                <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${sfxOn ? 'translate-x-6' : 'translate-x-0.5'}`} />
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

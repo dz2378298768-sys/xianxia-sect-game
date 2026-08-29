@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { useUIStore } from '@/store/uiStore';
-import type { Disciple, PromotionRules } from '@/types/disciple';
+import type { Disciple, PromotionRules, Realm } from '@/types/disciple';
 import { DiscipleStatusNames, RealmNames, RealmOrder, getRealmDisplay } from '@/types/disciple';
 import type { Building, BuildingType, ProductionTarget } from '@/types/building';
 import { BuildingTypeNames, getAvailableSlots } from '@/types/building';
@@ -151,6 +151,7 @@ interface GameState {
   // 大额支出
   expansionCount: number;                 // 宗门扩张次数
   lastCalamityYear: number;               // 上次天灾触发年份
+  welfareLastUsed: number; // 福利最后使用年份（三档共用冷却）
   resolveChoiceEvent: (choiceIndex: number) => void; // 处理分支选择
   initiateExploration: (regionId: string, discipleId: string) => { ok: boolean; reason?: string }; // 发起探索
   resolveExplorationEncounter: (choiceIndex: number) => void; // 处理探索遭遇
@@ -570,6 +571,7 @@ const createInitialState = () => {
     // 大额支出
     expansionCount: 0,
     lastCalamityYear: 0,
+    welfareLastUsed: 0,
     recruitCandidates: [],
     recruitCostPerDisciple: 50,
     recruitRefreshCost: 50,
@@ -587,6 +589,8 @@ function applyTournamentRewards(
   let newSpiritStones = state.spiritStones;
   let newReputation = state.reputation;
   let newPillInventory = [...state.pillInventory];
+  let newTalismanInventory = [...state.talismanInventory];
+  let newArtifactInventory = [...state.artifactInventory];
   let newDisciples = state.disciples.map(d => ({ ...d }));
   // 贡献变化明细：调用方据此写 contributionLogs（避免此函数依赖闭包）
   const contributionChanges: { discipleId: string; amount: number; balance: number; description: string }[] = [];
@@ -672,6 +676,46 @@ function applyTournamentRewards(
             }
           }
           break;
+        case 'talisman':
+          if (reward.talismanType) {
+            const talType = reward.talismanType as import('@/types/talisman').TalismanType;
+            const existing = newTalismanInventory.find(t => t.type === talType);
+            if (isSect) {
+              // 宗门内大比：从库存扣除
+              if (existing) {
+                const actualDeduct = Math.min(reward.amount, existing.quantity);
+                existing.quantity -= actualDeduct;
+              }
+            } else {
+              // 宗门间大比：从外部获得
+              if (existing) {
+                existing.quantity += reward.amount;
+              } else {
+                newTalismanInventory.push({ type: talType, quantity: reward.amount });
+              }
+            }
+          }
+          break;
+        case 'artifact':
+          if (reward.artifactType) {
+            const artType = reward.artifactType as import('@/types/artifact').ArtifactType;
+            const existing = newArtifactInventory.find(a => a.type === artType);
+            if (isSect) {
+              // 宗门内大比：从库存扣除
+              if (existing) {
+                const actualDeduct = Math.min(reward.amount, existing.quantity);
+                existing.quantity -= actualDeduct;
+              }
+            } else {
+              // 宗门间大比：从外部获得
+              if (existing) {
+                existing.quantity += reward.amount;
+              } else {
+                newArtifactInventory.push({ type: artType, quantity: reward.amount });
+              }
+            }
+          }
+          break;
       }
     });
 
@@ -684,7 +728,7 @@ function applyTournamentRewards(
     }
   }
 
-  return { newSpiritStones, newReputation, newPillInventory, newDisciples, contributionChanges };
+  return { newSpiritStones, newReputation, newPillInventory, newTalismanInventory, newArtifactInventory, newDisciples, contributionChanges };
 }
 
 /** 生产建筑初始解锁时自动设置默认生产目标 */
@@ -1998,9 +2042,12 @@ export const useGameStore = create<GameState>()(
 
           // 杂役 → 外门
           if (d.status === 'servant' && !alreadyPromoted) {
-            const canPromote = 
+            const realmIndex = RealmOrder.indexOf(d.realm);
+            const minRealmIndex = RealmOrder.indexOf('qi' as Realm);
+            const canPromote =
               d.contributionPoints >= promotionRules.servantToOuter.minContribution &&
-              d.hiddenTalents.rootBone >= promotionRules.servantToOuter.minRootBone;
+              (d.hiddenTalents.rootBone >= promotionRules.servantToOuter.minRootBone ||
+               realmIndex >= minRealmIndex); // 境界达到炼气期也可晋升（根骨不足时）
             const isExceptional = 
               promotionRules.servantToOuter.enableExceptional &&
               (d.hiddenTalents.rootBone >= promotionRules.servantToOuter.exceptionalThreshold);
@@ -2483,13 +2530,15 @@ export const useGameStore = create<GameState>()(
               sectTournamentResults[freq] = result;
               sectYears[freq] = year;
               const rewards = applyTournamentRewards(
-                { ...state, spiritStones: finalSpiritStones, reputation: finalReputation, pillInventory: finalPillInventory, disciples: finalDisciples } as GameState,
+                { ...state, spiritStones: finalSpiritStones, reputation: finalReputation, pillInventory: finalPillInventory, talismanInventory: accTalismanInventory, artifactInventory: accArtifactInventory, disciples: finalDisciples } as GameState,
                 result,
                 freqConfig,
               );
               finalSpiritStones = rewards.newSpiritStones;
               finalReputation = rewards.newReputation;
               finalPillInventory = rewards.newPillInventory;
+              accTalismanInventory = rewards.newTalismanInventory;
+              accArtifactInventory = rewards.newArtifactInventory;
               finalDisciples = rewards.newDisciples;
               // 大比贡献奖励流水
               for (const c of rewards.contributionChanges) {
@@ -2529,13 +2578,15 @@ export const useGameStore = create<GameState>()(
               interSectTournamentResults[freq] = result;
               interSectYears[freq] = year;
               const rewards = applyTournamentRewards(
-                { ...state, spiritStones: finalSpiritStones, reputation: finalReputation, pillInventory: finalPillInventory, disciples: finalDisciples } as GameState,
+                { ...state, spiritStones: finalSpiritStones, reputation: finalReputation, pillInventory: finalPillInventory, talismanInventory: accTalismanInventory, artifactInventory: accArtifactInventory, disciples: finalDisciples } as GameState,
                 result,
                 interConfig,
               );
               finalSpiritStones = rewards.newSpiritStones;
               finalReputation = rewards.newReputation;
               finalPillInventory = rewards.newPillInventory;
+              accTalismanInventory = rewards.newTalismanInventory;
+              accArtifactInventory = rewards.newArtifactInventory;
               finalDisciples = rewards.newDisciples;
               // 大比贡献奖励流水
               for (const c of rewards.contributionChanges) {
@@ -4660,7 +4711,7 @@ export const useGameStore = create<GameState>()(
           date: { year: state.year, month: state.month },
         });
 
-        const { newSpiritStones, newReputation, newPillInventory, newDisciples, contributionChanges } =
+        const { newSpiritStones, newReputation, newPillInventory, newTalismanInventory, newArtifactInventory, newDisciples, contributionChanges } =
           applyTournamentRewards(state, result, freqConfig);
 
         // 构造贡献值流水记录
@@ -4694,6 +4745,8 @@ export const useGameStore = create<GameState>()(
           spiritStones: newSpiritStones,
           reputation: newReputation,
           pillInventory: newPillInventory,
+          talismanInventory: newTalismanInventory,
+          artifactInventory: newArtifactInventory,
           disciples: newDisciples,
           notifications: [notif, ...state.notifications].slice(0, 50),
           contributionLogs: [...newLogs, ...state.contributionLogs].slice(0, 5000),
@@ -4720,7 +4773,7 @@ export const useGameStore = create<GameState>()(
           date: { year: state.year, month: state.month },
         });
 
-        const { newSpiritStones, newReputation, newPillInventory, newDisciples, contributionChanges } =
+        const { newSpiritStones, newReputation, newPillInventory, newTalismanInventory, newArtifactInventory, newDisciples, contributionChanges } =
           applyTournamentRewards(state, result, interConfig);
 
         // 构造贡献值流水记录
@@ -4754,6 +4807,8 @@ export const useGameStore = create<GameState>()(
           spiritStones: newSpiritStones,
           reputation: newReputation,
           pillInventory: newPillInventory,
+          talismanInventory: newTalismanInventory,
+          artifactInventory: newArtifactInventory,
           disciples: newDisciples,
           notifications: [notif, ...state.notifications].slice(0, 50),
           contributionLogs: [...newLogs, ...state.contributionLogs].slice(0, 5000),
@@ -5395,6 +5450,11 @@ export const useGameStore = create<GameState>()(
       // 发放弟子福利
       distributeWelfare: (generosityLevel: number) => {
         const state = get();
+        const yearsSinceLastUse = state.year - state.welfareLastUsed;
+        if (state.welfareLastUsed > 0 && yearsSinceLastUse < 5) {
+          const remaining = 5 - yearsSinceLastUse;
+          return { ok: false, reason: `弟子福利还需 ${remaining} 年后才能再次发放` };
+        }
         const activeCount = state.disciples.filter(d => d.status !== 'mortal').length;
         const { cost, satisfactionGain } = calculateDiscipleWelfareCost(activeCount, generosityLevel);
         if (state.spiritStones < cost) return { ok: false, reason: `灵石不足，需要 ${cost} 灵石` };
@@ -5405,6 +5465,7 @@ export const useGameStore = create<GameState>()(
         set({
           spiritStones: state.spiritStones - cost,
           disciples: updatedDisciples,
+          welfareLastUsed: state.year,
           notifications: [
             createNotification('success', '弟子福利', `发放了价值 ${cost} 灵石的福利，全体弟子满意度 +${satisfactionGain}。`, { year: state.year, month: state.month }),
             ...state.notifications,
@@ -5997,11 +6058,12 @@ export const useGameStore = create<GameState>()(
           const rule = rules.servantToOuter;
           const contributionOk = d.contributionPoints >= rule.minContribution;
           const rootBoneOk = d.hiddenTalents.rootBone >= rule.minRootBone;
+          const realmOk = RealmOrder.indexOf(d.realm) >= RealmOrder.indexOf('qi' as Realm);
           const exceptionalOk = rule.enableExceptional && (d.hiddenTalents.rootBone >= rule.exceptionalThreshold);
-          if (contributionOk && rootBoneOk) {
+          if (contributionOk && (rootBoneOk || realmOk)) {
             return {
               canPromote: true, nextStatus,
-              reason: '达标：贡献和根骨均满足',
+              reason: '达标：贡献达标且根骨或境界满足',
               minContribution: rule.minContribution, minRootBone: rule.minRootBone,
             };
           }
@@ -6111,8 +6173,9 @@ export const useGameStore = create<GameState>()(
           const rule = rules.servantToOuter;
           const contributionOk = d.contributionPoints >= rule.minContribution;
           const rootBoneOk = d.hiddenTalents.rootBone >= rule.minRootBone;
+          const realmOk = RealmOrder.indexOf(d.realm) >= RealmOrder.indexOf('qi' as Realm);
           const exceptional = rule.enableExceptional && (d.hiddenTalents.rootBone >= rule.exceptionalThreshold);
-          if (contributionOk && rootBoneOk) {
+          if (contributionOk && (rootBoneOk || realmOk)) {
             cost = rule.minContribution;
             deductionDesc = `晋升外门弟子，扣除 ${cost} 贡献`;
           } else if (exceptional) {

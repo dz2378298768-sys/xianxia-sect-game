@@ -9,6 +9,10 @@ import type {
 import { TournamentRewardTypeNames, TournamentFrequencyIntervals } from '@/types/tournament';
 import type { PillType } from '@/types/pill';
 import { PillTypeNames } from '@/types/pill';
+import type { TalismanType } from '@/types/talisman';
+import { TalismanTypeNames } from '@/types/talisman';
+import type { ArtifactType } from '@/types/artifact';
+import { ArtifactTypeNames } from '@/types/artifact';
 import { randomInt, pickRandom, weightedRandom } from './random';
 import { calculateDiscipleCombatPower } from './gameLogic';
 
@@ -103,6 +107,10 @@ export function rewardToText(reward: TournamentReward): string {
   switch (reward.type) {
     case 'pill':
       return `${PillTypeNames[reward.pillType as PillType] ?? '丹药'} ×${reward.amount}`;
+    case 'talisman':
+      return `${TalismanTypeNames[reward.talismanType as TalismanType] ?? '符箓'} ×${reward.amount}`;
+    case 'artifact':
+      return `${ArtifactTypeNames[reward.artifactType as ArtifactType] ?? '法器'} ×${reward.amount}`;
     case 'contribution':
       return `贡献点 +${reward.amount}`;
     case 'spiritStones':
@@ -315,6 +323,12 @@ export function getDefaultTournamentConfig(scope: 'sect' | 'inter-sect'): Tourna
 const INTER_SECT_YEARLY_PILL_POOL: PillType[] = ['foundation_pill', 'golden_pill', 'recovery_pill'];
 const INTER_SECT_5Y_PILL_POOL: PillType[] = ['golden_pill', 'nascent_pill', 'longevity_pill'];
 const INTER_SECT_10Y_PILL_POOL: PillType[] = ['nascent_pill', 'spirit_pill', 'longevity_pill'];
+const INTER_SECT_YEARLY_TALISMAN_POOL: TalismanType[] = ['fire_talisman', 'heal_talisman', 'sword_talisman'];
+const INTER_SECT_5Y_TALISMAN_POOL: TalismanType[] = ['thunder_talisman', 'ward_talisman', 'divine_talisman'];
+const INTER_SECT_10Y_TALISMAN_POOL: TalismanType[] = ['teleport_talisman', 'stealth_talisman', 'divine_talisman'];
+const INTER_SECT_YEARLY_ARTIFACT_POOL: ArtifactType[] = ['flying_sword', 'defensive_shield', 'spirit_bottle'];
+const INTER_SECT_5Y_ARTIFACT_POOL: ArtifactType[] = ['attack_talisman', 'space_ring', 'thunder_pearl'];
+const INTER_SECT_10Y_ARTIFACT_POOL: ArtifactType[] = ['bagua_mirror', 'demon_pagoda', 'thunder_pearl'];
 
 export function generateInterSectRewards(
   frequency: TournamentFrequency,
@@ -337,36 +351,48 @@ export function generateInterSectRewards(
 
   if (frequency === 'yearly') {
     const pill = INTER_SECT_YEARLY_PILL_POOL[Math.floor(seededRandom(0) * INTER_SECT_YEARLY_PILL_POOL.length)];
+    const tal = INTER_SECT_YEARLY_TALISMAN_POOL[Math.floor(seededRandom(4) * INTER_SECT_YEARLY_TALISMAN_POOL.length)];
+    const art = INTER_SECT_YEARLY_ARTIFACT_POOL[Math.floor(seededRandom(5) * INTER_SECT_YEARLY_ARTIFACT_POOL.length)];
     rewards.push(
       { type: 'spiritStones', amount: Math.floor(baseStone * 1.0), rank: 1 },
       { type: 'reputation', amount: Math.floor(baseRep * 0.8), rank: 1 },
       { type: 'pill', amount: 1, pillType: pill, rank: 1 },
+      { type: 'talisman', amount: 1, talismanType: tal, rank: 2 },
       { type: 'spiritStones', amount: Math.floor(baseStone * 0.5), rank: 2 },
       { type: 'reputation', amount: Math.floor(baseRep * 0.4), rank: 2 },
       { type: 'spiritStones', amount: Math.floor(baseStone * 0.25), rank: 3 },
+      { type: 'artifact', amount: 1, artifactType: art, rank: 3 },
     );
   } else if (frequency === 'every5years') {
     const pill = INTER_SECT_5Y_PILL_POOL[Math.floor(seededRandom(1) * INTER_SECT_5Y_PILL_POOL.length)];
+    const tal = INTER_SECT_5Y_TALISMAN_POOL[Math.floor(seededRandom(4) * INTER_SECT_5Y_TALISMAN_POOL.length)];
+    const art = INTER_SECT_5Y_ARTIFACT_POOL[Math.floor(seededRandom(5) * INTER_SECT_5Y_ARTIFACT_POOL.length)];
     rewards.push(
       { type: 'spiritStones', amount: Math.floor(baseStone * 2.5), rank: 1 },
       { type: 'reputation', amount: Math.floor(baseRep * 2.0), rank: 1 },
       { type: 'pill', amount: 2, pillType: pill, rank: 1 },
+      { type: 'talisman', amount: 1, talismanType: tal, rank: 2 },
       { type: 'spiritStones', amount: Math.floor(baseStone * 1.25), rank: 2 },
       { type: 'reputation', amount: Math.floor(baseRep * 1.0), rank: 2 },
       { type: 'spiritStones', amount: Math.floor(baseStone * 0.6), rank: 3 },
       { type: 'reputation', amount: Math.floor(baseRep * 0.5), rank: 3 },
+      { type: 'artifact', amount: 1, artifactType: art, rank: 3 },
     );
   } else {
     // every10years
     const pill = INTER_SECT_10Y_PILL_POOL[Math.floor(seededRandom(2) * INTER_SECT_10Y_PILL_POOL.length)];
     const bigPill = INTER_SECT_10Y_PILL_POOL[Math.floor(seededRandom(3) * INTER_SECT_10Y_PILL_POOL.length)];
+    const tal = INTER_SECT_10Y_TALISMAN_POOL[Math.floor(seededRandom(4) * INTER_SECT_10Y_TALISMAN_POOL.length)];
+    const art = INTER_SECT_10Y_ARTIFACT_POOL[Math.floor(seededRandom(5) * INTER_SECT_10Y_ARTIFACT_POOL.length)];
     rewards.push(
       { type: 'spiritStones', amount: Math.floor(baseStone * 5.0), rank: 1 },
       { type: 'reputation', amount: Math.floor(baseRep * 4.0), rank: 1 },
       { type: 'pill', amount: 3, pillType: bigPill, rank: 1 },
+      { type: 'talisman', amount: 2, talismanType: tal, rank: 1 },
       { type: 'spiritStones', amount: Math.floor(baseStone * 2.5), rank: 2 },
       { type: 'reputation', amount: Math.floor(baseRep * 2.0), rank: 2 },
       { type: 'pill', amount: 1, pillType: pill, rank: 2 },
+      { type: 'artifact', amount: 1, artifactType: art, rank: 2 },
       { type: 'spiritStones', amount: Math.floor(baseStone * 1.25), rank: 3 },
       { type: 'reputation', amount: Math.floor(baseRep * 1.0), rank: 3 },
     );

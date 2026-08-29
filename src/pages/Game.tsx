@@ -28,6 +28,7 @@ import { EldersPanel } from '@/components/EldersPanel';
 import { AllocationPanel } from '@/components/AllocationPanel';
 import { SectIcon } from '@/components/icons/SectIcons';
 import { playClick, playConfirm, playCancel, playNotify, playLevelUp, playError } from '@/utils/sound';
+import { playBGM, hasBGMStarted } from '@/utils/audio';
 
 /**
  * 合并面板容器：affairs = overview + economy + rules + elders + combat
@@ -127,17 +128,20 @@ const GameLayout: React.FC = () => {
     }
   }, [activePanel]);
 
-  // 全局按键音效 - 点击按钮时播放 click 音
+  // 游戏开始后，在首次用户点击时启动 BGM + 音效
   React.useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (target.tagName === 'BUTTON' || target.closest('button')) {
-        playClick();
+    if (!gameStarted) return;
+
+    const handler = () => {
+      // 首次交互启动 BGM
+      if (!hasBGMStarted()) {
+        playBGM();
       }
     };
-    document.addEventListener('click', handler);
+
+    document.addEventListener('click', handler, { once: true });
     return () => document.removeEventListener('click', handler);
-  }, []);
+  }, [gameStarted]);
 
   const renderPanel = () => {
     switch (activePanel) {

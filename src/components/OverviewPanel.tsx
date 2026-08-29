@@ -1,6 +1,6 @@
 import React from 'react';
 import { useGameStore } from '@/store/gameStore';
-import { calculateSectCombatPower, calculateDiscipleCombatPower, calculateBuildingMaintenance, calculateBuildingOutput } from '@/utils/gameLogic';
+import { calculateSectCombatPower, calculateDiscipleCombatPower, calculateBuildingMaintenance, calculateBuildingOutput, calculateDiscipleWelfareCost } from '@/utils/gameLogic';
 import {
   SectLevelNames, SectLevelDescriptions, SectLevelOrder,
   SectLevelRequirementsMap, SectSchoolNames, SectSchoolDescriptions,
@@ -29,7 +29,7 @@ export const OverviewPanel: React.FC = () => {
     sectSchool, unlockedTalents, selectSchool, unlockTalent,
     sectFortune, activeCalamity, calamityWarnings,
     priceMultipliers,
-    expansionCount, expandSect, distributeWelfare,
+    expansionCount, expandSect, distributeWelfare, welfareLastUsed,
   } = useGameStore();
 
   const { canPromote, nextLevel, reasons } = canPromoteSect();
@@ -339,6 +339,15 @@ export const OverviewPanel: React.FC = () => {
                 {sectFortune > 0 ? '+' : ''}{Math.round(sectFortune)}
               </span>
             </div>
+            {/* 气运说明 */}
+            <div className="mt-2 p-2 rounded bg-sect-ink-light/20 border border-sect-ink-light/30">
+              <div className="text-[10px] text-sect-jade/70 leading-relaxed">
+                <span className="font-medium">气运</span>影响宗门吉凶——气运高时天灾概率降低，并可能触发正面机遇；气运低时天灾频发，需提前防备。
+              </div>
+              <div className="text-[9px] text-sect-jade/40 mt-1">
+                行善、大比夺冠、晋升可提升气运；作恶、弟子叛逃或寿终会降低气运
+              </div>
+            </div>
             {activeCalamity && (
               <div className="mt-2 p-2 rounded bg-red-500/10 border border-red-500/30">
                 <div className="text-[10px] text-red-400 font-medium">{CalamityTypeNames[activeCalamity.type]}</div>
@@ -397,20 +406,39 @@ export const OverviewPanel: React.FC = () => {
           </div>
           <div className="scroll-panel-dark p-3">
             <div className="text-xs text-sect-jade/60 mb-1">弟子福利</div>
-            <div className="text-[10px] text-sect-jade/50 mb-2">发放福利提升全体弟子满意度</div>
+            <div className="text-[10px] text-sect-jade/50 mb-2">每 5 年可发放一次，提升全体弟子满意度</div>
             <div className="flex gap-1">
-              {[1, 2, 3].map(level => (
-                <button
-                  key={level}
-                  className="btn-ink text-[10px] px-2 py-1 flex-1"
-                  onClick={() => {
-                    const result = distributeWelfare(level);
-                    if (!result.ok) alert(result.reason);
-                  }}
-                >
-                  {level === 1 ? '普通' : level === 2 ? '丰厚' : '优厚'}
-                </button>
-              ))}
+              {[1, 2, 3].map(level => {
+                const yearsSinceLastUse = year - welfareLastUsed;
+                const cooldownRemaining = welfareLastUsed > 0 && yearsSinceLastUse < 5 ? 5 - yearsSinceLastUse : 0;
+                const disabled = cooldownRemaining > 0;
+                const activeCount = disciples.filter(d => d.status !== 'mortal').length;
+                const { cost, satisfactionGain } = calculateDiscipleWelfareCost(activeCount, level);
+                return (
+                  <div key={level} className="flex-1 flex flex-col gap-0.5">
+                    <button
+                      className={`btn-ink text-[10px] px-2 py-1 w-full ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
+                      disabled={disabled}
+                      onClick={() => {
+                        const result = distributeWelfare(level);
+                        if (!result.ok) {
+                          alert(result.reason);
+                        } else if (result.ok && result.cost !== undefined) {
+                          alert(`发放了 ${result.cost} 灵石福利，全体弟子满意度 +${result.satisfactionGain}。`);
+                        }
+                      }}
+                    >
+                      {level === 1 ? '普通' : level === 2 ? '丰厚' : '优厚'}
+                    </button>
+                    <div className="text-[9px] text-sect-jade/60 text-center leading-tight">
+                      {disabled
+                        ? `冷却 ${cooldownRemaining}年`
+                        : `${cost}灵石 +${satisfactionGain}满意度`
+                      }
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>

@@ -230,7 +230,7 @@ export function recomputeCultivationSpeed(disciple: Disciple): number {
   }
 
   const speed = baseSpeed * rootBoneMultiplier * (1 + spiritRootBonus / 100) * (1 + constitutionBonus / 100);
-  return Math.floor(speed);
+  return Math.max(1, Math.round(speed));
 }
 
 /**
@@ -245,7 +245,7 @@ export function recomputeCultivationSpeed(disciple: Disciple): number {
 export function applySatisfactionPenalty(speed: number, satisfaction: number): number {
   const rawMultiplier = 1 - (100 - satisfaction) * 0.02;
   const multiplier = Math.min(1, Math.max(SATISFACTION_FLOOR, rawMultiplier));
-  return Math.floor(speed * multiplier);
+  return Math.max(1, Math.round(speed * multiplier));
 }
 
 /**

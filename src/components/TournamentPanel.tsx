@@ -18,17 +18,23 @@ import type { Realm, DiscipleStatus } from '@/types/disciple';
 import { RealmOrder, RealmNames, DiscipleStatusNames } from '@/types/disciple';
 import type { PillType } from '@/types/pill';
 import { PillTypeNames } from '@/types/pill';
+import type { TalismanType } from '@/types/talisman';
+import { TalismanTypeNames } from '@/types/talisman';
+import type { ArtifactType } from '@/types/artifact';
+import { ArtifactTypeNames } from '@/types/artifact';
 
 interface TournamentPanelProps {
   scope: 'sect' | 'inter-sect';
 }
 
 const FREQUENCIES: TournamentFrequency[] = ['yearly', 'every5years', 'every10years'];
-const REWARD_TYPES: TournamentRewardType[] = ['contribution', 'spiritStones', 'reputation', 'pill'];
+const REWARD_TYPES: TournamentRewardType[] = ['contribution', 'spiritStones', 'reputation', 'pill', 'talisman', 'artifact'];
 const REALM_DIVISIONS: { kind: 'realm'; value: Realm }[] = RealmOrder.map(r => ({ kind: 'realm', value: r }));
 const STATUS_DIVISIONS: { kind: 'status'; value: DiscipleStatus }[] = (['servant', 'outer', 'inner', 'core', 'elder'] as DiscipleStatus[]).map(s => ({ kind: 'status', value: s }));
 const ALL_DIVISION: TournamentDivision = { kind: 'all', value: 'all' };
-const PILL_OPTIONS: PillType[] = ['foundation_pill', 'golden_pill', 'nascent_pill', 'spirit_pill', 'recovery_pill', 'longevity_pill'];
+const PILL_OPTIONS: PillType[] = ['foundation_pill', 'golden_pill', 'nascent_pill', 'spirit_pill', 'recovery_pill', 'longevity_pill', 'detox_pill', 'qi_gathering_pill', 'body_forging_pill'];
+const TALISMAN_OPTIONS: TalismanType[] = ['fire_talisman', 'ice_talisman', 'thunder_talisman', 'heal_talisman', 'teleport_talisman', 'stealth_talisman', 'ward_talisman', 'sword_talisman', 'divine_talisman'];
+const ARTIFACT_OPTIONS: ArtifactType[] = ['flying_sword', 'defensive_shield', 'attack_talisman', 'spirit_bottle', 'space_ring', 'thunder_pearl', 'bagua_mirror', 'demon_pagoda'];
 const RANK_LABELS: Record<1 | 2 | 3, string> = { 1: '冠军', 2: '亚军', 3: '季军' };
 const RANK_COLORS: Record<1 | 2 | 3, string> = {
   1: 'text-yellow-400',
@@ -111,32 +117,50 @@ export const TournamentPanel: React.FC<TournamentPanelProps> = ({ scope }) => {
             updateFreqConfig(freq, { division });
           };
 
-          const handleRewardChange = (rank: 1 | 2 | 3, field: 'type' | 'amount' | 'pillType', value: string | number) => {
-            const existing = freqConfig.rewards.find(r => r.rank === rank);
-            let newReward: TournamentReward;
+          const handleRewardChange = (rew: TournamentReward, field: 'type' | 'amount' | 'pillType' | 'talismanType' | 'artifactType', value: string | number) => {
+            const newRewards = freqConfig.rewards.map(r => {
+              if (r !== rew) return r;
+              if (field === 'type') {
+                const type = value as TournamentRewardType;
+                return {
+                  ...r,
+                  type,
+                  amount: r.amount ?? 100,
+                  pillType: type === 'pill' ? (r.pillType ?? 'foundation_pill') : undefined,
+                  talismanType: type === 'talisman' ? (r.talismanType ?? 'fire_talisman') : undefined,
+                  artifactType: type === 'artifact' ? (r.artifactType ?? 'flying_sword') : undefined,
+                } as TournamentReward;
+              }
+              if (field === 'amount') {
+                return { ...r, amount: Number(value) || 0 } as TournamentReward;
+              }
+              if (field === 'pillType') {
+                return { ...r, pillType: value as PillType } as TournamentReward;
+              }
+              if (field === 'talismanType') {
+                return { ...r, talismanType: value as string } as TournamentReward;
+              }
+              // artifactType
+              return { ...r, artifactType: value as string } as TournamentReward;
+            });
+            updateFreqConfig(freq, { rewards: newRewards });
+          };
+
+          const addNewReward = (rank: 1 | 2 | 3, field: string, value: string | number) => {
+            const currentRewards = [...freqConfig.rewards];
             if (field === 'type') {
               const type = value as TournamentRewardType;
-              newReward = {
+              const newReward: TournamentReward = {
                 rank,
                 type,
-                amount: existing?.amount ?? 100,
-                pillType: type === 'pill' ? (existing?.pillType ?? 'foundation_pill') : undefined,
+                amount: 100,
               };
-            } else if (field === 'amount') {
-              newReward = {
-                ...(existing ?? { rank, type: 'contribution' as TournamentRewardType }),
-                amount: Number(value) || 0,
-              } as TournamentReward;
-            } else {
-              newReward = {
-                ...(existing ?? { rank, type: 'pill' as TournamentRewardType, amount: 1 }),
-                pillType: value as PillType,
-              } as TournamentReward;
+              if (type === 'pill') newReward.pillType = 'foundation_pill';
+              if (type === 'talisman') newReward.talismanType = 'fire_talisman';
+              if (type === 'artifact') newReward.artifactType = 'flying_sword';
+              currentRewards.push(newReward);
+              updateFreqConfig(freq, { rewards: currentRewards });
             }
-            // 合并：覆盖同名次项
-            const newRewards = freqConfig.rewards.filter(r => r.rank !== rank);
-            if (newReward.amount > 0) newRewards.push(newReward);
-            updateFreqConfig(freq, { rewards: newRewards });
           };
 
           return (
@@ -257,6 +281,8 @@ export const TournamentPanel: React.FC<TournamentPanelProps> = ({ scope }) => {
                                        {r.type === 'spiritStones' && <SectIcon name="gem" size={10} className="text-sect-gold" />}
                                       {r.type === 'reputation' && <SectIcon name="world" size={10} className="text-blue-400" />}
                                       {r.type === 'contribution' && <SectIcon name="disciple" size={10} className="text-green-400" />}
+                                      {r.type === 'talisman' && <SectIcon name="scroll" size={10} className="text-purple-400" />}
+                                      {r.type === 'artifact' && <SectIcon name="sword" size={10} className="text-orange-400" />}
                                       {rewardToText(r)}
                                     </span>
                                   ))}
@@ -284,7 +310,11 @@ export const TournamentPanel: React.FC<TournamentPanelProps> = ({ scope }) => {
                                   {rewardList.map(r => (
                                     r.type === 'pill'
                                       ? `${PillTypeNames[r.pillType as PillType] ?? '丹药'} ×${r.amount}`
-                                      : `${TournamentRewardTypeNames[r.type]} +${r.amount}`
+                                      : r.type === 'talisman'
+                                        ? `${TalismanTypeNames[r.talismanType as TalismanType] ?? '符箓'} ×${r.amount}`
+                                        : r.type === 'artifact'
+                                          ? `${ArtifactTypeNames[r.artifactType as ArtifactType] ?? '法器'} ×${r.amount}`
+                                          : `${TournamentRewardTypeNames[r.type]} +${r.amount}`
                                   )).join('、')}
                                 </span>
                               ) : (
@@ -321,7 +351,7 @@ export const TournamentPanel: React.FC<TournamentPanelProps> = ({ scope }) => {
                                       <div className="relative">
                                         <select
                                           value="contribution"
-                                          onChange={e => handleRewardChange(rank, 'type', e.target.value)}
+                                          onChange={e => addNewReward(rank, 'type', e.target.value)}
                                           className="appearance-none bg-sect-ink/80 text-sect-jade text-[10px] rounded-md px-2 py-1 pr-5 border border-sect-gold/30 focus:border-sect-gold/60 focus:ring-1 focus:ring-sect-gold/30 outline-none cursor-pointer"
                                         >
                                           {REWARD_TYPES.map(t => (
@@ -334,12 +364,12 @@ export const TournamentPanel: React.FC<TournamentPanelProps> = ({ scope }) => {
                                         type="number"
                                         min={0}
                                         value={0}
-                                        onChange={e => handleRewardChange(rank, 'amount', e.target.value)}
+                                        onChange={e => addNewReward(rank, 'amount', e.target.value)}
                                         placeholder="数量"
                                         className="bg-sect-ink/80 text-sect-jade text-[10px] rounded-md px-2 py-1 border border-sect-gold/30 focus:border-sect-gold/60 focus:ring-1 focus:ring-sect-gold/30 outline-none w-14 text-center"
                                       />
                                       <button
-                                        onClick={() => handleRewardChange(rank, 'amount', '1')}
+                                        onClick={() => addNewReward(rank, 'amount', '1')}
                                         className="text-[10px] text-sect-gold/60 hover:text-sect-gold px-1"
                                       >
                                         + 添加
@@ -353,7 +383,7 @@ export const TournamentPanel: React.FC<TournamentPanelProps> = ({ scope }) => {
                                     <div className="relative">
                                       <select
                                         value={reward.type}
-                                        onChange={e => handleRewardChange(rank, 'type', e.target.value)}
+                                        onChange={e => handleRewardChange(reward, 'type', e.target.value)}
                                         className="appearance-none bg-sect-ink/80 text-sect-jade text-[10px] rounded-md px-2 py-1 pr-5 border border-sect-gold/30 focus:border-sect-gold/60 focus:ring-1 focus:ring-sect-gold/30 outline-none cursor-pointer"
                                       >
                                         {REWARD_TYPES.map(t => (
@@ -366,7 +396,7 @@ export const TournamentPanel: React.FC<TournamentPanelProps> = ({ scope }) => {
                                       <div className="relative">
                                         <select
                                           value={reward.pillType ?? 'foundation_pill'}
-                                          onChange={e => handleRewardChange(rank, 'pillType', e.target.value)}
+                                          onChange={e => handleRewardChange(reward, 'pillType', e.target.value)}
                                           className="appearance-none bg-sect-ink/80 text-sect-jade text-[10px] rounded-md px-2 py-1 pr-5 border border-sect-gold/30 focus:border-sect-gold/60 focus:ring-1 focus:ring-sect-gold/30 outline-none cursor-pointer"
                                         >
                                           {PILL_OPTIONS.map(p => (
@@ -376,11 +406,39 @@ export const TournamentPanel: React.FC<TournamentPanelProps> = ({ scope }) => {
                                         <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-sect-gold/50 text-[8px] pointer-events-none">▼</span>
                                       </div>
                                     )}
+                                    {reward.type === 'talisman' && (
+                                      <div className="relative">
+                                        <select
+                                          value={reward.talismanType ?? 'fire_talisman'}
+                                          onChange={e => handleRewardChange(reward, 'talismanType', e.target.value)}
+                                          className="appearance-none bg-sect-ink/80 text-sect-jade text-[10px] rounded-md px-2 py-1 pr-5 border border-sect-gold/30 focus:border-sect-gold/60 focus:ring-1 focus:ring-sect-gold/30 outline-none cursor-pointer"
+                                        >
+                                          {TALISMAN_OPTIONS.map(t => (
+                                            <option key={t} value={t}>{TalismanTypeNames[t]}</option>
+                                          ))}
+                                        </select>
+                                        <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-sect-gold/50 text-[8px] pointer-events-none">▼</span>
+                                      </div>
+                                    )}
+                                    {reward.type === 'artifact' && (
+                                      <div className="relative">
+                                        <select
+                                          value={reward.artifactType ?? 'flying_sword'}
+                                          onChange={e => handleRewardChange(reward, 'artifactType', e.target.value)}
+                                          className="appearance-none bg-sect-ink/80 text-sect-jade text-[10px] rounded-md px-2 py-1 pr-5 border border-sect-gold/30 focus:border-sect-gold/60 focus:ring-1 focus:ring-sect-gold/30 outline-none cursor-pointer"
+                                        >
+                                          {ARTIFACT_OPTIONS.map(a => (
+                                            <option key={a} value={a}>{ArtifactTypeNames[a]}</option>
+                                          ))}
+                                        </select>
+                                        <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-sect-gold/50 text-[8px] pointer-events-none">▼</span>
+                                      </div>
+                                    )}
                                     <input
                                       type="number"
                                       min={0}
                                       value={reward.amount}
-                                      onChange={e => handleRewardChange(rank, 'amount', e.target.value)}
+                                      onChange={e => handleRewardChange(reward, 'amount', e.target.value)}
                                       className="bg-sect-ink/80 text-sect-jade text-[10px] rounded-md px-2 py-1 border border-sect-gold/30 focus:border-sect-gold/60 focus:ring-1 focus:ring-sect-gold/30 outline-none w-14 text-center"
                                     />
                                   </div>

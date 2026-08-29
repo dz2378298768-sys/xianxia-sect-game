@@ -29,10 +29,12 @@ export type TournamentDivision =
   | { kind: 'all'; value: 'all' };
 
 // 奖励类型
-export type TournamentRewardType = 'pill' | 'contribution' | 'spiritStones' | 'reputation';
+export type TournamentRewardType = 'pill' | 'talisman' | 'artifact' | 'contribution' | 'spiritStones' | 'reputation';
 
 export const TournamentRewardTypeNames: Record<TournamentRewardType, string> = {
   pill: '丹药',
+  talisman: '符箓',
+  artifact: '法器',
   contribution: '贡献点',
   spiritStones: '灵石',
   reputation: '声望',
@@ -42,6 +44,8 @@ export interface TournamentReward {
   type: TournamentRewardType;
   amount: number;
   pillType?: PillType; // 仅当 type === 'pill' 时有效
+  talismanType?: string; // 仅当 type === 'talisman' 时有效
+  artifactType?: string; // 仅当 type === 'artifact' 时有效
   // 名次：1=冠军，2=亚军，3=季军
   rank: 1 | 2 | 3;
 }

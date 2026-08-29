@@ -912,7 +912,7 @@ export function processMonthlyCultivation(disciple: Disciple): Disciple {
     const required = getStageBreakthroughRequired('mortal', disciple.realmStage);
     return {
       ...disciple,
-      realmProgress: Math.min(required, disciple.realmProgress + disciple.cultivationSpeed * 2),
+      realmProgress: Math.min(required, disciple.realmProgress + Math.max(1, Math.round(disciple.cultivationSpeed * 2))),
     };
   }
 
@@ -954,7 +954,7 @@ export function processMonthlyCultivation(disciple: Disciple): Disciple {
   const speed = disciple.cultivationSpeed * (1 + clampedBonus / 100);
 
   const required = getStageBreakthroughRequired(disciple.realm, disciple.realmStage);
-  const newProgress = Math.min(required, disciple.realmProgress + Math.floor(speed));
+  const newProgress = Math.min(required, disciple.realmProgress + Math.max(1, Math.round(speed)));
 
   return {
     ...disciple,
