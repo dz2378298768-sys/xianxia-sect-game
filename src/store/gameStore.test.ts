@@ -91,3 +91,31 @@ describe('upgradeBuilding / downgradeBuilding — 两类资源对称扣返', () 
     expect(useGameStore.getState().reputation).toBe(1000);
   });
 });
+
+describe('openReport — 未读去重', () => {
+  beforeEach(() => {
+    useGameStore.setState({
+      activeEventId: null,
+      reportView: null,
+      unreadReports: { monthly: true, quarterly: true, annual: true },
+    });
+  });
+
+  it('打开季报时清除月报未读，年报仍保留', () => {
+    useGameStore.getState().openReport('quarterly');
+    expect(useGameStore.getState().unreadReports).toEqual({
+      monthly: false,
+      quarterly: false,
+      annual: true,
+    });
+  });
+
+  it('打开年报时清除季报与月报未读', () => {
+    useGameStore.getState().openReport('annual');
+    expect(useGameStore.getState().unreadReports).toEqual({
+      monthly: false,
+      quarterly: false,
+      annual: false,
+    });
+  });
+});

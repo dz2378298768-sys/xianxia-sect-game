@@ -3624,11 +3624,17 @@ export const useGameStore = create<GameState>()(
       openReport: (kind) => {
         // 事件弹窗未处理完时，不叠加报告弹窗
         if (get().activeEventId) return;
-        set(state => ({
-          reportView: kind,
-          showReport: true,
-          unreadReports: { ...state.unreadReports, [kind]: false },
-        }));
+        set(state => {
+          const unreadReports = { ...state.unreadReports, [kind]: false };
+          // 季报覆盖月报、年报覆盖季报/月报的未读，避免同一批数据反复提示
+          if (kind === 'quarterly' || kind === 'annual') unreadReports.monthly = false;
+          if (kind === 'annual') unreadReports.quarterly = false;
+          return {
+            reportView: kind,
+            showReport: true,
+            unreadReports,
+          };
+        });
       },
 
       setReportSetting: (kind, enabled) => {

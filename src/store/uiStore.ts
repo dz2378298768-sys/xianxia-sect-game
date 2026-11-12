@@ -29,6 +29,7 @@ interface UIState {
   sectInfoTab: SectInfoTab;
   showShop: boolean;
   showOpeningGuide: boolean;
+  eventHistoryOpen: boolean;
   siegeReport: import('./siegeReport').SiegeReportData | null;
 
   setActivePanel: (panel: PanelType | null) => void;
@@ -43,6 +44,7 @@ interface UIState {
   toggleShop: () => void;
   setShopOpen: (open: boolean) => void;
   setShowOpeningGuide: (open: boolean) => void;
+  setEventHistoryOpen: (open: boolean) => void;
   setSiegeReport: (report: import('./siegeReport').SiegeReportData | null) => void;
 }
 
@@ -57,6 +59,7 @@ export const useUIStore = create<UIState>((set) => ({
   sectInfoTab: 'overview',
   showShop: false,
   showOpeningGuide: false,
+  eventHistoryOpen: false,
   siegeReport: null,
 
   setActivePanel: (panel) => set({ activePanel: panel }),
@@ -71,5 +74,6 @@ export const useUIStore = create<UIState>((set) => ({
   toggleShop: () => set(state => ({ showShop: !state.showShop })),
   setShopOpen: (open) => set({ showShop: open }),
   setShowOpeningGuide: (open) => set({ showOpeningGuide: open }),
+  setEventHistoryOpen: (open) => set({ eventHistoryOpen: open }),
   setSiegeReport: (report) => set({ siegeReport: report }),
 }));

@@ -21,6 +21,10 @@ export const ReportBadge: React.FC = () => {
   const anyAvailable = items.some(i => i.available);
   if (!anyAvailable && pendingEvents.length === 0) return null;
 
+  // 未读去重：同一批数据会在月/季/年三级同时置为未读，只提示最高一级
+  const highlightKind = (['annual', 'quarterly', 'monthly'] as ReportKind[])
+    .find(kind => unreadReports[kind] && items.some(i => i.kind === kind && i.available));
+
   return (
     <div className="absolute right-2 z-[19] flex flex-col items-end gap-1" style={{ bottom: 84 }}>
       {pendingEvents.length > 0 && (
@@ -37,14 +41,14 @@ export const ReportBadge: React.FC = () => {
           key={i.kind}
           onClick={() => openReport(i.kind)}
           className={`flex items-center gap-1 px-2 py-1 rounded border text-[11px] transition-colors ${
-            unreadReports[i.kind]
+            highlightKind === i.kind
               ? 'border-sect-gold/50 bg-black/70 text-sect-gold'
               : 'border-white/10 bg-black/60 text-sect-jade/50 hover:text-sect-gold'
           }`}
         >
           <ScrollText size={12} />
           {ReportKindNames[i.kind]}
-          {unreadReports[i.kind] && <span className="w-1.5 h-1.5 rounded-full bg-red-400 ml-0.5" />}
+          {highlightKind === i.kind && <span className="w-1.5 h-1.5 rounded-full bg-red-400 ml-0.5" />}
         </button>
       ))}
     </div>

@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useGameStore } from '@/store/gameStore';
+import { useUIStore } from '@/store/uiStore';
 import { SectIcon } from '@/components/icons/SectIcons';
 import { DiscipleStatusNames, getRealmDisplay } from '@/types/disciple';
 import type { Notification } from '@/types/game';
@@ -11,6 +12,7 @@ import { GAME_EVENT_MAP } from '@/data/events';
  */
 export const EventFeed: React.FC = () => {
   const { notifications, markNotificationRead, followedDiscipleIds, disciples } = useGameStore();
+  const setEventHistoryOpen = useUIStore(s => s.setEventHistoryOpen);
   const [collapsed, setCollapsed] = useState(false);
 
   // 已关注弟子列表（按关注顺序，缺失弟子自动忽略）
@@ -77,13 +79,22 @@ export const EventFeed: React.FC = () => {
             <span className="event-feed-unread-badge">{unreadCount}</span>
           )}
         </span>
-        <button
-          className="event-feed-toggle btn-press"
-          onClick={() => setCollapsed(true)}
-          title="收起"
-        >
-          <SectIcon name="close" size={12} strokeWidth={2} />
-        </button>
+        <div className="flex items-center gap-0.5">
+          <button
+            className="event-feed-toggle btn-press"
+            onClick={() => setEventHistoryOpen(true)}
+            title="查看事件记录"
+          >
+            <SectIcon name="scroll" size={12} strokeWidth={2} />
+          </button>
+          <button
+            className="event-feed-toggle btn-press"
+            onClick={() => setCollapsed(true)}
+            title="收起"
+          >
+            <SectIcon name="close" size={12} strokeWidth={2} />
+          </button>
+        </div>
       </div>
       <div className="event-feed-list">
         {/* 已关注弟子区（简化） */}

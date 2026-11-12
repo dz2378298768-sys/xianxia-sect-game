@@ -17,6 +17,7 @@ import { WorldPanel } from '@/components/WorldPanel';
 import { ActivitiesPanel } from '@/components/ActivitiesPanel';
 import { OrientationOverlay } from '@/components/OrientationOverlay';
 import { EventFeed } from '@/components/EventFeed';
+import { EventHistoryModal } from '@/components/EventHistoryModal';
 import { TasksPanel } from '@/components/TasksPanel';
 import { useDevice } from '@/hooks/useDevice';
 import { ReportBadge } from '@/components/ReportBadge';
@@ -268,6 +269,7 @@ const GameLayout: React.FC = () => {
       <SiegeReportModal />
       <ChoiceEventModal />
       <ExplorationEncounterModal />
+      <EventHistoryModal />
       <SectCollapseModal />
       <ReturnToMenuConfirmModal />
     </div>
