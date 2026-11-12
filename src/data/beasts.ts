@@ -1,9 +1,10 @@
 import type { Beast, BeastType } from '@/types/beast';
+import { BeastTypeNames } from '@/types/beast';
 
 export const BEAST_CONFIGS: Record<BeastType, Beast> = {
   spirit_fox: {
     type: 'spirit_fox',
-    name: '灵狐',
+    name: BeastTypeNames.spirit_fox,
     description: '通灵之狐，敏捷灵动，可助主人闪避与暴击。',
     tier: 2,
     combatPowerBonus: 30,
@@ -12,7 +13,7 @@ export const BEAST_CONFIGS: Record<BeastType, Beast> = {
   },
   mystic_turtle: {
     type: 'mystic_turtle',
-    name: '玄龟',
+    name: BeastTypeNames.mystic_turtle,
     description: '玄水之龟，甲壳坚厚，可为主人分担损伤。',
     tier: 2,
     combatPowerBonus: 40,
@@ -21,7 +22,7 @@ export const BEAST_CONFIGS: Record<BeastType, Beast> = {
   },
   fire_crow: {
     type: 'fire_crow',
-    name: '火鸦',
+    name: BeastTypeNames.fire_crow,
     description: '三足火鸦，烈焰焚敌，攻击凌厉。',
     tier: 3,
     combatPowerBonus: 70,
@@ -30,7 +31,7 @@ export const BEAST_CONFIGS: Record<BeastType, Beast> = {
   },
   jade_rabbit: {
     type: 'jade_rabbit',
-    name: '玉兔',
+    name: BeastTypeNames.jade_rabbit,
     description: '月宫玉兔，灵药伴生，装备后+50年寿命。',
     tier: 3,
     combatPowerBonus: 25,
@@ -40,7 +41,7 @@ export const BEAST_CONFIGS: Record<BeastType, Beast> = {
   },
   golden_roc: {
     type: 'golden_roc',
-    name: '金鹏',
+    name: BeastTypeNames.golden_roc,
     description: '上古金鹏后裔，攻防兼备，万兽之王。',
     tier: 4,
     combatPowerBonus: 150,
@@ -49,7 +50,7 @@ export const BEAST_CONFIGS: Record<BeastType, Beast> = {
   },
   ice_serpent: {
     type: 'ice_serpent',
-    name: '寒霜蛇',
+    name: BeastTypeNames.ice_serpent,
     description: '盘踞雪原的灵蛇，吐息凝冰，可冻滞敌身。',
     tier: 2,
     combatPowerBonus: 45,
@@ -58,7 +59,7 @@ export const BEAST_CONFIGS: Record<BeastType, Beast> = {
   },
   earth_bear: {
     type: 'earth_bear',
-    name: '巨力熊',
+    name: BeastTypeNames.earth_bear,
     description: '山林之王，皮糙肉厚，力大无穷，可破阵冲阵。',
     tier: 3,
     combatPowerBonus: 90,

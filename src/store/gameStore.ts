@@ -16,6 +16,14 @@ import type { TalismanInventory, TalismanType } from '@/types/talisman';
 import type { BeastInventory } from '@/types/beast';
 import type { BeastType } from '@/types/beast';
 import type { SectLevel, MonthlyReport, Notification, OtherSect, DiplomaticStatus, SectAlignment } from '@/types/game';
+import type { PeriodicReport, ReportKind } from '@/types/game';
+import type { PendingEvent, EventHistoryEntry, EventStateView } from '@/types/event';
+import { GAME_EVENTS, GAME_EVENT_MAP } from '@/data/events';
+import { applyEventEffects, canAffordChoice, createPendingEvent, selectEvent } from '@/domain/eventEngine';
+import { getAbsMonth } from '@/types/event';
+import { TASK_MAP, MONTHLY_TASK_POOL } from '@/data/tasks';
+import type { TaskStateView } from '@/types/task';
+import { canClaimTask, incCounter, selectMonthlyTaskIds } from '@/domain/taskEngine';
 import {
   SectLevelNames, SectLevelRequirementsMap, SectLevelOrder,
   SectLevelDiscipleCap, SectLevelReputationCap, ReputationGrowthConfig,
@@ -97,6 +105,26 @@ interface GameState {
   notifications: Notification[];
   monthlyReport: MonthlyReport | null;
   showReport: boolean;
+  // ===== 报告系统（月/季/年三级） =====
+  reportView: ReportKind | null;
+  unreadReports: Record<ReportKind, boolean>;
+  /** true = 到点强制弹出；false = 仅在右下角显示未读入口 */
+  reportSettings: Record<ReportKind, boolean>;
+  reportHistory: MonthlyReport[];
+  quarterlyReport: PeriodicReport | null;
+  annualReport: PeriodicReport | null;
+  // ===== 随机事件系统 =====
+  pendingEvents: PendingEvent[];
+  eventHistory: EventHistoryEntry[];
+  eventCooldowns: Record<string, number>;
+  eventFlags: Record<string, number>;
+  eventCheckMisses: number;
+  activeEventId: string | null;
+  // ===== 任务系统 =====
+  taskCounters: Record<string, number>;
+  monthlyTaskCounters: Record<string, number>;
+  monthlyTaskIds: string[];
+  claimedTasks: Record<string, { year: number; month: number }>;
   // 游戏胜利（飞升）状态
   gameWon: boolean;
   victoryInfo: { discipleName: string; year: number; month: number } | null;
@@ -105,8 +133,8 @@ interface GameState {
   redeemCodeUsed: boolean;
   // 广告灵石奖励：累计统计
   adRewardTotal: number;
-  ironInventory: number;    // 灵铁（炼器堂原料）
-  paperInventory: number;   // 符纸（符堂原料）
+  ironInventory: number;    // 玄铁（炼器堂原料，兼容旧别名灵铁/矿石）
+  paperInventory: number;   // 灵纸（符堂原料，兼容旧别名符纸）
   specialMaterials: Record<string, number>; // 特殊材料库存（材料名→数量），如 { '寿元花': 3, '灵晶': 2 }
   contributionLogs: ContributionLog[]; // 贡献值流水（所有弟子，新记录在前）
   sectHistory: SectHistoryEntry[]; // 宗门历史事件（建筑升级/宗门晋升/宗门战争，新记录在前）
@@ -170,6 +198,16 @@ interface GameState {
   collectCraftingResult: (taskId: string) => void;
   nextMonth: () => void;
   dismissReport: () => void;
+  openReport: (kind: ReportKind) => void;
+  setReportSetting: (kind: ReportKind, enabled: boolean) => void;
+  // 随机事件
+  checkEventTrigger: () => PendingEvent | null;
+  openEvent: (eventId: string) => void;
+  closeEvent: () => void;
+  resolveEvent: (eventId: string, choiceId: string, auto?: boolean) => { ok: boolean; reason?: string; resultText?: string };
+  expireEvents: () => void;
+  // 任务
+  claimTaskReward: (taskId: string) => { ok: boolean; reason?: string; rewardsText?: string };
   dismissVictory: () => void;
   startGame: () => void;
   // 兑换码：输入"xiuxian"获得1000灵石，一局一次
@@ -315,7 +353,7 @@ function removeItem<T extends string>(inv: { type: T; quantity: number }[], type
 //
 // 多槽位：遍历 building.productionTargets 中所有非空目标，按槽位依次生产，
 // 每个槽位独立消耗材料、独立产出成品；workerCount 按槽位平均分摊。
-// 修正：检查并扣除配方中【所有】材料（基础材料 灵草/灵铁/符纸 + 特殊材料），
+// 修正：检查并扣除配方中【所有】材料（基础材料 灵草/玄铁/灵纸 + 特殊材料），
 // 任一材料不足则该配方本月无法生产。
 interface ProductionResult {
   pillType?: PillType; artifactType?: ArtifactType; talismanType?: TalismanType;
@@ -341,7 +379,7 @@ function produceWorkBuilding(
   // 按槽位分配弟子（顺序取 perSlotWorkers 个）
   let discipleOffset = 0;
 
-  // 基础材料名归类：丹堂=灵草，炼器堂=玄铁/灵铁/矿石，符堂=灵纸/符纸
+  // 基础材料名归类：丹堂=灵草，炼器堂=玄铁（旧别名灵铁/矿石），符堂=灵纸（旧别名符纸）
   const isHerbName = (n: string) => n === '灵草';
   const isIronName = (n: string) => n === '玄铁' || n === '灵铁' || n === '矿石';
   const isPaperName = (n: string) => n === '灵纸' || n === '符纸';
@@ -518,6 +556,22 @@ const createInitialState = () => {
     notifications: [],
     monthlyReport: null,
     showReport: false,
+    reportView: null,
+    unreadReports: { monthly: false, quarterly: false, annual: false },
+    reportSettings: { monthly: false, quarterly: true, annual: true },
+    reportHistory: [],
+    quarterlyReport: null,
+    annualReport: null,
+    pendingEvents: [],
+    eventHistory: [],
+    eventCooldowns: {},
+    eventFlags: {},
+    eventCheckMisses: 0,
+    activeEventId: null,
+    taskCounters: {},
+    monthlyTaskCounters: { monthlyAdvance: 1 },
+    monthlyTaskIds: selectMonthlyTaskIds(MONTHLY_TASK_POOL),
+    claimedTasks: {},
     gameWon: false,
     victoryInfo: null,
     herbInventory: 20,
@@ -762,6 +816,88 @@ function getDefaultProductionTargets(type: BuildingType, state: GameState): Prod
   return slots;
 }
 
+// 由最近 N 期月报聚合出季报 / 年报
+function buildPeriodicReport(kind: 'quarterly' | 'annual', history: MonthlyReport[]): PeriodicReport | null {
+  const count = kind === 'quarterly' ? 3 : 12;
+  const months = history.slice(-count);
+  if (months.length === 0) return null;
+  const last = months[months.length - 1];
+  const totalIncome = months.reduce((n, m) => n + m.spiritStoneIncome.reduce((s, i) => s + i.amount, 0), 0);
+  const totalExpense = months.reduce((n, m) => n + m.spiritStoneExpense.reduce((s, i) => s + i.amount, 0), 0);
+  return {
+    kind,
+    year: last.date.year,
+    quarter: kind === 'quarterly' ? Math.ceil(last.date.month / 3) : undefined,
+    startMonth: months[0].date.month,
+    endMonth: last.date.month,
+    months,
+    totalIncome,
+    totalExpense,
+    reputationChange: months.reduce((n, m) => n + m.reputationChange, 0),
+    breakthroughCount: months.reduce((n, m) => n + m.breakthroughs.filter(b => b.success).length, 0),
+    promotionCount: months.reduce((n, m) => n + m.promotions.length, 0),
+    newDiscipleCount: months.reduce((n, m) => n + m.newDisciples.length, 0),
+    eventCount: months.reduce((n, m) => n + m.events.length, 0),
+  };
+}
+
+function toEventView(state: GameState): EventStateView {
+  return {
+    year: state.year,
+    month: state.month,
+    sectLevel: state.sectLevel,
+    reputation: state.reputation,
+    karma: state.karma,
+    spiritStones: state.spiritStones,
+    herbInventory: state.herbInventory,
+    ironInventory: state.ironInventory,
+    paperInventory: state.paperInventory,
+    specialMaterials: state.specialMaterials,
+    disciples: state.disciples,
+    buildings: state.buildings,
+    otherSects: state.otherSects,
+    pillInventory: state.pillInventory,
+    artifactInventory: state.artifactInventory,
+    talismanInventory: state.talismanInventory,
+    beastInventory: state.beastInventory,
+    unlockedPillRecipes: state.unlockedPillRecipes,
+    unlockedArtifactRecipes: state.unlockedArtifactRecipes,
+    unlockedTalismanRecipes: state.unlockedTalismanRecipes,
+    libraryBooks: state.libraryBooks,
+    pendingEvents: state.pendingEvents,
+    eventHistory: state.eventHistory,
+    eventCooldowns: state.eventCooldowns,
+  };
+}
+
+function toTaskView(state: GameState): TaskStateView {
+  return {
+    sectLevel: state.sectLevel,
+    reputation: state.reputation,
+    spiritStones: state.spiritStones,
+    disciples: state.disciples,
+    buildings: state.buildings,
+    otherSects: state.otherSects,
+    beastInventory: state.beastInventory,
+    gameWon: state.gameWon,
+    taskCounters: state.taskCounters,
+    monthlyTaskCounters: state.monthlyTaskCounters,
+    claimedTasks: state.claimedTasks,
+    monthlyTaskIds: state.monthlyTaskIds,
+  };
+}
+
+function addToInventory<T extends string>(
+  inv: { type: T; quantity: number }[],
+  type: T,
+  qty: number,
+): { type: T; quantity: number }[] {
+  if (qty <= 0) return inv;
+  const existing = inv.find(i => i.type === type);
+  if (existing) return inv.map(i => (i.type === type ? { ...i, quantity: i.quantity + qty } : i));
+  return [...inv, { type, quantity: qty }];
+}
+
 export const useGameStore = create<GameState>()(
   persist(
     (set, get) => ({
@@ -852,11 +988,11 @@ export const useGameStore = create<GameState>()(
             case 'outer':
               return { spiritStones: 10, reputation: 3, herbs: 5, combatExperience: 3, description: '探索收获（灵石+10，声望+3，灵草+5，战力经验+3）' };
             case 'forest':
-              return { spiritStones: 30, reputation: 8, herbs: 10, iron: 3, combatExperience: 5, description: '探索收获（灵石+30，声望+8，灵草+10，灵铁+3，战力经验+5）' };
+              return { spiritStones: 30, reputation: 8, herbs: 10, iron: 3, combatExperience: 5, description: '探索收获（灵石+30，声望+8，灵草+10，玄铁+3，战力经验+5）' };
             case 'ruins':
-              return { spiritStones: 80, reputation: 15, iron: 8, paper: 5, specialMaterials: [{ name: '灵玉', amount: 1 }], combatExperience: 8, description: '探索收获（灵石+80，声望+15，灵铁+8，符纸+5，灵玉×1，战力经验+8）' };
+              return { spiritStones: 80, reputation: 15, iron: 8, paper: 5, specialMaterials: [{ name: '灵玉', amount: 1 }], combatExperience: 8, description: '探索收获（灵石+80，声望+15，玄铁+8，灵纸+5，灵玉×1，战力经验+8）' };
             case 'secret':
-              return { spiritStones: 200, reputation: 30, herbs: 20, iron: 15, paper: 10, specialMaterials: [{ name: '空冥石', amount: 1 }, { name: '七宝砂', amount: 1 }], combatExperience: 12, description: '探索收获（灵石+200，声望+30，灵草+20，灵铁+15，符纸+10，空冥石×1，七宝砂×1，战力经验+12）' };
+              return { spiritStones: 200, reputation: 30, herbs: 20, iron: 15, paper: 10, specialMaterials: [{ name: '空冥石', amount: 1 }, { name: '七宝砂', amount: 1 }], combatExperience: 12, description: '探索收获（灵石+200，声望+30，灵草+20，玄铁+15，灵纸+10，空冥石×1，七宝砂×1，战力经验+12）' };
             default:
               return { spiritStones: 10, reputation: 3, description: '探索收获' };
           }
@@ -993,7 +1129,11 @@ export const useGameStore = create<GameState>()(
         const tierZh = (t: BookTier) => BookTierNames[t] + (BookTierNames[t].endsWith('阶') ? '' : '阶');
         const qualityZh = (q: number) =>
           q >= 90 ? '仙品' : q >= 80 ? '极品' : q >= 60 ? '上品' : q >= 40 ? '中品' : '下品';
+        // 过期事件先自行发展（使用默认选项结算）
+        get().expireEvents();
         const state = get();
+        // 任务计数增量（本函数内统一累加，最后合并写回）
+        const counterDelta: Record<string, number> = {};
         let { year, month, spiritStones, reputation, herbInventory } = state;
         const { disciples, buildings, promotionRules, pillInventory, libraryBooks, libraryCosts } = state;
         
@@ -1075,7 +1215,7 @@ export const useGameStore = create<GameState>()(
         const growthMultiplier = Math.min(1 + discipleBonus + combatBonus, ReputationGrowthConfig.maxMultiplier);
         const reputationChange = Math.floor(ReputationGrowthConfig.baseGrowth * growthMultiplier);
 
-        // 建筑产出的声望累加器（讲经堂/藏书阁等）
+        // 建筑产出的声望累加器（讲经堂/藏经阁等）
         let buildingReputation = 0;
 
         buildings.forEach(building => {
@@ -1102,7 +1242,7 @@ export const useGameStore = create<GameState>()(
           // 材料产出累加（杂役堂）
           if (output.iron > 0) accIron += output.iron;
           if (output.paper > 0) accPaper += output.paper;
-          // 声望产出累加（讲经堂/藏书阁等）
+          // 声望产出累加（讲经堂/藏经阁等）
           if (output.reputation > 0) buildingReputation += output.reputation;
           // 通天塔：无工人也能产出声望（每级+1），作为结局建筑的进度反馈
           if (building.type === 'skyscraper_tower') buildingReputation += building.level;
@@ -1190,6 +1330,10 @@ export const useGameStore = create<GameState>()(
               else accTalismanInventory.push({ type: prod.talismanType, quantity: actualQty });
               accPaper -= prod.paperConsumed;
             }
+            counterDelta.monthlyCraft = (counterDelta.monthlyCraft || 0) + prod.quantity;
+            if (prod.pillType) counterDelta.pillCraftCount = (counterDelta.pillCraftCount || 0) + prod.quantity;
+            if (prod.artifactType) counterDelta.artifactCraftCount = (counterDelta.artifactCraftCount || 0) + prod.quantity;
+            if (prod.talismanType) counterDelta.talismanCraftCount = (counterDelta.talismanCraftCount || 0) + prod.quantity;
           }
         });
 
@@ -1920,6 +2064,8 @@ export const useGameStore = create<GameState>()(
             });
 
             if (result.success) {
+              counterDelta.breakthroughCount = (counterDelta.breakthroughCount || 0) + 1;
+              counterDelta[`breakthrough_${result.newRealm}`] = (counterDelta[`breakthrough_${result.newRealm}`] || 0) + 1;
               // 突破后境界/阶段提升，按新境界重算修炼速度（跨境界时寿命上限也重算）
               const realmChanged = result.newRealm !== d2.realm;
               const breakthroughed = { ...d2, realm: result.newRealm, realmStage: result.newStage };
@@ -2287,7 +2433,7 @@ export const useGameStore = create<GameState>()(
         // 敌对/附庸门派不参与好感度自动回归（已是特殊关系）
         const yearStartFavorDecay: { name: string; before: number; after: number }[] = [];
         month += 1;
-        if (month > 4) {
+        if (month > 12) {
           month = 1;
           year += 1;
           karmaYearlyRecover = 1;  // 跨年恢复 1 点正邪度
@@ -2334,8 +2480,18 @@ export const useGameStore = create<GameState>()(
           }
         }
         
+        // 本月异闻：已处理事件 + 待处理事件
+        const reportEvents = [
+          ...state.eventHistory
+            .filter(h => h.year === currentDate.year && h.month === currentDate.month)
+            .map(h => `【${h.title}】${h.resultText}`),
+          ...state.pendingEvents
+            .filter(p => p.triggeredAt.year === currentDate.year && p.triggeredAt.month === currentDate.month)
+            .map(p => `【${GAME_EVENT_MAP[p.eventId]?.title ?? '异闻'}】悬而未决，等待处置`),
+        ];
+
         const report = generateMonthlyReport(
-          { year, month },
+          currentDate,
           spiritStoneIncome,
           spiritStoneExpense,
           breakthroughEvents,
@@ -2343,7 +2499,32 @@ export const useGameStore = create<GameState>()(
           newDisciples,
           reputationChange,
           depResult.departureList,
+          reportEvents,
         );
+
+        // 季报 / 年报：由最近 3 / 12 期月报聚合
+        const isQuarterEnd = currentDate.month % 3 === 0;
+        const isYearEnd = currentDate.month === 12;
+        const newReportHistory = [...state.reportHistory, report].slice(-24);
+        const newQuarterlyReport = isQuarterEnd
+          ? buildPeriodicReport('quarterly', newReportHistory)
+          : state.quarterlyReport;
+        const newAnnualReport = isYearEnd
+          ? buildPeriodicReport('annual', newReportHistory)
+          : state.annualReport;
+
+        const newUnreadReports = { ...state.unreadReports, monthly: true };
+        if (isQuarterEnd) newUnreadReports.quarterly = true;
+        if (isYearEnd) newUnreadReports.annual = true;
+        // 强制弹窗优先级：年报 > 季报 > 月报
+        const forcedKind = (['annual', 'quarterly', 'monthly'] as ReportKind[])
+          .find(k => state.reportSettings[k] && (k === 'monthly' || (k === 'quarterly' && isQuarterEnd) || (k === 'annual' && isYearEnd)));
+        let nextReportView = state.reportView;
+        // 已有事件弹窗时，报告只记录未读，不强制弹出
+        if (forcedKind && !state.activeEventId) {
+          nextReportView = forcedKind;
+          newUnreadReports[forcedKind] = false;
+        }
         
         breakthroughEvents.forEach(bt => {
           if (bt.success) {
@@ -2529,6 +2710,8 @@ export const useGameStore = create<GameState>()(
               });
               sectTournamentResults[freq] = result;
               sectYears[freq] = year;
+              if (result.ourRank === 1) counterDelta.tournamentChampion_sect = (counterDelta.tournamentChampion_sect || 0) + 1;
+              if (result.ourRank > 0 && result.ourRank <= 3) counterDelta.tournamentTop3 = (counterDelta.tournamentTop3 || 0) + 1;
               const rewards = applyTournamentRewards(
                 { ...state, spiritStones: finalSpiritStones, reputation: finalReputation, pillInventory: finalPillInventory, talismanInventory: accTalismanInventory, artifactInventory: accArtifactInventory, disciples: finalDisciples } as GameState,
                 result,
@@ -2577,6 +2760,8 @@ export const useGameStore = create<GameState>()(
               });
               interSectTournamentResults[freq] = result;
               interSectYears[freq] = year;
+              if (result.ourRank === 1) counterDelta.tournamentChampion_inter = (counterDelta.tournamentChampion_inter || 0) + 1;
+              if (result.ourRank > 0 && result.ourRank <= 3) counterDelta.tournamentTop3 = (counterDelta.tournamentTop3 || 0) + 1;
               const rewards = applyTournamentRewards(
                 { ...state, spiritStones: finalSpiritStones, reputation: finalReputation, pillInventory: finalPillInventory, talismanInventory: accTalismanInventory, artifactInventory: accArtifactInventory, disciples: finalDisciples } as GameState,
                 result,
@@ -2926,6 +3111,7 @@ export const useGameStore = create<GameState>()(
                 `${disciple.name} 完成「${trial.name}」！获得：${r.description}`,
                 { year, month },
               ));
+              counterDelta.trialCompleteCount = (counterDelta.trialCompleteCount || 0) + 1;
               return { ...trial, status: 'completed' as const, progress: 100 };
             } else {
               // 失败：可能受伤（修为倒退）
@@ -2979,9 +3165,9 @@ export const useGameStore = create<GameState>()(
           const baseRewardsForAuto: TrialReward = (() => {
             switch (region.id) {
               case 'outer': return { spiritStones: 10, reputation: 3, herbs: 5, combatExperience: 3, description: '探索收获（灵石+10，声望+3，灵草+5，战力经验+3）' };
-              case 'forest': return { spiritStones: 30, reputation: 8, herbs: 10, iron: 3, combatExperience: 5, description: '探索收获（灵石+30，声望+8，灵草+10，灵铁+3，战力经验+5）' };
-              case 'ruins': return { spiritStones: 80, reputation: 15, iron: 8, paper: 5, specialMaterials: [{ name: '灵玉', amount: 1 }], combatExperience: 8, description: '探索收获（灵石+80，声望+15，灵铁+8，符纸+5，灵玉×1，战力经验+8）' };
-              case 'secret': return { spiritStones: 200, reputation: 30, herbs: 20, iron: 15, paper: 10, specialMaterials: [{ name: '空冥石', amount: 1 }, { name: '七宝砂', amount: 1 }], combatExperience: 12, description: '探索收获（灵石+200，声望+30，灵草+20，灵铁+15，符纸+10，空冥石×1，七宝砂×1，战力经验+12）' };
+              case 'forest': return { spiritStones: 30, reputation: 8, herbs: 10, iron: 3, combatExperience: 5, description: '探索收获（灵石+30，声望+8，灵草+10，玄铁+3，战力经验+5）' };
+              case 'ruins': return { spiritStones: 80, reputation: 15, iron: 8, paper: 5, specialMaterials: [{ name: '灵玉', amount: 1 }], combatExperience: 8, description: '探索收获（灵石+80，声望+15，玄铁+8，灵纸+5，灵玉×1，战力经验+8）' };
+              case 'secret': return { spiritStones: 200, reputation: 30, herbs: 20, iron: 15, paper: 10, specialMaterials: [{ name: '空冥石', amount: 1 }, { name: '七宝砂', amount: 1 }], combatExperience: 12, description: '探索收获（灵石+200，声望+30，灵草+20，玄铁+15，灵纸+10，空冥石×1，七宝砂×1，战力经验+12）' };
               default: return { spiritStones: 10, reputation: 3, description: '探索收获' };
             }
           })();
@@ -3390,6 +3576,20 @@ export const useGameStore = create<GameState>()(
         // 贡献值流水：将本月新记录合并到状态头部，最多保留 5000 条（避免存档无限膨胀）
         const mergedContributionLogs = [...pendingContributionLogs, ...state.contributionLogs].slice(0, 5000);
 
+        // 合并任务计数增量
+        let mergedTaskCounters = state.taskCounters;
+        if (Object.keys(counterDelta).length > 0) {
+          mergedTaskCounters = { ...state.taskCounters };
+          for (const [key, val] of Object.entries(counterDelta)) {
+            mergedTaskCounters[key] = (mergedTaskCounters[key] || 0) + val;
+          }
+        }
+        // 月度任务轮换：重置月度计数并给予「勤勉治宗」基础进度
+        const nextMonthlyTaskIds = selectMonthlyTaskIds(MONTHLY_TASK_POOL);
+        // 月度任务可重复领取：清掉新一轮月度任务的旧领取记录（主线/支线/成就不受影响）
+        const nextClaimedTasks = { ...state.claimedTasks };
+        for (const id of nextMonthlyTaskIds) delete nextClaimedTasks[id];
+
         set({
           year,
           month,
@@ -3408,7 +3608,16 @@ export const useGameStore = create<GameState>()(
           beastInventory: newBeastInventory,
           libraryBooks: libraryBooksAfter,
           monthlyReport: report,
-          showReport: true,
+          showReport: nextReportView !== null,
+          reportView: nextReportView,
+          unreadReports: newUnreadReports,
+          reportHistory: newReportHistory,
+          quarterlyReport: newQuarterlyReport,
+          annualReport: newAnnualReport,
+          taskCounters: mergedTaskCounters,
+          monthlyTaskCounters: { monthlyAdvance: 1 },
+          monthlyTaskIds: nextMonthlyTaskIds,
+          claimedTasks: nextClaimedTasks,
           notifications: [...trialNotifs, ...tournamentNotifs, ...newNotifications, ...state.notifications].slice(0, 50),
           otherSects: refreshedOtherSects,
           trials: finalTrials,
@@ -3452,7 +3661,241 @@ export const useGameStore = create<GameState>()(
       },
       
       dismissReport: () => {
-        set({ showReport: false });
+        set({ reportView: null, showReport: false });
+      },
+
+      openReport: (kind) => {
+        // 事件弹窗未处理完时，不叠加报告弹窗
+        if (get().activeEventId) return;
+        set(state => ({
+          reportView: kind,
+          showReport: true,
+          unreadReports: { ...state.unreadReports, [kind]: false },
+        }));
+      },
+
+      setReportSetting: (kind, enabled) => {
+        set(state => ({ reportSettings: { ...state.reportSettings, [kind]: enabled } }));
+      },
+
+      // ===== 随机事件 =====
+      checkEventTrigger: () => {
+        const state = get();
+        if (!state.gameStarted || state.reportView || state.activeEventId) return null;
+        if (state.choiceEvent || state.pendingEncounters.length > 0) return null;
+        if (state.pendingEvents.length >= 3) return null;
+
+        const pity = state.eventCheckMisses >= 2;
+        if (!pity && Math.random() > 0.45) {
+          set({ eventCheckMisses: state.eventCheckMisses + 1 });
+          return null;
+        }
+        const view = toEventView(state);
+        const config = selectEvent(GAME_EVENTS, view, Math.random);
+        if (!config) {
+          set({ eventCheckMisses: state.eventCheckMisses + 1 });
+          return null;
+        }
+        const pending = createPendingEvent(config, view, Math.random);
+        set({
+          pendingEvents: [...state.pendingEvents, pending],
+          eventCheckMisses: 0,
+          activeEventId: config.id,
+          notifications: [
+            createNotification('info', '异闻现世', `【${config.title}】${config.description}`, { year: state.year, month: state.month }),
+            ...state.notifications,
+          ].slice(0, 50),
+        });
+        return pending;
+      },
+
+      openEvent: (eventId) => {
+        const state = get();
+        if (state.reportView) return;
+        if (!state.pendingEvents.some(p => p.eventId === eventId)) return;
+        set({ activeEventId: eventId });
+      },
+
+      closeEvent: () => {
+        set({ activeEventId: null });
+      },
+
+      resolveEvent: (eventId, choiceId, auto = false) => {
+        const state = get();
+        const pending = state.pendingEvents.find(p => p.eventId === eventId);
+        if (!pending) return { ok: false, reason: '事件不存在或已处理' };
+        const config = GAME_EVENT_MAP[eventId];
+        if (!config) return { ok: false, reason: '事件配置缺失' };
+        const choice = config.choices.find(c => c.id === choiceId) ?? config.choices[0];
+
+        const view = toEventView(state);
+        if (!auto) {
+          const afford = canAffordChoice(view, choice);
+          if (!afford.ok) return { ok: false, reason: afford.reason };
+        }
+
+        const resolution = applyEventEffects(view, config, choice, pending.targetDiscipleId, Math.random);
+        const patch = resolution.patch;
+
+        let disciples = patch.disciples ?? state.disciples;
+        if (patch.addDiscipleRequest) {
+          const nd = createInitialDisciple('outer', 'qi');
+          const bonus = patch.addDiscipleRequest.talentBonus;
+          nd.hiddenTalents = {
+            ...nd.hiddenTalents,
+            spiritRhythm: (nd.hiddenTalents.spiritRhythm || 0) + bonus,
+            daoFate: (nd.hiddenTalents.daoFate || 0) + bonus,
+          };
+          disciples = [...disciples, nd];
+        }
+
+        const removed = new Set(patch.removeDiscipleIds || []);
+        const referencedBuildings = (patch.buildings ?? state.buildings).map(b => {
+          if (removed.size === 0) return b;
+          return { ...b, assignedDisciples: b.assignedDisciples.filter(id => !removed.has(id)) };
+        });
+
+        const absNow = getAbsMonth(state.year, state.month);
+        const eventFlags = { ...state.eventFlags };
+        for (const flag of resolution.flags || []) eventFlags[flag] = absNow;
+
+        const historyEntry: EventHistoryEntry = {
+          eventId,
+          title: config.title,
+          choiceId: choice.id,
+          choiceLabel: choice.label,
+          year: state.year,
+          month: state.month,
+          resultText: resolution.resultText,
+        };
+
+        const summary = `【${config.title}】${resolution.resultText}`;
+        const monthlyReport = state.monthlyReport
+          && state.monthlyReport.date.year === state.year
+          && state.monthlyReport.date.month === state.month
+          ? { ...state.monthlyReport, events: [...state.monthlyReport.events, summary] }
+          : state.monthlyReport;
+
+        set({
+          spiritStones: patch.spiritStones ?? state.spiritStones,
+          reputation: patch.reputation ?? state.reputation,
+          karma: patch.karma ?? state.karma,
+          herbInventory: patch.herbInventory ?? state.herbInventory,
+          ironInventory: patch.ironInventory ?? state.ironInventory,
+          paperInventory: patch.paperInventory ?? state.paperInventory,
+          specialMaterials: patch.specialMaterials ?? state.specialMaterials,
+          disciples,
+          buildings: referencedBuildings,
+          otherSects: patch.otherSects ?? state.otherSects,
+          pillInventory: patch.pillInventory ?? state.pillInventory,
+          artifactInventory: patch.artifactInventory ?? state.artifactInventory,
+          talismanInventory: patch.talismanInventory ?? state.talismanInventory,
+          beastInventory: patch.beastInventory ?? state.beastInventory,
+          unlockedPillRecipes: patch.unlockedPillRecipes ?? state.unlockedPillRecipes,
+          unlockedArtifactRecipes: patch.unlockedArtifactRecipes ?? state.unlockedArtifactRecipes,
+          unlockedTalismanRecipes: patch.unlockedTalismanRecipes ?? state.unlockedTalismanRecipes,
+          followedDiscipleIds: state.followedDiscipleIds.filter(id => !removed.has(id)),
+          trials: removed.size > 0
+            ? state.trials.map(t => (t.assignedDiscipleId && removed.has(t.assignedDiscipleId)
+              ? { ...t, status: 'available' as const, assignedDiscipleId: null, progress: 0 }
+              : t))
+            : state.trials,
+          pendingEvents: state.pendingEvents.filter(p => p.eventId !== eventId),
+          eventHistory: [historyEntry, ...state.eventHistory].slice(0, 200),
+          eventCooldowns: { ...state.eventCooldowns, [eventId]: absNow },
+          eventFlags,
+          monthlyReport,
+          taskCounters: incCounter(state.taskCounters, 'eventResolveCount'),
+          monthlyTaskCounters: incCounter(state.monthlyTaskCounters, 'monthlyEvent'),
+          notifications: [
+            createNotification(
+              auto ? 'warning' : 'info',
+              auto ? '事件自行发展' : config.title,
+              auto
+                ? `「${config.title}」久未处置，已按默认方式发展：${resolution.resultText}`
+                : resolution.resultText,
+              { year: state.year, month: state.month },
+            ),
+            ...state.notifications,
+          ].slice(0, 50),
+        });
+
+        return { ok: true, resultText: resolution.resultText };
+      },
+
+      expireEvents: () => {
+        const state = get();
+        const absNow = getAbsMonth(state.year, state.month);
+        const expired = state.pendingEvents.filter(p => p.expiresAt <= absNow);
+        for (const p of expired) {
+          const config = GAME_EVENT_MAP[p.eventId];
+          if (config) get().resolveEvent(p.eventId, config.choices[0].id, true);
+        }
+      },
+
+      // ===== 任务领奖 =====
+      claimTaskReward: (taskId) => {
+        const state = get();
+        const task = TASK_MAP[taskId];
+        if (!task) return { ok: false, reason: '任务不存在' };
+        const check = canClaimTask(task, toTaskView(state));
+        if (!check.ok) return { ok: false, reason: check.reason };
+
+        const r = task.rewards;
+        let pillInventory = state.pillInventory;
+        let artifactInventory = state.artifactInventory;
+        let talismanInventory = state.talismanInventory;
+        let beastInventory = state.beastInventory;
+        const specialMaterials = { ...state.specialMaterials };
+        const unlockedPillRecipes = [...state.unlockedPillRecipes];
+        const unlockedArtifactRecipes = [...state.unlockedArtifactRecipes];
+        const unlockedTalismanRecipes = [...state.unlockedTalismanRecipes];
+        const descs: string[] = [];
+        if (r.spiritStones) descs.push(`灵石+${r.spiritStones}`);
+        if (r.reputation) descs.push(`声望+${r.reputation}`);
+        if (r.contribution) descs.push(`全体弟子贡献+${r.contribution}`);
+        (r.pills || []).forEach(p => { pillInventory = addToInventory(pillInventory as any, p.type, p.qty) as any; });
+        (r.artifacts || []).forEach(a => { artifactInventory = addToInventory(artifactInventory as any, a.type, a.qty) as any; });
+        (r.talismans || []).forEach(t => { talismanInventory = addToInventory(talismanInventory as any, t.type, t.qty) as any; });
+        (r.beasts || []).forEach(b => { beastInventory = addToInventory(beastInventory as any, b.type, b.qty) as any; });
+        (r.specialMaterials || []).forEach(m => {
+          specialMaterials[m.name] = (specialMaterials[m.name] || 0) + m.amount;
+          descs.push(`${m.name}+${m.amount}`);
+        });
+        (r.unlockPillRecipes || []).forEach(t => { if (!unlockedPillRecipes.includes(t)) unlockedPillRecipes.push(t); });
+        (r.unlockArtifactRecipes || []).forEach(t => { if (!unlockedArtifactRecipes.includes(t)) unlockedArtifactRecipes.push(t); });
+        (r.unlockTalismanRecipes || []).forEach(t => { if (!unlockedTalismanRecipes.includes(t)) unlockedTalismanRecipes.push(t); });
+        if (r.pills?.length) descs.push('丹药');
+        if (r.artifacts?.length) descs.push('法器');
+        if (r.talismans?.length) descs.push('符箓');
+        if (r.beasts?.length) descs.push('灵兽');
+        if (r.unlockPillRecipes?.length) descs.push('解锁丹方');
+
+        set({
+          spiritStones: state.spiritStones + (r.spiritStones || 0),
+          reputation: state.reputation + (r.reputation || 0),
+          // 宗门贡献按弟子贡献点发放（上游已移除宗门总贡献字段）
+          disciples: r.contribution
+            ? state.disciples.map(d => ({
+                ...d,
+                contributionPoints: (d.contributionPoints || 0) + r.contribution!,
+              }))
+            : state.disciples,
+          pillInventory,
+          artifactInventory,
+          talismanInventory,
+          beastInventory,
+          specialMaterials,
+          unlockedPillRecipes,
+          unlockedArtifactRecipes,
+          unlockedTalismanRecipes,
+          claimedTasks: { ...state.claimedTasks, [taskId]: { year: state.year, month: state.month } },
+          notifications: [
+            createNotification('success', '任务完成', `「${task.title}」奖励已领取：${descs.join('、') || '无'}`, { year: state.year, month: state.month }),
+            ...state.notifications,
+          ].slice(0, 50),
+        });
+        return { ok: true, rewardsText: descs.join('、') };
       },
 
       dismissVictory: () => {
@@ -3666,6 +4109,8 @@ export const useGameStore = create<GameState>()(
               : b
           ),
           sectHistory: [historyEntry, ...state.sectHistory].slice(0, 200),
+          taskCounters: incCounter(state.taskCounters, 'buildingUpgradeCount'),
+          monthlyTaskCounters: incCounter(state.monthlyTaskCounters, 'monthlyUpgrade'),
         }));
 
         return true;
@@ -3860,6 +4305,7 @@ export const useGameStore = create<GameState>()(
           buildings: newBuildings,
           // 招入时免费：灵石已在生成/刷新候选列表时一次性扣除
           recruitCandidates: state.recruitCandidates.filter(c => c.id !== candidate.id),
+          monthlyTaskCounters: incCounter(state.monthlyTaskCounters, 'monthlyRecruit'),
           notifications: [joinNotif, ...state.notifications].slice(0, 50),
         }));
         return { ok: true };
@@ -4966,6 +5412,7 @@ export const useGameStore = create<GameState>()(
           disciples: state.disciples.map(d =>
             d.id === discipleId ? { ...d, onTrialId: trialId } : d,
           ),
+          monthlyTaskCounters: incCounter(state.monthlyTaskCounters, 'monthlyTrial'),
         });
         return { ok: true };
       },
@@ -6265,7 +6712,7 @@ export const useGameStore = create<GameState>()(
     }),
     {
       name: 'sect-game-save',
-      version: 11,
+      version: 12,
       migrate: (persistedState: any, version) => {
         if (!persistedState) return persistedState;
         const state = persistedState as GameState;
@@ -6285,13 +6732,36 @@ export const useGameStore = create<GameState>()(
         if (!state.specialMaterials) state.specialMaterials = {};
         if (!state.contributionLogs) state.contributionLogs = [];
         if (!state.sectHistory) state.sectHistory = [];
+        // v12: 随机事件 / 任务 / 月-季-年三级报告
+        if (!state.unreadReports) state.unreadReports = { monthly: false, quarterly: false, annual: false };
+        if (!state.reportSettings) state.reportSettings = { monthly: false, quarterly: true, annual: true };
+        if (!state.reportHistory) state.reportHistory = state.monthlyReport ? [state.monthlyReport] : [];
+        if (!state.quarterlyReport) state.quarterlyReport = null;
+        if (!state.annualReport) state.annualReport = null;
+        if (!state.pendingEvents) state.pendingEvents = [];
+        if (!state.eventHistory) state.eventHistory = [];
+        if (!state.eventCooldowns) state.eventCooldowns = {};
+        if (!state.eventFlags) state.eventFlags = {};
+        if (state.eventCheckMisses === undefined) state.eventCheckMisses = 0;
+        if (!state.activeEventId) state.activeEventId = null;
+        if (!state.taskCounters) state.taskCounters = {};
+        if (!state.monthlyTaskCounters) state.monthlyTaskCounters = { monthlyAdvance: 1 };
+        if (!state.monthlyTaskIds || state.monthlyTaskIds.length === 0) {
+          state.monthlyTaskIds = selectMonthlyTaskIds(MONTHLY_TASK_POOL);
+        }
+        if (!state.claimedTasks) state.claimedTasks = {};
+        // 旧存档读入时不强制弹窗
+        if (version < 12) {
+          state.showReport = false;
+          state.reportView = null;
+        }
         if (state.buildings) {
           // 有效建筑类型（杂役居所已移除，旧存档中的杂役居所会被过滤）
           const validTypes = new Set([
             'mountain_gate', 'lecture_hall', 'servant_hall',
             'pill_hall', 'sutra_hall', 'artifact_hall',
             'secret_library', 'array_hall', 'spirit_beast_garden',
-            'skyscraper_tower',
+            'skyscraper_tower', 'training_ground',
             'outer_residence', 'inner_residence', 'core_residence',
             'cave_mansion'
           ]);

@@ -993,7 +993,7 @@ export const WorldPanel: React.FC = () => {
                       ? 'bg-[rgba(74,122,107,0.2)] border-[var(--jade-light)]/50 text-[var(--jade-light)]'
                       : 'border-[var(--ink-400)]/30 text-[var(--ink-300)] hover:border-[var(--jade-light)]/30'
                   }`}
-                  title={autoTrialEnabled ? '已开启：每季度自动派遣空闲弟子执行可完成的试炼' : '点击开启：每季度自动派遣空闲弟子执行可完成的试炼'}
+                  title={autoTrialEnabled ? '已开启：每月自动派遣空闲弟子执行可完成的试炼' : '点击开启：每月自动派遣空闲弟子执行可完成的试炼'}
                 >
                   <SectIcon name="talisman" size={12} strokeWidth={1.8} />
                   <span>自动试炼</span>
@@ -1011,7 +1011,7 @@ export const WorldPanel: React.FC = () => {
             <p className="text-sect-jade/50 text-xs mb-3 leading-relaxed">
               每年自动刷新适合本宗战力的试炼任务。派遣弟子执行可获取灵石、声望、原料、贡献等奖励。
               弟子战力越高成功率越大，失败可能受伤修为倒退。
-              {autoTrialEnabled && <span className="text-[var(--jade-light)]">已开启自动试炼：每季度自动派遣空闲弟子执行可完成的试炼。</span>}
+              {autoTrialEnabled && <span className="text-[var(--jade-light)]">已开启自动试炼：每月自动派遣空闲弟子执行可完成的试炼。</span>}
             </p>
 
             {trials.length === 0 ? (

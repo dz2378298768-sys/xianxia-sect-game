@@ -141,6 +141,31 @@ export interface MonthlyReport {
   reputationChange: number;
 }
 
+export type ReportKind = 'monthly' | 'quarterly' | 'annual';
+
+export const ReportKindNames: Record<ReportKind, string> = {
+  monthly: '月报',
+  quarterly: '季报',
+  annual: '年报',
+};
+
+/** 季度 / 年度汇总报告：由最近若干期月报聚合而成 */
+export interface PeriodicReport {
+  kind: 'quarterly' | 'annual';
+  year: number;
+  quarter?: number;
+  startMonth: number;
+  endMonth: number;
+  months: MonthlyReport[];
+  totalIncome: number;
+  totalExpense: number;
+  reputationChange: number;
+  breakthroughCount: number;
+  promotionCount: number;
+  newDiscipleCount: number;
+  eventCount: number;
+}
+
 // ===== 天下宗门（其他宗门） =====
 
 // 宗门阵营
@@ -239,8 +264,8 @@ export interface TrialReward {
   spiritStones?: number;       // 灵石
   reputation?: number;         // 声望
   herbs?: number;              // 灵草
-  iron?: number;               // 灵铁
-  paper?: number;              // 符纸
+  iron?: number;               // 玄铁
+  paper?: number;              // 灵纸
   specialMaterials?: { name: string; amount: number }[]; // 特殊材料（秘境掉落）
   contributionPoints?: number; // 弟子贡献点
   satisfaction?: number;       // 弟子满意度

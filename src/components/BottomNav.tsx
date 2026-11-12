@@ -1,6 +1,7 @@
 import React, { useCallback } from 'react';
 import { useUIStore, PanelType } from '@/store/uiStore';
 import { useGameStore } from '@/store/gameStore';
+import { useClockStore } from '@/store/clockStore';
 import { SectIcon, IconName } from '@/components/icons/SectIcons';
 
 interface NavItem {
@@ -23,6 +24,11 @@ export const BottomNav: React.FC = () => {
   const { activePanel, setActivePanel } = useUIStore();
   const { toggleShop } = useUIStore();
   const { nextMonth, year, month } = useGameStore();
+  const resetMonth = useClockStore(s => s.resetMonth);
+  const handleSkipMonth = () => {
+    nextMonth();
+    resetMonth();
+  };
 
   const handleNavClick = useCallback((key: PanelType) => {
     // 点击已激活的面板 → 关闭
@@ -61,14 +67,14 @@ export const BottomNav: React.FC = () => {
         <span className="nav-next-turn-wrap">
           <button
             className="nav-next-turn nav-next-turn-compact btn-press"
-            onClick={nextMonth}
-            title="推进至下一季度"
+            onClick={handleSkipMonth}
+            title="跳过本月（立即结算）"
           >
             <span className="nav-next-turn-icon">
               <SectIcon name="nextMonth" size={18} strokeWidth={2} />
             </span>
             <span className="nav-next-turn-label">
-              第{year}年{['春', '夏', '秋', '冬'][month - 1]}
+              第{year}年{month}月
             </span>
           </button>
         </span>

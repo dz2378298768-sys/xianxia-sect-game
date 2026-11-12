@@ -1,9 +1,10 @@
 import type { Pill, PillType } from '@/types/pill';
+import { PillTypeNames } from '@/types/pill';
 
 export const PILL_CONFIGS: Record<PillType, Pill> = {
   foundation_pill: {
     type: 'foundation_pill',
-    name: '筑基丹',
+    name: PillTypeNames.foundation_pill,
     description: '辅助炼气期修士突破筑基期的丹药',
     effect: '筑基成功率+30%，首次服用+10年寿命',
     breakthroughBonus: 30,
@@ -19,7 +20,7 @@ export const PILL_CONFIGS: Record<PillType, Pill> = {
   },
   golden_pill: {
     type: 'golden_pill',
-    name: '金丹破障丹',
+    name: PillTypeNames.golden_pill,
     description: '辅助筑基期修士突破金丹期的丹药',
     effect: '金丹成功率+25%，首次服用+20年寿命',
     breakthroughBonus: 25,
@@ -35,7 +36,7 @@ export const PILL_CONFIGS: Record<PillType, Pill> = {
   },
   nascent_pill: {
     type: 'nascent_pill',
-    name: '元婴化灵丹',
+    name: PillTypeNames.nascent_pill,
     description: '辅助金丹期修士突破元婴期的丹药',
     effect: '元婴成功率+20%，首次服用+30年寿命',
     breakthroughBonus: 20,
@@ -51,7 +52,7 @@ export const PILL_CONFIGS: Record<PillType, Pill> = {
   },
   spirit_pill: {
     type: 'spirit_pill',
-    name: '化神渡劫丹',
+    name: PillTypeNames.spirit_pill,
     description: '辅助元婴期修士突破化神期的丹药',
     effect: '化神成功率+15%',
     breakthroughBonus: 15,
@@ -65,7 +66,7 @@ export const PILL_CONFIGS: Record<PillType, Pill> = {
   },
   recovery_pill: {
     type: 'recovery_pill',
-    name: '回灵丹',
+    name: PillTypeNames.recovery_pill,
     description: '恢复修炼值的基础丹药，赠送弟子可恢复修为进度',
     effect: '赠送弟子：修为进度+50',
     breakthroughBonus: 0,
@@ -78,7 +79,7 @@ export const PILL_CONFIGS: Record<PillType, Pill> = {
   },
   longevity_pill: {
     type: 'longevity_pill',
-    name: '增寿丹',
+    name: PillTypeNames.longevity_pill,
     description: '增加十年寿命，赠送弟子可延寿',
     effect: '赠送弟子：+10年寿命',
     breakthroughBonus: 0,
@@ -93,7 +94,7 @@ export const PILL_CONFIGS: Record<PillType, Pill> = {
   },
   detox_pill: {
     type: 'detox_pill',
-    name: '清心丹',
+    name: PillTypeNames.detox_pill,
     description: '祛除心魔杂念，赠送弟子可提升突破成功率',
     effect: '赠送弟子：突破成功率+10%',
     breakthroughBonus: 10,
@@ -106,7 +107,7 @@ export const PILL_CONFIGS: Record<PillType, Pill> = {
   },
   qi_gathering_pill: {
     type: 'qi_gathering_pill',
-    name: '聚气丹',
+    name: PillTypeNames.qi_gathering_pill,
     description: '凝聚天地灵气，赠送弟子可大幅提升突破成功率',
     effect: '赠送弟子：突破成功率+15%',
     breakthroughBonus: 15,
@@ -119,7 +120,7 @@ export const PILL_CONFIGS: Record<PillType, Pill> = {
   },
   body_forging_pill: {
     type: 'body_forging_pill',
-    name: '锻骨丹',
+    name: PillTypeNames.body_forging_pill,
     description: '淬炼筋骨，赠送弟子可提升突破成功率',
     effect: '赠送弟子：突破成功率+12%',
     breakthroughBonus: 12,

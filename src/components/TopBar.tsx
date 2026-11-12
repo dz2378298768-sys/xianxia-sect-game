@@ -7,7 +7,7 @@ import { getSlots, SAVE_SLOT_COUNT, type SaveSlotMeta } from '@/utils/saveSlots'
 import { isMusicEnabled, isSfxEnabled, setMusicEnabled, setSfxEnabled } from '@/utils/audio';
 
 export const TopBar: React.FC = () => {
-  const { year, month, sectName, sectLevel, reputation, spiritStones, karma, disciples, herbInventory, ironInventory, paperInventory, setReturnToMenuConfirm, newGame, saveToSlot, redeemCodeUsed, useRedeemCode, grantAdReward, adRewardTotal } = useGameStore();
+  const { year, month, sectName, sectLevel, reputation, spiritStones, karma, disciples, herbInventory, ironInventory, paperInventory, setReturnToMenuConfirm, newGame, saveToSlot, redeemCodeUsed, useRedeemCode, grantAdReward, adRewardTotal, pendingEvents, openEvent } = useGameStore();
   const { sectInfoOpen, toggleSectInfo } = useUIStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const [showSavePicker, setShowSavePicker] = useState(false);
@@ -33,7 +33,7 @@ export const TopBar: React.FC = () => {
   const currentLevelIndex = SectLevelOrder.indexOf(sectLevel);
 
   return (
-    <div className="absolute top-0 left-0 right-0 z-30">
+    <div className="relative z-30 shrink-0">
       <div className="absolute inset-0 topbar-shade pointer-events-none" />
       <div className="relative px-1.5 py-1">
         <div className="flex items-center justify-between gap-1">
@@ -62,13 +62,21 @@ export const TopBar: React.FC = () => {
                 <span className={`font-bold ${karma > 0 ? 'text-emerald-400' : karma < 0 ? 'text-red-400' : 'text-[var(--ink-300)]'}`}>
                   {karma > 0 ? '+' : ''}{karma}
                 </span>
+                {pendingEvents.length > 0 && (
+                  <span
+                    onClick={e => { e.stopPropagation(); openEvent(pendingEvents[0].eventId); }}
+                    className="px-1.5 py-0.5 rounded border border-amber-400/40 bg-amber-400/10 text-amber-300 text-[10px] hover:bg-amber-400/20 transition-colors cursor-pointer"
+                  >
+                    待处理 {pendingEvents.length}
+                  </span>
+                )}
               </div>
             </div>
           </button>
 
           {/* 中央：年份和弟子数 */}
           <div className="flex items-center gap-2 text-[9px] text-[var(--ink-300)]">
-            <span>第{year}年{['春', '夏', '秋', '冬'][month - 1]}</span>
+            <span>第{year}年{month}月</span>
             <span className="text-[var(--ink-400)]">|</span>
             <span className="flex items-center gap-0.5">
               <SectIcon name="disciple" size={10} strokeWidth={1.6} />
@@ -124,7 +132,7 @@ export const TopBar: React.FC = () => {
                   <div className="text-[11px] text-sect-jade">存档位 {i + 1}</div>
                   {slot ? (
                     <div className="text-[10px] text-sect-jade/50 truncate">
-                      {slot.sectName} · 第{slot.year}年{['春', '夏', '秋', '冬'][slot.month - 1]} · {slot.sectLevel}
+                      {slot.sectName} · 第{slot.year}年{slot.month}月 · {slot.sectLevel}
                     </div>
                   ) : (
                     <div className="text-[10px] text-sect-jade/30">空</div>

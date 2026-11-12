@@ -9,14 +9,14 @@ export type ArtifactType =
   | 'demon_pagoda';
 
 export const ArtifactTypeNames: Record<ArtifactType, string> = {
-  flying_sword: '飞剑',
-  defensive_shield: '防御盾',
-  attack_talisman: '攻击符',
+  flying_sword: '青锋剑',
+  defensive_shield: '玄龟盾',
+  attack_talisman: '赤焰刀',
   spirit_bottle: '聚灵瓶',
-  space_ring: '储物戒',
-  thunder_pearl: '雷珠',
-  bagua_mirror: '八卦镜',
-  demon_pagoda: '镇妖塔',
+  space_ring: '须弥戒',
+  thunder_pearl: '九霄雷珠',
+  bagua_mirror: '八卦玄光镜',
+  demon_pagoda: '七宝镇妖塔',
 };
 
 export interface Artifact {

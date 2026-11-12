@@ -10,7 +10,7 @@ export type TalismanType =
   | 'divine_talisman';
 
 export const TalismanTypeNames: Record<TalismanType, string> = {
-  fire_talisman: '烈火符',
+  fire_talisman: '金刚符',
   ice_talisman: '寒冰符',
   thunder_talisman: '惊雷符',
   heal_talisman: '回春符',

@@ -1,5 +1,5 @@
 // 特殊材料配置：炼制丹药/法器/符箓所需的稀有原料。
-// 基础材料（灵草/灵铁/符纸）由生产建筑产出，特殊材料需通过商店购买或秘境试炼掉落获得。
+// 基础材料（灵草/玄铁/灵纸）由生产建筑产出，特殊材料需通过商店购买或秘境试炼掉落获得。
 import type { IconName } from '@/components/icons/SectIcons';
 
 export interface SpecialMaterialConfig {
@@ -12,7 +12,22 @@ export interface SpecialMaterialConfig {
 }
 
 // 基础材料名集合（用于区分基础/特殊）
+// 灵铁/矿石 是玄铁的旧别名，符纸 是灵纸的旧别名，仅为兼容旧存档与旧配方保留
 export const BASIC_MATERIALS = new Set(['灵草', '玄铁', '灵铁', '矿石', '灵纸', '符纸']);
+
+// 基础材料唯一展示名：库存与配方统一使用这一套名称
+export const BASIC_MATERIAL_LABELS = {
+  herb: '灵草',
+  iron: '玄铁',
+  paper: '灵纸',
+} as const;
+
+/** 把旧别名归一为唯一展示名（灵铁/矿石 → 玄铁，符纸 → 灵纸） */
+export function getMaterialDisplayName(name: string): string {
+  if (name === '灵铁' || name === '矿石') return BASIC_MATERIAL_LABELS.iron;
+  if (name === '符纸') return BASIC_MATERIAL_LABELS.paper;
+  return name;
+}
 
 // 20 种特殊材料（与 PILL/ARTIFACT/TALISMAN_CONFIGS 配方中出现的特殊材料一一对应）
 export const SPECIAL_MATERIALS: SpecialMaterialConfig[] = [

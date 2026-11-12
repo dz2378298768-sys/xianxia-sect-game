@@ -10,7 +10,7 @@ function buildPillRecipes(): ShopItem[] {
   return Object.values(PILL_CONFIGS).map(p => ({
     id: `pill_recipe:${p.type}`,
     category: 'pill_recipe' as ShopCategory,
-    name: `${p.name}丹方`,
+    name: `${p.name.replace(/丹$/, '')}丹方`,
     description: `解锁丹堂生产「${p.name}」的配方。${p.effect}`,
     price: Math.floor(p.sellPrice * 3),
     recipePillType: p.type,
@@ -57,7 +57,7 @@ function buildTalismanRecipes(): ShopItem[] {
   return Object.values(TALISMAN_CONFIGS).map(t => ({
     id: `talisman_recipe:${t.type}`,
     category: 'talisman_recipe' as ShopCategory,
-    name: `${t.name}符谱`,
+    name: `${t.name.replace(/符$/, '')}符谱`,
     description: `解锁符堂绘制「${t.name}」的符谱。${t.effect}`,
     price: Math.floor(t.sellPrice * 3),
     recipeTalismanType: t.type,

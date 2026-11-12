@@ -53,8 +53,8 @@ export interface BuildingOutput {
   spiritStones?: number;
   contribution?: number;
   herbs?: number;       // 灵草（丹堂原料）
-  iron?: number;        // 灵铁（炼器堂原料）
-  paper?: number;       // 符纸（符堂原料）
+  iron?: number;        // 玄铁（炼器堂原料；含旧别名灵铁/矿石）
+  paper?: number;       // 灵纸（符堂原料；含旧别名符纸）
   reputation?: number;
   pills?: number;       // 丹药产出
   artifacts?: number;   // 法器产出

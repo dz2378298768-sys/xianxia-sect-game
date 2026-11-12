@@ -83,10 +83,10 @@ export const BUILDING_CONFIGS: Record<BuildingType, BuildingConfig> = {
     category: 'production',
     primaryOutput: 'spiritStones',
     minDiscipleStatus: 'servant',
-    description: '宗门杂役之所；弟子在此采集灵草、开采灵铁、制作符纸，为各堂提供原料。',
+    description: '宗门杂役之所；弟子在此采集灵草、开采玄铁、制作灵纸，为各堂提供原料。',
     discipleEffect: {
       type: 'contribution',
-      description: '灵草+3/灵铁+1/符纸+1 每月',
+      description: '灵草+3/玄铁+1/灵纸+1 每月',
       value: '灵石+灵材产出',
     },
   },

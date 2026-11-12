@@ -449,7 +449,7 @@ function generateTrialReward(type: TrialType, difficulty: TrialDifficulty, mul: 
     if (Math.random() < 0.5) {
       const iron = Math.floor(randomInt(3, 8) * mul);
       reward.iron = iron;
-      descParts.push(`${iron}灵铁`);
+      descParts.push(`${iron}玄铁`);
     }
     const contrib = Math.floor(randomInt(20, 50) * mul);
     reward.contributionPoints = contrib;
@@ -458,14 +458,14 @@ function generateTrialReward(type: TrialType, difficulty: TrialDifficulty, mul: 
     reward.combatExperience = combatExp;
     descParts.push(`${combatExp}战力经验`);
   } else if (type === 'monster') {
-    // 妖物：给灵铁/符纸 + 贡献 + 满意度 + 战力经验，偶尔掉落战斗相关特殊材料
+    // 妖物：给玄铁/灵纸 + 贡献 + 满意度 + 战力经验，偶尔掉落战斗相关特殊材料
     const iron = Math.floor(randomInt(5, 12) * mul);
     reward.iron = iron;
-    descParts.push(`${iron}灵铁`);
+    descParts.push(`${iron}玄铁`);
     if (Math.random() < 0.4) {
       const paper = Math.floor(randomInt(3, 8) * mul);
       reward.paper = paper;
-      descParts.push(`${paper}符纸`);
+      descParts.push(`${paper}灵纸`);
     }
     const contrib = Math.floor(randomInt(30, 60) * mul);
     reward.contributionPoints = contrib;
@@ -499,10 +499,10 @@ function generateTrialReward(type: TrialType, difficulty: TrialDifficulty, mul: 
     descParts.push(`${herbs}灵草`);
     const iron = Math.floor(randomInt(5, 15) * mul);
     reward.iron = iron;
-    descParts.push(`${iron}灵铁`);
+    descParts.push(`${iron}玄铁`);
     const paper = Math.floor(randomInt(5, 12) * mul);
     reward.paper = paper;
-    descParts.push(`${paper}符纸`);
+    descParts.push(`${paper}灵纸`);
     const contrib = Math.floor(randomInt(50, 100) * mul);
     reward.contributionPoints = contrib;
     descParts.push(`${contrib}贡献`);

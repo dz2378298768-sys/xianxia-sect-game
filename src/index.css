@@ -2647,8 +2647,8 @@ button[class*="btn-"], [class*="Button"] {
    ======================================== */
 .event-feed {
   position: absolute;
-  bottom: 8px;
-  right: 8px;
+  bottom: 84px;
+  left: 8px;
   z-index: 45;
   width: clamp(220px, 36vw, 320px);
   max-height: 32vh;

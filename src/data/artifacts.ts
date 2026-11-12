@@ -1,9 +1,10 @@
 import type { Artifact, ArtifactType } from '@/types/artifact';
+import { ArtifactTypeNames } from '@/types/artifact';
 
 export const ARTIFACT_CONFIGS: Record<ArtifactType, Artifact> = {
   flying_sword: {
     type: 'flying_sword',
-    name: '青锋剑',
+    name: ArtifactTypeNames.flying_sword,
     description: '入门级法剑，可提升弟子战力',
     effect: '战力+20',
     tier: 'low',
@@ -17,7 +18,7 @@ export const ARTIFACT_CONFIGS: Record<ArtifactType, Artifact> = {
   },
   defensive_shield: {
     type: 'defensive_shield',
-    name: '玄龟盾',
+    name: ArtifactTypeNames.defensive_shield,
     description: '以玄龟甲炼制的防御法器，坚不可摧',
     effect: '战力+35',
     tier: 'low',
@@ -31,7 +32,7 @@ export const ARTIFACT_CONFIGS: Record<ArtifactType, Artifact> = {
   },
   attack_talisman: {
     type: 'attack_talisman',
-    name: '赤焰刀',
+    name: ArtifactTypeNames.attack_talisman,
     description: '蕴含烈火之力的长刀法器',
     effect: '战力+50',
     tier: 'middle',
@@ -45,7 +46,7 @@ export const ARTIFACT_CONFIGS: Record<ArtifactType, Artifact> = {
   },
   spirit_bottle: {
     type: 'spirit_bottle',
-    name: '聚灵瓶',
+    name: ArtifactTypeNames.spirit_bottle,
     description: '可自动汲取天地灵气的宝瓶',
     effect: '战力+30',
     tier: 'middle',
@@ -59,7 +60,7 @@ export const ARTIFACT_CONFIGS: Record<ArtifactType, Artifact> = {
   },
   space_ring: {
     type: 'space_ring',
-    name: '须弥戒',
+    name: ArtifactTypeNames.space_ring,
     description: '内藏空间的储物法器，方便携带物品',
     effect: '战力+60',
     tier: 'high',
@@ -73,7 +74,7 @@ export const ARTIFACT_CONFIGS: Record<ArtifactType, Artifact> = {
   },
   thunder_pearl: {
     type: 'thunder_pearl',
-    name: '九霄雷珠',
+    name: ArtifactTypeNames.thunder_pearl,
     description: '封存雷霆之力的珠子，掷出可炸裂群敌',
     effect: '战力+55，附带雷属性范围伤害',
     tier: 'middle',
@@ -87,7 +88,7 @@ export const ARTIFACT_CONFIGS: Record<ArtifactType, Artifact> = {
   },
   bagua_mirror: {
     type: 'bagua_mirror',
-    name: '八卦玄光镜',
+    name: ArtifactTypeNames.bagua_mirror,
     description: '镜面铭刻八卦阵纹，可反制邪术',
     effect: '战力+80，反弹20%法术伤害',
     tier: 'high',
@@ -101,7 +102,7 @@ export const ARTIFACT_CONFIGS: Record<ArtifactType, Artifact> = {
   },
   demon_pagoda: {
     type: 'demon_pagoda',
-    name: '七宝镇妖塔',
+    name: ArtifactTypeNames.demon_pagoda,
     description: '上古镇压妖邪的七层小塔，可收妖炼魔',
     effect: '战力+120，可镇压金丹以下妖兽',
     tier: 'top',

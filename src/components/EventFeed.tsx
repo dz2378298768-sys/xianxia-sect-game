@@ -3,6 +3,7 @@ import { useGameStore } from '@/store/gameStore';
 import { SectIcon } from '@/components/icons/SectIcons';
 import { DiscipleStatusNames, getRealmDisplay } from '@/types/disciple';
 import type { Notification } from '@/types/game';
+import { GAME_EVENT_MAP } from '@/data/events';
 
 /**
  * 山门右下角：宗门事件 feed
@@ -25,10 +26,11 @@ export const EventFeed: React.FC = () => {
     const IMPORTANT_TITLE_PREFIXES = [
       '新弟子加入', '突破成功', '突破失败', '弟子晋升',
       '弟子分配', '弟子离去', '弟子不满', '宗门晋升',
-      '山门', '宗门', '灵石告急',
+      '山门', '宗门', '灵石告急', '异闻现世', '事件自行发展',
     ];
     return notifications.filter(n =>
-      IMPORTANT_TITLE_PREFIXES.some(p => n.title.startsWith(p)),
+      IMPORTANT_TITLE_PREFIXES.some(p => n.title.startsWith(p))
+      || Object.values(GAME_EVENT_MAP).some(e => e.title === n.title),
     );
   }, [notifications]);
 
@@ -122,7 +124,7 @@ export const EventFeed: React.FC = () => {
                   <span className="event-feed-title-text">{n.title}</span>
                   <span className="event-feed-desc">{n.content}</span>
                   <div className="event-feed-time">
-                    第 {n.timestamp.year} 年 {['春', '夏', '秋', '冬'][n.timestamp.month - 1]}
+                    第 {n.timestamp.year} 年 {n.timestamp.month} 月
                   </div>
                 </div>
               </div>

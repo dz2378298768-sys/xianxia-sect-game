@@ -2,6 +2,7 @@ import React from 'react';
 import { useUIStore } from '@/store/uiStore';
 import { PanelType } from '@/store/uiStore';
 import { useGameStore } from '@/store/gameStore';
+import { useClockStore } from '@/store/clockStore';
 import { SectIcon, IconName } from '@/components/icons/SectIcons';
 
 type NavKey = PanelType | null | 'sect';
@@ -24,8 +25,13 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 export const SideNav: React.FC = () => {
-  const { activePanel, setActivePanel, sectInfoOpen, setSectInfoOpen } = useUIStore();
+  const { activePanel, setActivePanel, sectInfoOpen, setSectInfoOpen, mobileSidePanel, setMobileSidePanel } = useUIStore();
   const { nextMonth } = useGameStore();
+  const resetMonth = useClockStore(s => s.resetMonth);
+  const handleSkipMonth = () => {
+    nextMonth();
+    resetMonth();
+  };
 
   const handleNavClick = (item: NavItem) => {
     if (item.key === 'sect') {
@@ -67,14 +73,23 @@ export const SideNav: React.FC = () => {
       </div>
 
       {/* 下半部分：推进下一回合（固定在底部，不可压缩） */}
-      <div className="w-full flex-shrink-0">
+      <div className="w-full flex-shrink-0 space-y-1">
+        <button
+          className={`side-nav-item ${mobileSidePanel === 'tasks' ? 'side-nav-item-active' : ''}`}
+          onClick={() => setMobileSidePanel('tasks')}
+          title="任务与异闻"
+        >
+          <SectIcon name="scroll" size={18} strokeWidth={1.8} />
+          <span className="side-nav-label">任务</span>
+          {mobileSidePanel === 'tasks' && <span className="side-nav-indicator" />}
+        </button>
         <button
           className="side-nav-item side-nav-next-turn"
-          onClick={nextMonth}
-          title="推进至下一季度"
+          onClick={handleSkipMonth}
+          title="跳过本月（立即结算）"
         >
           <SectIcon name="nextMonth" size={20} strokeWidth={2} />
-          <span className="side-nav-label">下一季度</span>
+          <span className="side-nav-label">跳过本月</span>
         </button>
       </div>
     </div>

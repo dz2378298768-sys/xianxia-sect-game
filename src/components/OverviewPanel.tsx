@@ -501,7 +501,7 @@ export const OverviewPanel: React.FC = () => {
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-medium text-[var(--ink-200)]">{entry.title}</span>
                       <span className="text-[10px] text-[var(--ink-400)] flex-shrink-0">
-                        第{entry.date.year}年{['春', '夏', '秋', '冬'][entry.date.month - 1]}
+                        第{entry.date.year}年{entry.date.month}月
                       </span>
                     </div>
                     <p className="text-[11px] text-[var(--ink-300)] mt-1 leading-relaxed">

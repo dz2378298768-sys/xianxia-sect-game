@@ -753,7 +753,7 @@ export const DisciplesPanel: React.FC = () => {
                           <span className="text-[11px] text-sect-jade/80 font-medium">修炼速度</span>
                         </div>
                         <span className="font-display text-sect-gold text-sm">
-                          {speedInfo.effective.toFixed(1)}/季度
+                          {speedInfo.effective.toFixed(1)}/月
                         </span>
                       </div>
                       <ProgressBar
@@ -765,7 +765,7 @@ export const DisciplesPanel: React.FC = () => {
                       <div className="mt-2 pt-2 border-t border-sect-gold/10 text-xs space-y-1">
                         <div className="flex justify-between text-sect-jade/60">
                           <span>基础速度</span>
-                          <span>{speedInfo.base.toFixed(1)}/季度</span>
+                          <span>{speedInfo.base.toFixed(1)}/月</span>
                         </div>
                         {selectedDisciple.buffs.filter(b => b.type === 'cultivation' && b.value > 0).map(buff => (
                           <div key={buff.id} className="flex justify-between text-green-400">
@@ -788,7 +788,7 @@ export const DisciplesPanel: React.FC = () => {
                         {speedInfo.totalBonus !== 0 && (
                           <div className="flex justify-between border-t border-sect-gold/10 pt-1 text-sect-jade">
                             <span>季度修为增长</span>
-                            <span>≈{Math.floor(speedInfo.effective)}/季度</span>
+                            <span>≈{Math.floor(speedInfo.effective)}/月</span>
                           </div>
                         )}
                       </div>
@@ -827,14 +827,14 @@ export const DisciplesPanel: React.FC = () => {
                                 <span>无工作惩罚: -{selectedDisciple.maxSatisfactionLossWork}% (上限20%)</span>
                               </div>
                             ) : (
-                              <div className="text-green-400">✓ 有工作，每季度恢复</div>
+                              <div className="text-green-400">✓ 有工作，每月恢复</div>
                             )}
                             {selectedDisciple.maxSatisfactionLossResidence > 0 ? (
                               <div className="flex items-center gap-1 text-orange-400">
                                 <span>居所不匹配: -{selectedDisciple.maxSatisfactionLossResidence}% (上限40%)</span>
                               </div>
                             ) : (
-                              <div className="text-green-400">✓ 居所匹配，每季度恢复</div>
+                              <div className="text-green-400">✓ 居所匹配，每月恢复</div>
                             )}
                             {selectedDisciple.satisfaction < 60 && (
                               <div className="text-red-400 pt-1 border-t border-sect-gold/20 flex items-center gap-1.5">
@@ -977,7 +977,7 @@ export const DisciplesPanel: React.FC = () => {
                         <div className="space-y-2 text-xs min-w-[240px]">
                           <div className="font-medium text-sect-gold mb-1">灵韵</div>
                           <div className="text-sect-jade/80">
-                            影响炼制丹药、武器、符纸等物品的品质和成功率。
+                            影响炼制丹药、法器、符箓等物品的品质和成功率。
                           </div>
                           <div className="border-t border-sect-gold/20 pt-2 space-y-1">
                             <div className="text-sect-jade/60">你的灵韵：{selectedDisciple.hiddenTalents.spiritRhythm}</div>
@@ -1177,7 +1177,7 @@ export const DisciplesPanel: React.FC = () => {
                           ) : null}
                           <div className="border-t border-sect-gold/20 pt-1 flex justify-between">
                             <span className="text-sect-jade/60">灵力（修炼效率）</span>
-                            <span className="text-sect-gold">{getEffectiveCultivationSpeed(selectedDisciple).effective.toFixed(1)}/季度</span>
+                            <span className="text-sect-gold">{getEffectiveCultivationSpeed(selectedDisciple).effective.toFixed(1)}/月</span>
                           </div>
                         </div>
                       }
@@ -1189,7 +1189,7 @@ export const DisciplesPanel: React.FC = () => {
                           <span className="text-sect-jade/60 text-xs">生命/灵力</span>
                         </div>
                         <div className="text-sect-jade font-medium">{selectedDisciple.maxHp}</div>
-                        <div className="text-[10px] text-sect-gold/60">灵力 {getEffectiveCultivationSpeed(selectedDisciple).effective.toFixed(1)}/季度</div>
+                        <div className="text-[10px] text-sect-gold/60">灵力 {getEffectiveCultivationSpeed(selectedDisciple).effective.toFixed(1)}/月</div>
                       </div>
                     </Tooltip>
                     
@@ -1571,7 +1571,7 @@ export const DisciplesPanel: React.FC = () => {
                         {events.map((evt, idx) => (
                           <div key={idx}>
                             <div className="text-[10px] text-sect-jade/40 mb-0.5">
-                              第{evt.year}年{evt.month > 4 ? '' : ['春', '夏', '秋', '冬'][evt.month - 1]}
+                              第{evt.year}年{evt.month}月
                             </div>
                             {evt.content}
                           </div>

@@ -17,6 +17,12 @@ import { WorldPanel } from '@/components/WorldPanel';
 import { ActivitiesPanel } from '@/components/ActivitiesPanel';
 import { OrientationOverlay } from '@/components/OrientationOverlay';
 import { EventFeed } from '@/components/EventFeed';
+import { TasksPanel } from '@/components/TasksPanel';
+import { useDevice } from '@/hooks/useDevice';
+import { ReportBadge } from '@/components/ReportBadge';
+import { TimeControls } from '@/components/TimeControls';
+import { GameClock } from '@/components/GameClock';
+import { EventModal } from '@/components/EventModal';
 import { ShopPanel } from '@/components/ShopPanel';
 import { OpeningGuideModal } from '@/components/OpeningGuideModal';
 import { SiegeReportModal } from '@/components/SiegeReportModal';
@@ -107,8 +113,10 @@ const BuildingsPanelContainer: React.FC = () => {
 };
 
 const GameLayout: React.FC = () => {
-  const { buildings, gameStarted, showMainMenu, startGame, newGame, showReport, loadFromSlot } = useGameStore();
-  const { activePanel, setActivePanel, selectedBuildingId, setSelectedBuildingId } = useUIStore();
+  const { buildings, gameStarted, showMainMenu, startGame, newGame, reportView, loadFromSlot } = useGameStore();
+  const { activePanel, setActivePanel, selectedBuildingId, setSelectedBuildingId, mobileSidePanel, setMobileSidePanel } = useUIStore();
+  const device = useDevice();
+  const isCompact = device.isCompact;
 
   // 面板动画状态
   const [panelAnim, setPanelAnim] = React.useState<'enter' | 'exit' | 'idle'>('idle');
@@ -172,9 +180,12 @@ const GameLayout: React.FC = () => {
   if (!gameStarted) return null;
 
   return (
-    <div className="h-full w-full sect-bg flex flex-col overflow-hidden">
+    <div className="h-full w-full sect-bg flex flex-col overflow-hidden overflow-x-hidden">
+      <GameClock />
       <OrientationOverlay />
       <TopBar />
+      {/* 顶部即时时间进度条 */}
+      <TimeControls />
       <SectInfoDrawer />
 
       {/* 核心内容区 */}
@@ -185,10 +196,22 @@ const GameLayout: React.FC = () => {
           onBuildingClick={(id) => { setSelectedBuildingId(id); setActivePanel('buildings'); }}
         />
 
-        {/* 山门右下角：宗门事件 feed */}
-        <EventFeed />
+        {/* 山门左下角：宗门事件 feed（打开面板时隐藏，避免遮挡） */}
+        {activePanel === null && mobileSidePanel !== 'tasks' && <EventFeed />}
+        <ReportBadge />
 
-        {/* 全屏面板：移动端底部导航触发 */}
+        {/* 紧凑布局：任务入口（内容区右上，位于时间条下方） */}
+        {isCompact && activePanel === null && mobileSidePanel !== 'tasks' && (
+          <button
+            className="absolute right-2 top-2 z-30 px-3 py-1.5 rounded-full scroll-panel-dark text-[var(--gold-200)] text-xs btn-press"
+            onClick={() => setMobileSidePanel('tasks')}
+            title="任务与异闻"
+          >
+            任务
+          </button>
+        )}
+
+        {/* 全屏面板：底部导航触发 */}
         {activePanel !== null && (
           <div
             ref={panelRef}
@@ -222,8 +245,23 @@ const GameLayout: React.FC = () => {
       {/* 底部导航 */}
       <BottomNav />
 
+      {/* 桌面端：右上任务与异闻浮动面板 */}
+      {!isCompact && <TasksPanel />}
+
+      {/* 移动端：任务与异闻浮层 */}
+      {isCompact && mobileSidePanel === 'tasks' && (
+        <div className="absolute inset-0 z-40 scroll-panel-dark p-2 pb-16">
+          <TasksPanel mobileMode />
+        </div>
+      )}
+
       {/* 模态框 */}
-      {showReport && <MonthlyReportModal />}
+      {reportView && <MonthlyReportModal />}
+
+      {/* 随机事件弹窗 */}
+      <EventModal />
+
+      {/* 飞升胜利弹窗 */}
       <VictoryModal />
       <ShopPanel />
       <OpeningGuideModal />

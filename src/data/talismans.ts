@@ -1,9 +1,10 @@
 import type { Talisman, TalismanType } from '@/types/talisman';
+import { TalismanTypeNames } from '@/types/talisman';
 
 export const TALISMAN_CONFIGS: Record<TalismanType, Talisman> = {
   fire_talisman: {
     type: 'fire_talisman',
-    name: '金刚符',
+    name: TalismanTypeNames.fire_talisman,
     description: '坚硬如金刚的防御符箓',
     effect: '战力+5',
     tier: 'low',
@@ -17,7 +18,7 @@ export const TALISMAN_CONFIGS: Record<TalismanType, Talisman> = {
   },
   ice_talisman: {
     type: 'ice_talisman',
-    name: '寒冰符',
+    name: TalismanTypeNames.ice_talisman,
     description: '蕴含寒冰之力的符箓，可冻结敌人',
     effect: '战力+30',
     tier: 'low',
@@ -31,7 +32,7 @@ export const TALISMAN_CONFIGS: Record<TalismanType, Talisman> = {
   },
   thunder_talisman: {
     type: 'thunder_talisman',
-    name: '惊雷符',
+    name: TalismanTypeNames.thunder_talisman,
     description: '蕴含雷电之力的符箓，威力强大',
     effect: '战力+40',
     tier: 'middle',
@@ -45,7 +46,7 @@ export const TALISMAN_CONFIGS: Record<TalismanType, Talisman> = {
   },
   heal_talisman: {
     type: 'heal_talisman',
-    name: '回春符',
+    name: TalismanTypeNames.heal_talisman,
     description: '蕴含生机之力的符箓，可恢复伤势',
     effect: '战力+20',
     tier: 'middle',
@@ -59,7 +60,7 @@ export const TALISMAN_CONFIGS: Record<TalismanType, Talisman> = {
   },
   teleport_talisman: {
     type: 'teleport_talisman',
-    name: '传送符',
+    name: TalismanTypeNames.teleport_talisman,
     description: '空间类符箓，可短距离传送',
     effect: '战力+30',
     tier: 'high',
@@ -73,7 +74,7 @@ export const TALISMAN_CONFIGS: Record<TalismanType, Talisman> = {
   },
   stealth_talisman: {
     type: 'stealth_talisman',
-    name: '隐身符',
+    name: TalismanTypeNames.stealth_talisman,
     description: '可隐匿身形的符箓',
     effect: '战力+25',
     tier: 'high',
@@ -87,7 +88,7 @@ export const TALISMAN_CONFIGS: Record<TalismanType, Talisman> = {
   },
   ward_talisman: {
     type: 'ward_talisman',
-    name: '镇宅符',
+    name: TalismanTypeNames.ward_talisman,
     description: '贴于山门可抵御外敌侵扰',
     effect: '战力+8',
     tier: 'low',
@@ -101,7 +102,7 @@ export const TALISMAN_CONFIGS: Record<TalismanType, Talisman> = {
   },
   sword_talisman: {
     type: 'sword_talisman',
-    name: '剑气符',
+    name: TalismanTypeNames.sword_talisman,
     description: '封存一缕剑气，激发可斩敌',
     effect: '战力+45',
     tier: 'middle',
@@ -115,7 +116,7 @@ export const TALISMAN_CONFIGS: Record<TalismanType, Talisman> = {
   },
   divine_talisman: {
     type: 'divine_talisman',
-    name: '神行符',
+    name: TalismanTypeNames.divine_talisman,
     description: '贴于腿上可日行千里',
     effect: '战力+25',
     tier: 'high',

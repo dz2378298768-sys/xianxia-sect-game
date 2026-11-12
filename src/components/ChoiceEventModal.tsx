@@ -10,9 +10,11 @@ const choiceIcons = [Swords, Scale, UserCheck, UserX];
  */
 export const ChoiceEventModal: React.FC = () => {
   const choiceEvent = useGameStore(s => s.choiceEvent);
+  const reportView = useGameStore(s => s.reportView);
   const resolveChoiceEvent = useGameStore(s => s.resolveChoiceEvent);
 
-  if (!choiceEvent) return null;
+  // 报告弹窗优先展示，分支事件等报告关闭后再出现，避免同时弹出
+  if (!choiceEvent || reportView) return null;
 
   const handleChoice = (index: number) => {
     resolveChoiceEvent(index);

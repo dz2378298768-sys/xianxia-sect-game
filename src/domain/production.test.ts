@@ -25,6 +25,33 @@ function makePillHall(targets?: ProductionTarget[]): Building {
   } as Building;
 }
 
+function makeWorkBuilding(
+  type: 'sutra_hall' | 'artifact_hall',
+  id: string,
+  name: string,
+  targets: ProductionTarget[],
+): Building {
+  return {
+    id,
+    type,
+    name,
+    level: 1,
+    maxLevel: 3,
+    status: 'active',
+    baseOutput: { spiritStones: 10 },
+    baseMaintenanceCost: 20,
+    upgradeCosts: [],
+    elderBonus: 0,
+    discipleCapacity: 10,
+    assignedDisciples: ['d1', 'd2'],
+    managerId: null,
+    description: '',
+    category: 'production',
+    primaryOutput: type === 'sutra_hall' ? 'artifacts' : 'talismans',
+    productionTargets: targets,
+  } as Building;
+}
+
 // 用 createInitialDisciple 构造完整弟子，仅覆盖测试所需字段，避免 nextMonth 因字段缺失崩溃
 function makeDisciple(id: string, name: string, spiritRhythm: number) {
   const d = createInitialDisciple('outer', 'qi');
@@ -109,6 +136,37 @@ describe('工作建筑生产逻辑 — 消耗材料按配方产出成品', () =>
     // 两种丹药都应产出（材料充足时）
     expect(f?.quantity || 0).toBeGreaterThanOrEqual(1);
     expect(r?.quantity || 0).toBeGreaterThanOrEqual(1);
+  });
+
+  it('炼器堂消耗玄铁产出法器并进入法器库存', () => {
+    useGameStore.setState({
+      buildings: [makeWorkBuilding('sutra_hall', 'sutra-1', '炼器堂', [{ artifactType: 'flying_sword' }])],
+      unlockedArtifactRecipes: ['flying_sword'],
+      artifactInventory: [],
+      ironInventory: 100,
+    });
+    useGameStore.getState().nextMonth();
+    const after = useGameStore.getState();
+    expect(after.artifactInventory.find(a => a.type === 'flying_sword')?.quantity || 0).toBeGreaterThanOrEqual(1);
+    expect(after.ironInventory).toBeLessThan(100);
+    // 不应误写入其他库存
+    expect(after.pillInventory).toHaveLength(0);
+    expect(after.talismanInventory).toHaveLength(0);
+  });
+
+  it('符堂消耗灵纸产出符箓并进入符箓库存', () => {
+    useGameStore.setState({
+      buildings: [makeWorkBuilding('artifact_hall', 'talisman-1', '符堂', [{ talismanType: 'fire_talisman' }])],
+      unlockedTalismanRecipes: ['fire_talisman'],
+      talismanInventory: [],
+      paperInventory: 100,
+    });
+    useGameStore.getState().nextMonth();
+    const after = useGameStore.getState();
+    expect(after.talismanInventory.find(t => t.type === 'fire_talisman')?.quantity || 0).toBeGreaterThanOrEqual(1);
+    expect(after.paperInventory).toBeLessThan(100);
+    expect(after.pillInventory).toHaveLength(0);
+    expect(after.artifactInventory).toHaveLength(0);
   });
 
   it('setProductionTarget 按槽位更新建筑生产目标', () => {

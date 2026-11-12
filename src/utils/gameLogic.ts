@@ -995,6 +995,7 @@ export function generateMonthlyReport(
   newDisciples: { id: string; name: string; status: string }[],
   reputationChange: number,
   departures: { name: string; status: string; reason: 'death' | 'defect' | 'resign'; detail: string }[] = [],
+  events: string[] = []
 ): MonthlyReport {
   return {
     date,
@@ -1004,7 +1005,7 @@ export function generateMonthlyReport(
     promotions,
     newDisciples,
     departures,
-    events: [],
+    events,
     reputationChange,
   };
 }
@@ -1896,33 +1897,19 @@ export function generateBuildingEvents(
 ): BuildingEvent[] {
   const events: BuildingEvent[] = [];
   const BUILDING_EVENT_POOL: Record<string, BuildingEvent[]> = {
-    pill_refining: [
-      { id: 'pill_vision', buildingType: 'pill_refining', type: 'auspicious',
+    pill_hall: [
+      { id: 'pill_vision', buildingType: 'pill_hall', type: 'auspicious',
         title: '丹成异象', description: '丹堂炉火通明，一颗丹药生出霞光异象，品质大幅提升！',
         effects: { outputMultiplier: 2.0, satisfactionChange: 3, spiritStoneChange: 50 }, duration: 1 },
-      { id: 'pill_explosion', buildingType: 'pill_refining', type: 'disaster',
+      { id: 'pill_explosion', buildingType: 'pill_hall', type: 'disaster',
         title: '丹炉炸裂', description: '丹堂火候失控，炉鼎炸裂，药材损失惨重。',
         effects: { outputMultiplier: 0.3, satisfactionChange: -5, spiritStoneChange: -30 }, duration: 1 },
-      { id: 'pill_recipe_discovery', buildingType: 'pill_refining', type: 'auspicious',
+      { id: 'pill_recipe_discovery', buildingType: 'pill_hall', type: 'auspicious',
         title: '古方重现', description: '炼丹长老翻阅古籍，发现一张失传的古丹方，尝试炼制后惊喜连连！',
         effects: { outputMultiplier: 1.5, satisfactionChange: 4, reputationChange: 5 }, duration: 2 },
-      { id: 'pill_toxin', buildingType: 'pill_refining', type: 'disaster',
+      { id: 'pill_toxin', buildingType: 'pill_hall', type: 'disaster',
         title: '丹毒泄露', description: '一批丹药中含有剧毒杂质，多名弟子中毒，需紧急处理。',
         effects: { satisfactionChange: -8, spiritStoneChange: -50, reputationChange: -5 }, duration: 1 },
-    ],
-    spiritual_field: [
-      { id: 'field_bloom', buildingType: 'spiritual_field', type: 'auspicious',
-        title: '灵草疯长', description: '灵田灵气充沛，灵草一夜之间疯长，产量大增！',
-        effects: { outputMultiplier: 1.8, satisfactionChange: 2 }, duration: 2 },
-      { id: 'field_wilt', buildingType: 'spiritual_field', type: 'disaster',
-        title: '灵草枯萎', description: '灵田灵气紊乱，大片灵草枯萎，损失惨重。',
-        effects: { outputMultiplier: 0.4, satisfactionChange: -4, spiritStoneChange: -20 }, duration: 2 },
-      { id: 'field_rain', buildingType: 'spiritual_field', type: 'auspicious',
-        title: '灵雨降瑞', description: '天降灵雨，灵田中的灵草沐浴甘霖，生机勃勃。',
-        effects: { outputMultiplier: 1.4, satisfactionChange: 3, spiritStoneChange: 20 }, duration: 1 },
-      { id: 'field_pest', buildingType: 'spiritual_field', type: 'disaster',
-        title: '虫灾肆虐', description: '灵田中突然出现大量噬灵虫，疯狂啃食灵草根系。',
-        effects: { outputMultiplier: 0.5, satisfactionChange: -6, spiritStoneChange: -40 }, duration: 2 },
     ],
     secret_library: [
       { id: 'library_epiphany', buildingType: 'secret_library', type: 'auspicious',
@@ -2007,6 +1994,19 @@ export function generateBuildingEvents(
       { id: 'servant_injury', buildingType: 'servant_hall', type: 'disaster',
         title: '劳作事故', description: '杂役堂搬运重物时发生事故，多名杂役弟子受伤。',
         effects: { satisfactionChange: -7, spiritStoneChange: -20 }, duration: 1 },
+      // 灵草药圃归杂役堂管理（旧版「灵田」建筑已移除，事件改挂杂役堂）
+      { id: 'field_bloom', buildingType: 'servant_hall', type: 'auspicious',
+        title: '灵草疯长', description: '杂役堂药圃灵气充沛，灵草一夜之间疯长，产量大增！',
+        effects: { outputMultiplier: 1.8, satisfactionChange: 2 }, duration: 2 },
+      { id: 'field_wilt', buildingType: 'servant_hall', type: 'disaster',
+        title: '灵草枯萎', description: '杂役堂药圃灵气紊乱，大片灵草枯萎，损失惨重。',
+        effects: { outputMultiplier: 0.4, satisfactionChange: -4, spiritStoneChange: -20 }, duration: 2 },
+      { id: 'field_rain', buildingType: 'servant_hall', type: 'auspicious',
+        title: '灵雨降瑞', description: '天降灵雨，杂役堂药圃中的灵草沐浴甘霖，生机勃勃。',
+        effects: { outputMultiplier: 1.4, satisfactionChange: 3, spiritStoneChange: 20 }, duration: 1 },
+      { id: 'field_pest', buildingType: 'servant_hall', type: 'disaster',
+        title: '虫灾肆虐', description: '杂役堂药圃中突然出现大量噬灵虫，疯狂啃食灵草根系。',
+        effects: { outputMultiplier: 0.5, satisfactionChange: -6, spiritStoneChange: -40 }, duration: 2 },
     ],
     lecture_hall: [
       { id: 'lecture_inspire', buildingType: 'lecture_hall', type: 'auspicious',
@@ -2019,39 +2019,39 @@ export function generateBuildingEvents(
         title: '名师出山', description: '一位隐居多年的宗门前辈突然现身讲经堂，亲自开坛讲法！',
         effects: { satisfactionChange: 10, reputationChange: 12, spiritStoneChange: 30 }, duration: 1 },
     ],
-    formation_hall: [
-      { id: 'formation_breakthrough', buildingType: 'formation_hall', type: 'auspicious',
+    array_hall: [
+      { id: 'formation_breakthrough', buildingType: 'array_hall', type: 'auspicious',
         title: '阵法突破', description: '阵堂长老在阵法研究中取得突破，宗门护山大阵威力大增！',
         effects: { reputationChange: 10, satisfactionChange: 3, spiritStoneChange: 20 }, duration: 2 },
-      { id: 'formation_collapse', buildingType: 'formation_hall', type: 'disaster',
+      { id: 'formation_collapse', buildingType: 'array_hall', type: 'disaster',
         title: '阵法反噬', description: '阵堂试验新阵法时失控，灵气暴走，阵堂受损严重。',
         effects: { spiritStoneChange: -60, satisfactionChange: -5, reputationChange: -3 }, duration: 2 },
     ],
-    artifact_hall: [
-      { id: 'artifact_masterpiece', buildingType: 'artifact_hall', type: 'auspicious',
+    sutra_hall: [
+      { id: 'artifact_masterpiece', buildingType: 'sutra_hall', type: 'auspicious',
         title: '神兵出世', description: '炼器堂成功炼制出一件极品法器，器成之日霞光万丈！',
         effects: { reputationChange: 15, satisfactionChange: 5, spiritStoneChange: 50 }, duration: 1 },
-      { id: 'artifact_failure', buildingType: 'artifact_hall', type: 'disaster',
+      { id: 'artifact_failure', buildingType: 'sutra_hall', type: 'disaster',
         title: '炼器失败', description: '炼器堂在炼制高阶法器时失败，材料尽毁，炉鼎受损。',
         effects: { spiritStoneChange: -50, satisfactionChange: -4 }, duration: 1 },
     ],
-    talisman_hall: [
-      { id: 'talisman_inspire', buildingType: 'talisman_hall', type: 'auspicious',
+    artifact_hall: [
+      { id: 'talisman_inspire', buildingType: 'artifact_hall', type: 'auspicious',
         title: '符道灵感', description: '符堂弟子在绘制符箓时灵光一闪，创出一种新的符箓画法！',
         effects: { outputMultiplier: 1.6, satisfactionChange: 4, spiritStoneChange: 25 }, duration: 1 },
-      { id: 'talisman_backfire', buildingType: 'talisman_hall', type: 'disaster',
+      { id: 'talisman_backfire', buildingType: 'artifact_hall', type: 'disaster',
         title: '符箓反噬', description: '符堂弟子绘制高阶符箓时灵力失控，符箓爆炸，多人受伤。',
         effects: { spiritStoneChange: -35, satisfactionChange: -6 }, duration: 1 },
     ],
-    beast_ground: [
-      { id: 'beast_evolve', buildingType: 'beast_ground', type: 'auspicious',
-        title: '灵兽进阶', description: '灵兽园中的一只灵兽突然进阶，血脉觉醒，实力大增！',
+    spirit_beast_garden: [
+      { id: 'beast_evolve', buildingType: 'spirit_beast_garden', type: 'auspicious',
+        title: '灵兽进阶', description: '灵兽原中的一只灵兽突然进阶，血脉觉醒，实力大增！',
         effects: { satisfactionChange: 5, reputationChange: 8 }, duration: 1 },
-      { id: 'beast_rampage', buildingType: 'beast_ground', type: 'disaster',
-        title: '灵兽暴走', description: '灵兽园中的灵兽受惊暴走，冲破围栏，造成混乱。',
+      { id: 'beast_rampage', buildingType: 'spirit_beast_garden', type: 'disaster',
+        title: '灵兽暴走', description: '灵兽原中的灵兽受惊暴走，冲破围栏，造成混乱。',
         effects: { spiritStoneChange: -30, satisfactionChange: -7 }, duration: 1 },
-      { id: 'beast_birth', buildingType: 'beast_ground', type: 'auspicious',
-        title: '灵兽繁衍', description: '灵兽园中的灵兽产下幼崽，新生命带来勃勃生机。',
+      { id: 'beast_birth', buildingType: 'spirit_beast_garden', type: 'auspicious',
+        title: '灵兽繁衍', description: '灵兽原中的灵兽产下幼崽，新生命带来勃勃生机。',
         effects: { satisfactionChange: 6, spiritStoneChange: 20 }, duration: 1 },
     ],
     skyscraper_tower: [
@@ -2122,10 +2122,10 @@ export function generateChoiceEvent(
 
   // 根据月份加权选择季节事件
   const seasonPool: ChoiceEvent[] = [];
-  if (month === 1) seasonPool.push(seasonalEvents[0]); // 春季（一季度）
-  if (month === 2) seasonPool.push(seasonalEvents[1]); // 夏季（二季度）
-  if (month === 3) seasonPool.push(seasonalEvents[2]); // 秋季（三季度）
-  if (month === 4) seasonPool.push(seasonalEvents[3]); // 冬季（四季度）
+  const seasonIndex = Math.floor((month - 1) / 3);
+  if (seasonIndex >= 0 && seasonIndex < seasonalEvents.length) {
+    seasonPool.push(seasonalEvents[seasonIndex]); // 春/夏/秋/冬（每季 3 个月）
+  }
 
   const pool: ChoiceEvent[] = [
     ...seasonPool,
@@ -2557,7 +2557,7 @@ export function processMonthlyEmergentEvents(
  * 处理弟子死亡与叛逃，返回统一结构让 nextMonth 合并库存、事件、宗门历史。
  *
  * 规则：
- * - 寿终：age >= maxAge（年龄按年数存储，每季度 + 1/4）
+ * - 寿终：age >= maxAge（年龄按年数存储，每月 + 1/12）
  * - 叛逃：满意度连续 N 月 < 阈值 → 按身份概率触发；叛逃时按 1–3 倍身份月收入带走灵石
  * - 死亡时遗产：师傅→道侣→同门好友 →全部归仓库
  * - 叛逃时：背包/装备不带走（按用户选"少量灵石"），仅扣灵石
@@ -2941,7 +2941,7 @@ export function processMonthlyCrafting(
       // 炼制完成
       const disciple = disciples.find(d => d.id === task.discipleId);
       const buildingLevel = buildings
-        .filter(b => b.type === 'pill_hall' || b.type === 'artifact_hall' || b.type === 'talisman_hall')
+        .filter(b => b.type === 'pill_hall' || b.type === 'sutra_hall' || b.type === 'artifact_hall')
         .reduce((max, b) => Math.max(max, b.level), 1);
 
       const talent = disciple

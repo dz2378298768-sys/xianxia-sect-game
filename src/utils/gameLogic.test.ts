@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { autoAssignBuilding, autoAssignManagers, autoLearnTechniqueOnBreakthrough } from './gameLogic';
+import { autoAssignBuilding, autoAssignManagers, autoLearnTechniqueOnBreakthrough, generateBuildingEvents } from './gameLogic';
 import { BUILDING_CONFIGS } from '@/data/buildings';
 import type { Building, BuildingType } from '@/types/building';
 import type { BookConfig, BookTier, BookType } from '@/data/buildings';
@@ -62,10 +62,25 @@ function makeBuilding(type: BuildingType, overrides: Partial<Building> = {}): Bu
   } as Building;
 }
 
-// 五大生产堂（用户点名的炼器/丹/符/阵/灵兽园）+ 杂役堂
+// 五大生产堂（用户点名的炼器/丹/符/阵/灵兽原）+ 杂役堂
 const PRODUCTION_HALLS: BuildingType[] = [
   'pill_hall', 'sutra_hall', 'artifact_hall', 'array_hall', 'spirit_beast_garden',
 ];
+
+// 事件池必须按真实 BuildingType 建键，避免「同一建筑两套名字」导致事件永远不触发
+describe('generateBuildingEvents — 事件池键名与实际建筑类型一致', () => {
+  const TYPES_WITH_EVENTS: BuildingType[] = [
+    'pill_hall', 'sutra_hall', 'artifact_hall', 'array_hall', 'spirit_beast_garden',
+    'servant_hall', 'secret_library', 'lecture_hall', 'mountain_gate',
+    'skyscraper_tower', 'outer_residence', 'inner_residence', 'core_residence', 'cave_mansion',
+  ];
+
+  it.each(TYPES_WITH_EVENTS)('%s 能触发事件，且事件归属类型正确', (type) => {
+    const events = generateBuildingEvents([makeBuilding(type)], () => 0);
+    expect(events.length).toBeGreaterThan(0);
+    expect(events[0].buildingType).toBe(type);
+  });
+});
 
 describe('autoAssignBuilding — 按天赋选最优生产建筑', () => {
   it('高灵韵外门弟子 → 丹堂（灵韵×1.5 最佳匹配），而非杂役堂', () => {
@@ -90,7 +105,7 @@ describe('autoAssignBuilding — 按天赋选最优生产建筑', () => {
     expect(buildingId).toBe('sutra_hall-b');
   });
 
-  it('高悟性外门弟子 → 灵兽园或符堂（悟性主导）', () => {
+  it('高悟性外门弟子 → 灵兽原或符堂（悟性主导）', () => {
     const d = makeDisciple({ id: 'd-df', hiddenTalents: talents(30, 30, 80) });
     const buildings = [
       makeBuilding('servant_hall'),

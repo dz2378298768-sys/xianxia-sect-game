@@ -11,6 +11,9 @@ import { create } from 'zustand';
  */
 export type PanelType = 'affairs' | 'disciples' | 'buildings' | 'world' | 'activities' | 'warehouse';
 
+// 移动端任务与异闻浮层开关
+export type MobileSidePanel = 'stats' | 'tasks' | null;
+
 // 宗门信息抽屉的标签页
 export type SectInfoTab = 'overview' | 'elders';
 
@@ -20,6 +23,7 @@ interface UIState {
   selectedBuildingId: string | null;
   showNotifications: boolean;
   sidebarCollapsed: boolean;
+  mobileSidePanel: MobileSidePanel;
   // 左上角"修仙宗门"抽屉
   sectInfoOpen: boolean;
   sectInfoTab: SectInfoTab;
@@ -32,6 +36,7 @@ interface UIState {
   setSelectedBuildingId: (id: string | null) => void;
   toggleNotifications: () => void;
   toggleSidebar: () => void;
+  setMobileSidePanel: (panel: MobileSidePanel) => void;
   setSectInfoOpen: (open: boolean) => void;
   toggleSectInfo: () => void;
   setSectInfoTab: (tab: SectInfoTab) => void;
@@ -47,6 +52,7 @@ export const useUIStore = create<UIState>((set) => ({
   selectedBuildingId: null,
   showNotifications: false,
   sidebarCollapsed: false,
+  mobileSidePanel: null,
   sectInfoOpen: false,
   sectInfoTab: 'overview',
   showShop: false,
@@ -58,6 +64,7 @@ export const useUIStore = create<UIState>((set) => ({
   setSelectedBuildingId: (id) => set({ selectedBuildingId: id }),
   toggleNotifications: () => set(state => ({ showNotifications: !state.showNotifications })),
   toggleSidebar: () => set(state => ({ sidebarCollapsed: !state.sidebarCollapsed })),
+  setMobileSidePanel: (panel) => set(state => ({ mobileSidePanel: state.mobileSidePanel === panel ? null : panel })),
   setSectInfoOpen: (open) => set({ sectInfoOpen: open }),
   toggleSectInfo: () => set(state => ({ sectInfoOpen: !state.sectInfoOpen })),
   setSectInfoTab: (tab) => set({ sectInfoTab: tab }),

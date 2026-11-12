@@ -192,7 +192,7 @@ export const EconomyPanel: React.FC = () => {
                 ))}
                 {data.map((d, i) => (
                   <text key={i} x={xOf(i)} y={H - padB + 26} textAnchor="middle" fontSize={fsX} fill="rgba(212,210,180,0.6)">
-                    {d.year}.{['春', '夏', '秋', '冬'][d.month - 1]}
+                    {d.year}.{d.month}月
                   </text>
                 ))}
                 <path d={path} fill="none" stroke="#d4af37" strokeWidth={strokeW} strokeLinejoin="round" strokeLinecap="round" />
@@ -262,7 +262,7 @@ export const EconomyPanel: React.FC = () => {
                 )}
                 {data.map((d, i) => (
                   <text key={i} x={xOf(i)} y={H - padB + 26} textAnchor="middle" fontSize={fsX} fill="rgba(212,210,180,0.6)">
-                    {d.year}.{['春', '夏', '秋', '冬'][d.month - 1]}
+                    {d.year}.{d.month}月
                   </text>
                 ))}
                 <path d={path} fill="none" stroke="#34d399" strokeWidth={strokeW} strokeLinejoin="round" strokeLinecap="round" />
@@ -329,23 +329,23 @@ export const EconomyPanel: React.FC = () => {
             </div>
             <div className="text-sect-jade/60 text-xs">灵草</div>
             <div className="font-display text-sect-herb-light">{herbInventory} 株</div>
-            <div className="text-xs text-green-400 mt-1">+{totalHerbIncome}/季度</div>
+            <div className="text-xs text-green-400 mt-1">+{totalHerbIncome}/月</div>
           </div>
           <div className="text-center p-3 rounded-lg bg-sect-ink-light/30">
             <div className="mb-1 flex justify-center" style={{ color: 'var(--ink-200, #c8c8d0)' }}>
               <SectIcon name="sword" size={28} strokeWidth={1.8} />
             </div>
-            <div className="text-sect-jade/60 text-xs">灵铁</div>
+            <div className="text-sect-jade/60 text-xs">玄铁</div>
             <div className="font-display" style={{ color: 'var(--ink-100, #e0e0e8)' }}>{ironInventory} 块</div>
-            <div className="text-xs text-green-400 mt-1">+{totalIronIncome}/季度</div>
+            <div className="text-xs text-green-400 mt-1">+{totalIronIncome}/月</div>
           </div>
           <div className="text-center p-3 rounded-lg bg-sect-ink-light/30">
             <div className="text-sect-gold mb-1 flex justify-center">
               <SectIcon name="scrollText" size={28} strokeWidth={1.8} />
             </div>
-            <div className="text-sect-jade/60 text-xs">符纸</div>
+            <div className="text-sect-jade/60 text-xs">灵纸</div>
             <div className="font-display text-sect-gold">{paperInventory} 张</div>
-            <div className="text-xs text-green-400 mt-1">+{totalPaperIncome}/季度</div>
+            <div className="text-xs text-green-400 mt-1">+{totalPaperIncome}/月</div>
           </div>
           <div className="text-center p-3 rounded-lg bg-sect-ink-light/30">
             <div className="text-sect-gold mb-1 flex justify-center">
@@ -353,7 +353,7 @@ export const EconomyPanel: React.FC = () => {
             </div>
             <div className="text-sect-jade/60 text-xs">杂役弟子</div>
             <div className="font-display text-sect-jade">{servantCount} 人</div>
-            <div className="text-xs text-red-400 mt-1">-{servantStipend}/季度</div>
+            <div className="text-xs text-red-400 mt-1">-{servantStipend}/月</div>
           </div>
           <div className="text-center p-3 rounded-lg bg-sect-ink-light/30">
             <div className="text-sect-spirit mb-1 flex justify-center">
@@ -368,7 +368,7 @@ export const EconomyPanel: React.FC = () => {
             </div>
             <div className="text-sect-jade/60 text-xs">净收益</div>
             <div className={`font-display ${netIncome >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-              {netIncome >= 0 ? '+' : ''}{netIncome}/季度
+              {netIncome >= 0 ? '+' : ''}{netIncome}/月
             </div>
           </div>
         </div>

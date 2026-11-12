@@ -295,7 +295,7 @@ describe('computeMonthlyContribution — 所有生产建筑给正贡献，杜绝
     expect(workIn(null)).toBe(10);
   });
 
-  it('outer 在丹堂/炼器堂/符堂/阵堂/灵兽园都比闲逛赚得多', () => {
+  it('outer 在丹堂/炼器堂/符堂/阵堂/灵兽原都比闲逛赚得多', () => {
     const idle = workIn(null);
     for (const type of ['pill_hall', 'sutra_hall', 'artifact_hall', 'array_hall', 'spirit_beast_garden']) {
       expect(workIn(type)).toBeGreaterThan(idle);

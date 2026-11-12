@@ -1,0 +1,587 @@
+import type { GameEventConfig } from '@/types/event';
+
+/**
+ * 事件池 v1：24 个事件。
+ * 资源类数值均为「草创期基准值」，结算时按宗门等级系数缩放（见 getLevelMultiplier）。
+ */
+export const GAME_EVENTS: GameEventConfig[] = [
+  // ==================== 弟子类（8） ====================
+  {
+    id: 'D01',
+    title: '弟子顿悟',
+    category: 'disciple',
+    rarity: 'common',
+    conditions: { minDisciples: 1, minRealm: 'qi', cooldownMonths: 12 },
+    description: '一名弟子在打坐中忽有所感，若能助其闭关，或可更进一步。',
+    targetDisciple: 'highestRealm',
+    choices: [
+      {
+        id: 'a',
+        label: '赐灵石助其闭关',
+        cost: { spiritStones: 100 },
+        effects: [{ realmProgress: 20, satisfaction: 5 }],
+        resultText: '灵石铺就静室，弟子闭关七日，修为大有精进。',
+      },
+      {
+        id: 'b',
+        label: '顺其自然',
+        effects: [{ satisfaction: 3 }],
+        resultText: '你未加干预，弟子自悟其道，心境反倒开阔了些。',
+      },
+    ],
+  },
+  {
+    id: 'D02',
+    title: '同门阋墙',
+    category: 'disciple',
+    rarity: 'common',
+    conditions: { minDisciples: 2, cooldownMonths: 12 },
+    description: '两名弟子因分配任务起了争执，眼看就要动手。',
+    choices: [
+      {
+        id: 'a',
+        label: '严加惩戒',
+        effects: [{ reputation: 5 }, { randomDisciplesSatisfaction: { count: 2, amount: -8 } }],
+        resultText: '你当众惩戒了二人，门规森严之名传出，弟子们却心生畏惧。',
+      },
+      {
+        id: 'b',
+        label: '温言调解',
+        cost: { spiritStones: 50 },
+        effects: [{ randomDisciplesSatisfaction: { count: 2, amount: 5 } }],
+        resultText: '你设宴调解，二人握手言和，同门情谊更胜从前。',
+      },
+    ],
+  },
+  {
+    id: 'D03',
+    title: '思乡心切',
+    category: 'disciple',
+    rarity: 'common',
+    conditions: { minDisciples: 3, cooldownMonths: 15 },
+    description: '一名弟子家中传来书信，言及父母年迈，盼其归家一探。',
+    targetDisciple: 'random',
+    choices: [
+      {
+        id: 'a',
+        label: '准假探亲',
+        cost: { spiritStones: 30 },
+        effects: [{ satisfaction: 10 }],
+        resultText: '弟子归家尽孝，返山后心境圆融，修炼愈发勤勉。',
+      },
+      {
+        id: 'b',
+        label: '不许离山',
+        effects: [{ satisfaction: -8 }],
+        resultText: '弟子默默领命，却在夜里独自望月，心生怨怼。',
+      },
+    ],
+  },
+  {
+    id: 'D04',
+    title: '走火入魔',
+    category: 'disciple',
+    rarity: 'uncommon',
+    conditions: { minRealmProgress: 80, cooldownMonths: 18 },
+    description: '一名弟子修炼过急，灵气逆冲经脉，隐隐有走火入魔之兆。',
+    targetDisciple: 'highestRealm',
+    choices: [
+      {
+        id: 'a',
+        label: '强行压制',
+        effects: [{ reputation: -20 }, { realmProgress: -10 }],
+        resultText: '你以灵力强压其躁动，弟子虽保住性命，修为却倒退一截。',
+      },
+      {
+        id: 'b',
+        label: '服用回灵丹',
+        cost: { pill: 'recovery_pill' },
+        effects: [{ realmProgress: 10, satisfaction: 5 }],
+        resultText: '回灵丹入腹，逆冲灵气渐渐平复，弟子因祸得福。',
+      },
+    ],
+  },
+  {
+    id: 'D05',
+    title: '灵根觉醒',
+    category: 'disciple',
+    rarity: 'rare',
+    conditions: { maxSpiritRootQuality: 80, cooldownMonths: 24 },
+    description: '一名弟子体内灵根隐隐共鸣，似有觉醒之象。',
+    targetDisciple: 'random',
+    choices: [
+      {
+        id: 'a',
+        label: '全力培养',
+        cost: { spiritStones: 300 },
+        effects: [{ spiritRootQuality: 8 }],
+        resultText: '宗门倾力栽培，弟子灵根纯度显著提升，前途不可限量。',
+      },
+      {
+        id: 'b',
+        label: '记录在册',
+        effects: [{ reputation: 10 }],
+        resultText: '你将此事记入宗门典籍，山门博识之名不胫而走。',
+      },
+    ],
+  },
+  {
+    id: 'D06',
+    title: '弟子求去',
+    category: 'disciple',
+    rarity: 'uncommon',
+    conditions: { maxSatisfaction: 40, cooldownMonths: 18 },
+    description: '一名弟子心生去意，跪在山门前请求离宗。',
+    targetDisciple: 'lowestSatisfaction',
+    choices: [
+      {
+        id: 'a',
+        label: '挽留',
+        cost: { spiritStones: 100 },
+        effects: [{ satisfaction: 15 }],
+        resultText: '你许诺厚待，弟子感念师恩，暂且留了下来。',
+      },
+      {
+        id: 'b',
+        label: '放行',
+        effects: [{ removeDisciple: true }, { reputation: 5 }],
+        resultText: '你未加阻拦。弟子叩首而去，山门宽厚之名却传了开去。',
+      },
+    ],
+  },
+  {
+    id: 'D07',
+    title: '古法传承',
+    category: 'disciple',
+    rarity: 'rare',
+    conditions: { minSectLevel: 'famous', cooldownMonths: 36 },
+    description: '藏经阁深处，一册无名古卷自行翻开，其上功法玄妙难测。',
+    targetDisciple: 'random',
+    choices: [
+      {
+        id: 'a',
+        label: '择优选徒传授',
+        effects: [{ learnRandomTechnique: true }],
+        resultText: '一名弟子得授古法，功法运转间周身灵光隐现。',
+      },
+      {
+        id: 'b',
+        label: '封存古卷',
+        effects: [{ reputation: 100 }],
+        resultText: '你将古卷封存，外界闻之，皆叹宗门底蕴深厚。',
+      },
+    ],
+  },
+  {
+    id: 'D08',
+    title: '凡尘情缘',
+    category: 'disciple',
+    rarity: 'common',
+    conditions: { minDisciples: 5, cooldownMonths: 24 },
+    description: '一名弟子与山下凡人女子互生情愫，欲结成道侣。',
+    targetDisciple: 'random',
+    choices: [
+      {
+        id: 'a',
+        label: '允其成婚',
+        cost: { spiritStones: 50 },
+        effects: [{ satisfaction: 10 }, { reputation: -5 }],
+        resultText: '你为其操办婚事，弟子感激涕零，只是门中清誉略受影响。',
+      },
+      {
+        id: 'b',
+        label: '劝其斩情',
+        effects: [{ reputation: 5 }, { satisfaction: -10 }],
+        resultText: '弟子挥剑断情，道心愈发坚定，却也添了几分冷意。',
+      },
+    ],
+  },
+
+  // ==================== 宗门类（6） ====================
+  {
+    id: 'S01',
+    title: '山门修缮',
+    category: 'sect',
+    rarity: 'common',
+    conditions: { needsBuilding: 'mountain_gate', cooldownMonths: 18 },
+    description: '风雨侵蚀，山门牌匾斑驳，护山石阶亦有松动。',
+    choices: [
+      {
+        id: 'a',
+        label: '拨付灵石修缮',
+        cost: { spiritStones: 200 },
+        effects: [{ reputation: 15 }],
+        resultText: '山门焕然一新，往来修士皆赞宗门气象。',
+      },
+      {
+        id: 'b',
+        label: '暂缓修缮',
+        effects: [{ reputation: -8 }],
+        resultText: '山门愈发破败，山下已有人议论宗门败落。',
+      },
+    ],
+  },
+  {
+    id: 'S02',
+    title: '灵脉异动',
+    category: 'sect',
+    rarity: 'uncommon',
+    conditions: { needsBuilding: 'servant_hall', cooldownMonths: 18 },
+    description: '杂役堂后山灵脉忽然躁动，地底灵气翻涌不息。',
+    choices: [
+      {
+        id: 'a',
+        label: '引灵入田',
+        effects: [{ herbs: 30 }, { reputation: 10 }],
+        resultText: '灵气滋养药田，灵草长势喜人，宗门上下称奇。',
+      },
+      {
+        id: 'b',
+        label: '封存灵脉',
+        effects: [{ spiritStones: 150 }],
+        resultText: '你命人封存灵脉，取出的灵石解了燃眉之急。',
+      },
+    ],
+  },
+  {
+    id: 'S03',
+    title: '库房失窃',
+    category: 'sect',
+    rarity: 'common',
+    conditions: { minPills: 1, cooldownMonths: 24 },
+    description: '丹房库房深夜失窃，几枚丹药不翼而飞。',
+    choices: [
+      {
+        id: 'a',
+        label: '严查到底',
+        cost: { spiritStones: 100 },
+        effects: [{ loseRandomPill: 1 }, { gainRandomPill: 1 }, { reputation: 5 }],
+        resultText: '你彻查此事，追回了失窃的丹药，门中风气为之一肃。',
+      },
+      {
+        id: 'b',
+        label: '不予追究',
+        effects: [{ loseRandomPill: 1 }, { reputation: -5 }],
+        resultText: '你按下不表，丹药却终究少了一枚，弟子私下颇有微词。',
+      },
+    ],
+  },
+  {
+    id: 'S04',
+    title: '香客盈门',
+    category: 'sect',
+    rarity: 'common',
+    conditions: { minReputation: 50, cooldownMonths: 12 },
+    description: '山下香客慕名而来，携礼求见，山门一时车马盈门。',
+    choices: [
+      {
+        id: 'a',
+        label: '设宴款待',
+        cost: { spiritStones: 50 },
+        effects: [{ spiritStones: 80 }, { reputation: 10 }],
+        resultText: '香客尽兴而归，布施丰厚，宗门声名更盛。',
+      },
+      {
+        id: 'b',
+        label: '闭门清修',
+        effects: [{ reputation: 5 }],
+        resultText: '宗门闭门谢客，清修之名传开，反得一批求道者敬重。',
+      },
+    ],
+  },
+  {
+    id: 'S05',
+    title: '长老争权',
+    category: 'sect',
+    rarity: 'uncommon',
+    conditions: { requiresElderCount: 2, cooldownMonths: 24 },
+    description: '两位长老为座次先后争执不下，堂中气氛剑拔弩张。',
+    targetDisciple: 'randomElder',
+    choices: [
+      {
+        id: 'a',
+        label: '支持大长老',
+        effects: [{ satisfaction: 10 }, { allEldersSatisfaction: -10 }],
+        resultText: '你力挺大长老，其威望更隆，其余长老却面有愠色。',
+      },
+      {
+        id: 'b',
+        label: '各打五十大板',
+        effects: [{ allEldersSatisfaction: -5 }, { reputation: 10 }],
+        resultText: '你不偏不倚，各责其过。长老们虽有不快，门中却称你公允。',
+      },
+    ],
+  },
+  {
+    id: 'S06',
+    title: '天降陨铁',
+    category: 'sect',
+    rarity: 'rare',
+    conditions: { needsBuilding: 'sutra_hall', cooldownMonths: 30 },
+    description: '一道流星坠落后山，砸出丈深大坑，坑底玄铁幽光流转。',
+    choices: [
+      {
+        id: 'a',
+        label: '全宗搜寻',
+        cost: { spiritStones: 100 },
+        effects: [{ specialMaterial: { name: '玄铁精', amount: 3 } }],
+        resultText: '弟子们掘地三尺，得玄铁精三块，炼器堂堂主喜不自胜。',
+      },
+      {
+        id: 'b',
+        label: '上报仙盟',
+        effects: [{ reputation: 50 }],
+        resultText: '你将陨铁上缴仙盟，仙盟嘉奖宗门大义，声名远播。',
+      },
+    ],
+  },
+
+  // ==================== 世界类（6） ====================
+  {
+    id: 'W01',
+    title: '邻宗挑衅',
+    category: 'world',
+    rarity: 'common',
+    conditions: { cooldownMonths: 12 },
+    description: '邻近宗门遣人送来战书，言辞间颇多轻慢。',
+    choices: [
+      {
+        id: 'a',
+        label: '强硬回击',
+        effects: [{ reputation: 15 }, { favorability: -15 }],
+        resultText: '你当众折辱来使，宗门威风大振，邻宗却从此记恨。',
+      },
+      {
+        id: 'b',
+        label: '赔礼道歉',
+        cost: { spiritStones: 100 },
+        effects: [{ favorability: 10 }, { reputation: -5 }],
+        resultText: '你备厚礼登门致歉，两家关系缓和，门中弟子却觉憋屈。',
+      },
+    ],
+  },
+  {
+    id: 'W02',
+    title: '魔道来袭',
+    category: 'world',
+    rarity: 'uncommon',
+    conditions: { requiresDemonicHostile: true, cooldownMonths: 18 },
+    description: '魔道宗门陈兵山下，扬言若不献上灵石，便要血洗山门。',
+    choices: [
+      {
+        id: 'a',
+        label: '率众迎敌',
+        effects: [],
+        resultText: '你率弟子列阵迎敌。',
+        gamble: {
+          chance: 0.65,
+          successEffects: [{ reputation: 30 }, { spiritStones: 200 }],
+          successText: '一番血战，魔道溃退，宗门缴获灵石无数，威名远扬！',
+          failureEffects: [{ reputation: -20 }, { spiritStones: -100 }],
+          failureText: '魔道攻势凶猛，宗门伤亡惨重，破财方得免祸。',
+        },
+      },
+      {
+        id: 'b',
+        label: '缴纳供奉',
+        cost: { spiritStones: 200 },
+        effects: [{ reputation: -10 }],
+        resultText: '你破财消灾，魔道扬长而去，山门上下却士气低落。',
+      },
+    ],
+  },
+  {
+    id: 'W03',
+    title: '散修投奔',
+    category: 'world',
+    rarity: 'common',
+    conditions: { hasDiscipleCapacity: true, cooldownMonths: 12 },
+    description: '一名散修在山门外徘徊数日，自称仰慕宗门，愿拜入门下。',
+    choices: [
+      {
+        id: 'a',
+        label: '收入门下',
+        cost: { spiritStones: 80 },
+        effects: [{ addDisciple: { talentBonus: 10 } }],
+        resultText: '散修拜入山门，其天赋不俗，稍加培养必成大器。',
+      },
+      {
+        id: 'b',
+        label: '婉言谢绝',
+        effects: [{ reputation: 3 }],
+        resultText: '你婉拒了散修，其怅然离去，宗门谨慎之名却传了开去。',
+      },
+    ],
+  },
+  {
+    id: 'W04',
+    title: '秘境开启',
+    category: 'world',
+    rarity: 'rare',
+    conditions: { minSectLevel: 'known', cooldownMonths: 36 },
+    description: '百里外的荒山忽现秘境入口，灵光冲天，引来四方修士。',
+    targetDisciple: 'highestRealm',
+    choices: [
+      {
+        id: 'a',
+        label: '派弟子探索',
+        effects: [],
+        resultText: '弟子踏入秘境，身影消失在灵光之中。',
+        gamble: {
+          chance: 0.7,
+          successEffects: [{ specialMaterial: { name: '秘境灵晶', amount: 2 } }, { reputation: 100 }],
+          successText: '弟子满载而归，带回秘境灵晶，宗门声名大噪！',
+          failureEffects: [{ satisfaction: -15 }, { realmProgress: -20 }],
+          failureText: '秘境凶险，弟子重伤而归，修为受损。',
+        },
+      },
+      {
+        id: 'b',
+        label: '出售地图',
+        effects: [{ spiritStones: 300 }],
+        resultText: '你将秘境地图高价售出，虽未得宝，却也收获颇丰。',
+      },
+    ],
+  },
+  {
+    id: 'W05',
+    title: '同盟求援',
+    category: 'world',
+    rarity: 'uncommon',
+    conditions: { requiresAlly: true, cooldownMonths: 18 },
+    description: '同盟宗门遣使求援，言其正遭宿敌围攻，危在旦夕。',
+    choices: [
+      {
+        id: 'a',
+        label: '出兵相助',
+        cost: { spiritStones: 150 },
+        effects: [{ favorability: 15 }, { reputation: 20 }],
+        resultText: '你亲率弟子驰援，同盟转危为安，两家情谊更笃。',
+      },
+      {
+        id: 'b',
+        label: '婉言拒绝',
+        effects: [{ favorability: -20 }, { reputation: -5 }],
+        resultText: '你以宗门初定为由推辞，同盟使者失望而归。',
+      },
+    ],
+  },
+  {
+    id: 'W06',
+    title: '商队来访',
+    category: 'world',
+    rarity: 'common',
+    conditions: { minSpiritStones: 200, cooldownMonths: 12 },
+    description: '一支远道而来的商队在山下歇脚，货箱中尽是稀罕材料。',
+    choices: [
+      {
+        id: 'a',
+        label: '大量采购',
+        cost: { spiritStones: 200 },
+        effects: [{ specialMaterial: { name: '商队奇珍', amount: 5 } }],
+        resultText: '你大手笔买下商队大半货物，库房顿时充盈。',
+      },
+      {
+        id: 'b',
+        label: '只购所需',
+        cost: { spiritStones: 80 },
+        effects: [{ specialMaterial: { name: '商队奇珍', amount: 2 } }],
+        resultText: '你按需采购，既补了缺口，也未伤及根本。',
+      },
+    ],
+  },
+
+  // ==================== 机遇 / 灾祸 / 剧情（4） ====================
+  {
+    id: 'O01',
+    title: '天降灵雨',
+    category: 'opportunity',
+    rarity: 'rare',
+    conditions: { cooldownMonths: 36, oncePerGame: false },
+    description: '夜半时分，天际忽降灵雨，甘霖所至，草木疯长。',
+    choices: [
+      {
+        id: 'auto',
+        label: '静受天恩',
+        effects: [{ allRealmProgress: 10 }, { reputation: 10 }],
+        resultText: '灵雨沾身，全宗弟子修为均有精进，山门灵气浓郁了数分。',
+      },
+    ],
+  },
+  {
+    id: 'O02',
+    title: '妖兽潮',
+    category: 'opportunity',
+    rarity: 'uncommon',
+    conditions: { minReputation: 100, cooldownMonths: 24 },
+    description: '后山妖气冲天，成群妖兽下山，直逼宗门药田。',
+    choices: [
+      {
+        id: 'a',
+        label: '组织围猎',
+        effects: [{ herbs: -20 }, { spiritStones: 60 }, { reputation: 10 }],
+        resultText: '弟子们围猎兽群，虽损耗些许灵草，却收获颇丰。',
+      },
+      {
+        id: 'b',
+        label: '闭门防守',
+        effects: [{ reputation: -10 }, { herbs: -10 }],
+        resultText: '宗门闭门不出，妖兽践踏药田后散去，声望受损。',
+      },
+    ],
+  },
+  {
+    id: 'O03',
+    title: '古碑现世',
+    category: 'story',
+    rarity: 'legendary',
+    conditions: { minSectLevel: 'famous', oncePerGame: true, cooldownMonths: 999 },
+    description: '山腹崩塌，露出一座丈高古碑，碑文道韵流转，似藏大道。',
+    targetDisciple: 'highestRealm',
+    choices: [
+      {
+        id: 'a',
+        label: '参悟碑文',
+        effects: [{ realmProgress: 30 }, { learnRandomTechnique: true }, { reputation: 30 }],
+        resultText: '弟子于碑前枯坐七日，豁然贯通，习得古法，宗门震动。',
+      },
+      {
+        id: 'b',
+        label: '拓印售卖',
+        effects: [{ spiritStones: 800 }, { reputation: 20 }],
+        resultText: '碑文拓本流入坊市，宗门进账丰厚，也引来无数窥探。',
+      },
+      {
+        id: 'c',
+        label: '封存古碑',
+        effects: [{ reputation: 50 }],
+        resultText: '你将古碑重新封入山腹，宗门守秘之名不胫而走。',
+      },
+    ],
+  },
+  {
+    id: 'O04',
+    title: '飞升前兆',
+    category: 'story',
+    rarity: 'legendary',
+    conditions: { minRealm: 'spirit', oncePerGame: true, cooldownMonths: 999 },
+    description: '门中化神弟子夜观天象，忽见接引仙光，飞升之期将近。',
+    choices: [
+      {
+        id: 'a',
+        label: '举宗护法',
+        effects: [{ allSatisfaction: 10 }, { reputation: 100 }, { eventFlag: 'ascension_buff' }],
+        resultText: '全宗弟子彻夜护法，仙光冲霄，宗门气运为之一振。',
+      },
+      {
+        id: 'b',
+        label: '低调行事',
+        effects: [{ reputation: 30 }],
+        resultText: '你封锁消息，暗中筹备，宗门稳步积蓄力量。',
+      },
+    ],
+  },
+];
+
+export const GAME_EVENT_MAP: Record<string, GameEventConfig> =
+  GAME_EVENTS.reduce((map, e) => { map[e.id] = e; return map; }, {} as Record<string, GameEventConfig>);
