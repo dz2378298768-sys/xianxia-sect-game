@@ -118,13 +118,13 @@ export const TASKS: TaskConfig[] = [
   {
     id: 'S02', type: 'side',
     title: '炼器堂开炉', description: '建造炼器堂。',
-    metric: 'buildingCount', target: 1, params: { type: 'sutra_hall' },
+    metric: 'buildingCount', target: 1, params: { type: 'forge_hall' },
     rewards: { spiritStones: 200 },
   },
   {
     id: 'S03', type: 'side',
     title: '符堂开坛', description: '建造符堂。',
-    metric: 'buildingCount', target: 1, params: { type: 'artifact_hall' },
+    metric: 'buildingCount', target: 1, params: { type: 'talisman_hall' },
     rewards: { spiritStones: 200 },
   },
   {

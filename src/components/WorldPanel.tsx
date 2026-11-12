@@ -405,7 +405,7 @@ const TrialCard: React.FC<{ trial: Trial }> = ({ trial }) => {
         </div>
         <div className="bg-[rgba(30,40,60,0.6)] rounded px-1 py-0.5">
           <div className="text-[var(--ink-400)]">耗时</div>
-          <div className="text-[var(--jade-light)]">{trial.durationMonths}季度</div>
+          <div className="text-[var(--jade-light)]">{trial.durationMonths}个月</div>
         </div>
       </div>
 
@@ -579,7 +579,7 @@ const ExplorationSection: React.FC<ExplorationSectionProps> = ({
                   <div className="flex-1">
                     <div className="text-sm text-sect-jade">{t.name}</div>
                     <div className="text-xs text-sect-jade/60">
-                      弟子: {disciple?.name ?? '未知'} | 已进行 {t.durationMonths} 个季度
+                      弟子: {disciple?.name ?? '未知'} | 已进行 {t.durationMonths} 个月
                     </div>
                   </div>
                   <div className="text-xs text-sky-400">
@@ -617,7 +617,7 @@ const ExplorationSection: React.FC<ExplorationSectionProps> = ({
                     <h3 className="font-display text-sect-jade">{region.name}</h3>
                     <div className="text-[10px] text-sect-jade/60 flex items-center gap-2">
                       <span>建议战力 ≥{region.minPower.toLocaleString()}</span>
-                      <span>耗时 {region.baseDurationMonths}季度</span>
+                      <span>耗时 {region.baseDurationMonths}个月</span>
                     </div>
                   </div>
                 </div>

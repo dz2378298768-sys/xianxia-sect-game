@@ -26,16 +26,16 @@ function resetGame() {
 describe('随机事件与任务 · store 集成', () => {
   beforeEach(resetGame);
 
-  it('保底触发事件并打开弹窗', () => {
-    useGameStore.setState({ eventCheckMisses: 2 });
+  it('保底触发事件并进入待处理队列（不主动弹窗）', () => {
+    useGameStore.setState({ eventCheckMisses: 4 });
     const pending = useGameStore.getState().checkEventTrigger();
     expect(pending).not.toBeNull();
-    expect(useGameStore.getState().activeEventId).toBe(pending!.eventId);
+    expect(useGameStore.getState().activeEventId).toBeNull();
     expect(useGameStore.getState().pendingEvents).toHaveLength(1);
   });
 
   it('结算事件：写入历史、冷却与事件计数', () => {
-    useGameStore.setState({ eventCheckMisses: 2 });
+    useGameStore.setState({ eventCheckMisses: 4 });
     const pending = useGameStore.getState().checkEventTrigger()!;
     const config = GAME_EVENT_MAP[pending.eventId];
     const res = useGameStore.getState().resolveEvent(pending.eventId, config.choices[0].id);
@@ -102,9 +102,28 @@ describe('随机事件与任务 · store 集成', () => {
     useGameStore.getState().expireEvents();
     const state = useGameStore.getState();
     expect(state.pendingEvents).toHaveLength(0);
-    expect(state.spiritStones).toBe(4800);
+    // W06 的默认选项为 b「只购所需」（-80 灵石），而非首项「大量采购」（-200）
+    expect(state.spiritStones).toBe(4920);
     expect(state.eventHistory[0].eventId).toBe('W06');
+    expect(state.eventHistory[0].choiceId).toBe('b');
     expect(state.notifications[0].title).toBe('事件自行发展');
+  });
+
+  it('逾期事件优先执行配置的默认选项', () => {
+    useGameStore.setState({
+      spiritStones: 5000,
+      pendingEvents: [{
+        eventId: 'D01',
+        triggeredAt: { year: 1, month: 1 },
+        targetDiscipleId: undefined,
+        expiresAt: 0,
+      }],
+    });
+    useGameStore.getState().expireEvents();
+    const state = useGameStore.getState();
+    // D01 默认选项为 b「顺其自然」，不消耗灵石
+    expect(state.eventHistory[0].choiceId).toBe('b');
+    expect(state.spiritStones).toBe(5000);
   });
 
   it('任务贡献奖励真实发放到弟子贡献点', () => {

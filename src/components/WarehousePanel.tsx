@@ -251,7 +251,7 @@ export const WarehousePanel: React.FC = () => {
           iconName: ARTIFACT_ICON_MAP[a.type],
           tier: a.tier,
           materials: a.materials,
-          buildingType: 'sutra_hall',
+          buildingType: 'forge_hall',
           shopItemId: shop?.id,
           buyPrice: shop?.price,
           sellPrice: shop?.sellPrice,
@@ -275,7 +275,7 @@ export const WarehousePanel: React.FC = () => {
           iconName: TALISMAN_ICON_MAP[t.type],
           tier: t.tier,
           materials: t.materials,
-          buildingType: 'artifact_hall',
+          buildingType: 'talisman_hall',
           shopItemId: shop?.id,
           buyPrice: shop?.price,
           sellPrice: shop?.sellPrice,
@@ -568,8 +568,8 @@ export const WarehousePanel: React.FC = () => {
                 {selectedItem.buildingType && (
                   <div className="warehouse-detail-recipe-hint">
                     {selectedItem.buildingType === 'pill_hall' && '于丹堂设置生产目标后自动炼制'}
-                    {selectedItem.buildingType === 'sutra_hall' && '于炼器堂设置生产目标后自动锻造'}
-                    {selectedItem.buildingType === 'artifact_hall' && '于符堂设置生产目标后自动绘制'}
+                    {selectedItem.buildingType === 'forge_hall' && '于炼器堂设置生产目标后自动锻造'}
+                    {selectedItem.buildingType === 'talisman_hall' && '于符堂设置生产目标后自动绘制'}
                     ；特殊材料可在坊市「材料」分类购买或秘境试炼掉落。
                   </div>
                 )}

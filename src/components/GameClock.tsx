@@ -6,7 +6,8 @@ import { useUIStore } from '@/store/uiStore';
 /**
  * 即时时钟驱动：每帧推进时钟，跨过月长时执行月度结算；
  * 独立事件检定按自身节奏运行，可发生在两次结算之间。
- * 存在阻塞弹窗（报告/事件/胜利/主菜单）时自动暂停，避免后台堆叠结算。
+ * 存在阻塞弹窗（报告/分支选择/探索遭遇/胜利/灭亡/主菜单）时自动暂停；
+ * 普通异闻只进待处理队列，不暂停时钟。
  */
 export const GameClock: React.FC = () => {
   useEffect(() => {
@@ -21,7 +22,6 @@ export const GameClock: React.FC = () => {
       const blocked = !gs.gameStarted
         || gs.showMainMenu
         || !!gs.reportView
-        || !!gs.activeEventId
         || !!gs.choiceEvent
         || gs.pendingEncounters.length > 0
         || gs.returnToMenuConfirm
@@ -37,7 +37,7 @@ export const GameClock: React.FC = () => {
         }
         for (let i = 0; i < Math.min(eventChecks, 1); i++) {
           const cur = useGameStore.getState();
-          if (!cur.reportView && !cur.activeEventId) cur.checkEventTrigger();
+          if (!cur.reportView) cur.checkEventTrigger();
         }
       }
 

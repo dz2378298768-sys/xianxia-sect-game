@@ -32,11 +32,15 @@ import type { Trial, TrialReward, ContributionLog, ContributionLogType, SectHist
 import {
   createInitialDisciple, createInitialBuildings, getDefaultPromotionRules, autoAssignBuilding,
   autoAssignResidence, getResidenceUpgradeCost, getResidenceCapacityByLevel, getTrainingGroundCapacityByLevel, getCaveMansionUpgradeCost,
+  getResidenceCultivationBonus,
+  calculateRecruitCost, getRecruitRefreshCost, getSectDebtLimit,
   monthlyReassign,
-  autoAssignManagers, autoLearnTechniqueOnBreakthrough, pickUpgradeBook,
+  autoAssignManagers, autoAssignMasters, autoLearnTechniqueOnBreakthrough, pickUpgradeBook,
   getMaintenanceCostByLevel, calculateLectureBonus, SKYSCRAPER_TOWER_COMBAT_POWER,
+  TRAINING_GROUND_LEVEL_TABLE,
   processDiscipleDepartures, mergeDepartureInventories,
   processMonthlyEmergentEvents, processMasterInheritance,
+  processMonthlyLineage, ADULT_AGE, getAmbitionEffects,
 } from '@/utils/gameLogic';
 import {
   calculateBuildingMaintenance,
@@ -77,6 +81,10 @@ import { syncLeaderboardScores } from '@/services/tapLeaderboard';
 import { TALISMAN_CONFIGS } from '@/data/talismans';
 import { BEAST_CONFIGS } from '@/data/beasts';
 import { EXPLORATION_REGIONS, getEncountersByRegion, getRegionById } from '@/data/exploration';
+import { processMonthlyWishes, getEffectiveWishStoneCost } from '@/utils/wishes';
+import type { Wish } from '@/types/wish';
+import type { FallenDisciple } from '@/types/enshrinement';
+import { getEnshrinementBonus, canEnshrine } from '@/domain/enshrinement';
 import { generateChainEvents, processPendingChainEvents, generatePriceFluctuations, calculateExpansionCost, calculateDiscipleWelfareCost, checkCalamityTrigger, generateCalamity, getSchoolTalentBonuses } from '@/utils/gameLogic';
 import { SCHOOL_TALENT_TREES } from '@/types/game';
 
@@ -142,7 +150,12 @@ interface GameState {
   otherSects: OtherSect[]; // 天下其他宗门
   trials: Trial[]; // 试炼任务列表（每年刷新）
   autoTrialEnabled: boolean; // 是否每月自动派遣空闲弟子执行可完成的试炼
+  encourageDaoPartners: boolean; // 是否鼓励道侣生育（血脉系统开关）
   followedDiscipleIds: string[]; // 关注的弟子ID列表
+  // 弟子心愿系统（独立于随机事件，不阻塞时钟）
+  wishes: Wish[];
+  // 英灵祠：寿终弟子记录（供玩家供奉）
+  fallenDisciples: FallenDisciple[];
   // 大比系统
   sectTournamentConfig: TournamentConfig;        // 山门大比配置（三频率独立）
   interSectTournamentConfig: TournamentConfig;  // 宗门大比配置（三频率独立）
@@ -180,8 +193,6 @@ interface GameState {
   initiateExploration: (regionId: string, discipleId: string) => { ok: boolean; reason?: string }; // 发起探索
   resolveExplorationEncounter: (choiceIndex: number) => void; // 处理探索遭遇
   recruitCandidates: Disciple[];           // 招收弟子候选列表（一次招 3~5 人让玩家挑）
-  recruitCostPerDisciple: number;          // 每个候选人的招收费用（统一费用，固定 50 灵石）
-  recruitRefreshCost: number;              // 「换一批」刷新候选列表的费用（固定 50 灵石）
   clearRecruitCandidates: () => void;      // 清空候选
   // 仓库快捷交易 & 自动交易：按 ShopItem.id 存规则（键对应 SHOP_ITEMS[i].id）
   autoTrade: Record<string, AutoTradeRule>;
@@ -215,12 +226,14 @@ interface GameState {
   upgradeBuilding: (buildingId: string) => boolean;
   downgradeBuilding: (buildingId: string) => { success: boolean; refundSpiritStones: number; refundReputation: number; reason?: string };
   toggleBuilding: (buildingId: string) => void;
-  recruitDisciple: (opts?: { refresh?: boolean }) => { candidates: Disciple[]; costPerDisciple: number };  // 返回候选列表；refresh=true 会扣 50 灵石的换一批费用
-  recruitConfirmDisciple: (candidate: Disciple) => { ok: boolean; reason?: string };  // 确认招收一名候选弟子
+  recruitDisciple: (opts?: { refresh?: boolean }) => { candidates: Disciple[] };  // 返回候选列表；生成/刷新按宗门等级收费
+  recruitConfirmDisciple: (candidate: Disciple) => { ok: boolean; reason?: string };  // 确认招收一名候选弟子（按天赋收费）
   kickDisciple: (discipleId: string) => { ok: boolean; reason?: string };  // 驱逐弟子出门
   getDiscipleById: (id: string) => Disciple | undefined;
   getBuildingById: (id: string) => Building | undefined;
   buildBuilding: (type: string) => boolean;
+  enshrineDisciple: (fallenId: string) => boolean;
+  unenshrineDisciple: (fallenId: string) => boolean;
   updatePromotionRules: (rules: Partial<PromotionRules>) => void;
   learnBook: (discipleId: string, bookId: string) => boolean;
   forgetBook: (discipleId: string, bookType: 'technique' | 'battle', bookId: string) => boolean;
@@ -285,6 +298,10 @@ interface GameState {
   dispatchDiscipleToTrial: (trialId: string, discipleId: string) => { ok: boolean; reason?: string };  // 派遣弟子执行试炼
   cancelTrial: (trialId: string) => void;  // 取消试炼（弟子返回，无奖励）
   toggleAutoTrial: () => void;  // 切换自动试炼开关
+  toggleEncourageDaoPartners: () => void; // 切换「鼓励道侣生育」政策
+  // 弟子心愿：应允 / 回绝
+  acceptWish: (wishId: string) => { ok: boolean; reason?: string };
+  rejectWish: (wishId: string) => { ok: boolean; reason?: string };
   toggleAutoExplore: (regionId: string) => void; // 切换指定区域自动探索开关
   // 外交系统优化
   giftSpiritStonesToSect: (sectId: string, amount: number) => { ok: boolean; reason?: string };  // 赠送灵石加好感
@@ -384,11 +401,11 @@ function produceWorkBuilding(
       if (!state.unlockedPillRecipes.includes(target.pillType)) continue;
       recipe = PILL_CONFIGS[target.pillType] ?? null;
       productionCap = Math.max(1, Math.floor(perSlotWorkers / 2)); // 丹药每2工人产1件
-    } else if (building.type === 'sutra_hall' && target.artifactType) {
+    } else if (building.type === 'forge_hall' && target.artifactType) {
       if (!state.unlockedArtifactRecipes.includes(target.artifactType)) continue;
       recipe = ARTIFACT_CONFIGS[target.artifactType] ?? null;
       productionCap = Math.max(1, Math.floor(perSlotWorkers / 3)); // 法器耗时，每3工人产1件
-    } else if (building.type === 'artifact_hall' && target.talismanType) {
+    } else if (building.type === 'talisman_hall' && target.talismanType) {
       if (!state.unlockedTalismanRecipes.includes(target.talismanType)) continue;
       recipe = TALISMAN_CONFIGS[target.talismanType] ?? null;
       productionCap = Math.max(1, Math.floor(perSlotWorkers / 2)); // 符箓每2工人产1件
@@ -586,7 +603,10 @@ const createInitialState = () => {
     otherSects,
     trials: [],
     autoTrialEnabled: false,
+    encourageDaoPartners: true,
     followedDiscipleIds: [],
+    wishes: [],
+    fallenDisciples: [],
     sectTournamentConfig: getDefaultTournamentConfig('sect'),
     interSectTournamentConfig: getDefaultTournamentConfig('inter-sect'),
     lastSectTournamentResults: { yearly: null, every5years: null, every10years: null },
@@ -618,8 +638,6 @@ const createInitialState = () => {
     lastCalamityYear: 0,
     welfareLastUsed: 0,
     recruitCandidates: [],
-    recruitCostPerDisciple: 50,
-    recruitRefreshCost: 50,
     autoTrade: {},
   };
 };
@@ -787,10 +805,10 @@ function getDefaultProductionTargets(type: BuildingType, state: GameState): Prod
       case 'pill_hall':
         // 默认生产筑基丹（最基础的丹药）
         return { pillType: 'foundation_pill' as const };
-      case 'sutra_hall':
+      case 'forge_hall':
         // 炼器堂默认生产飞剑（最基础的法器）
         return { artifactType: 'flying_sword' as const };
-      case 'artifact_hall':
+      case 'talisman_hall':
         // 符堂默认生产火符（最基础的符箓）
         return { talismanType: 'fire_talisman' as const };
       default:
@@ -969,6 +987,7 @@ export const useGameStore = create<GameState>()(
         if (!region) return { ok: false, reason: '区域不存在' };
         const disciple = state.disciples.find(d => d.id === discipleId);
         if (!disciple) return { ok: false, reason: '弟子不存在' };
+        if (disciple.age < ADULT_AGE) return { ok: false, reason: '未成年弟子尚不能外出探索' };
         if (disciple.onTrialId) return { ok: false, reason: '该弟子已在执行任务' };
         if (disciple.isBreakingThrough) return { ok: false, reason: '该弟子正在突破' };
 
@@ -1622,23 +1641,28 @@ export const useGameStore = create<GameState>()(
         void servantCount;
         // 注：杂役零花钱已并入"弟子维护费"（按身份等级统一扣除），此处不再单独计费
         
+        // 英灵祠：本月供奉英灵提供的声望与修炼庇佑（关闭建筑时增益为 0）
+        const enshrinementHall = buildings.find(b => b.type === 'enshrinement_hall');
+        const enshrinementBonus = getEnshrinementBonus(
+          state.fallenDisciples || [],
+          enshrinementHall?.level ?? 0,
+          enshrinementHall?.status === 'active',
+        );
+
         const updatedDisciples = disciples.map(disciple => {
           // 计算居所和洞府的修炼加成
           let bonusBuffs = [...disciple.buffs];
           
-          // 居所加成
+          // 居所加成（含洞府；建筑关闭时不生效）
           const residence = buildings.find(b =>
             (b.type === 'outer_residence' ||
-             b.type === 'inner_residence' || b.type === 'core_residence') &&
+             b.type === 'inner_residence' || b.type === 'core_residence' ||
+             b.type === 'cave_mansion') &&
+            b.status === 'active' &&
             b.assignedDisciples.includes(disciple.id)
           );
           if (residence) {
-            const residenceBonusMap: Record<string, number> = {
-              outer_residence: 10,
-              inner_residence: 20,
-              core_residence: 30,
-            };
-            const bonus = residenceBonusMap[residence.type] || 0;
+            const bonus = getResidenceCultivationBonus(residence.type, residence.level);
             if (bonus > 0) {
               bonusBuffs.push({
                 id: `residence_${residence.id}`,
@@ -1652,9 +1676,9 @@ export const useGameStore = create<GameState>()(
             }
           }
           
-          // 讲经堂加成
+          // 讲经堂加成（建筑关闭时不生效）
           const lectureHall = buildings.find(b =>
-            b.type === 'lecture_hall' && b.assignedDisciples.includes(disciple.id)
+            b.type === 'lecture_hall' && b.status === 'active' && b.assignedDisciples.includes(disciple.id)
           );
           if (lectureHall) {
             // 获取讲师
@@ -1671,6 +1695,19 @@ export const useGameStore = create<GameState>()(
                 remainingMonths: 1,
               });
             }
+          }
+
+          // 英灵祠庇佑：全宗修炼速度加成
+          if (enshrinementBonus.cultivationPercent > 0) {
+            bonusBuffs.push({
+              id: 'enshrinement_blessing',
+              name: '英灵庇佑',
+              description: `英灵祠庇佑，修炼加成 +${enshrinementBonus.cultivationPercent}%`,
+              type: 'cultivation',
+              value: enshrinementBonus.cultivationPercent,
+              duration: 1,
+              remainingMonths: 1,
+            });
           }
 
           const discipleWithBonus = { ...disciple, buffs: bonusBuffs };
@@ -1829,8 +1866,8 @@ export const useGameStore = create<GameState>()(
           const building = buildings.find(b => b.assignedDisciples.includes(d2.id));
           // 贡献点：先按默认公式计算，再叠加玩家为建筑设置的手动奖励/扣费
           const baseWorkContribution = computeMonthlyContribution(d2, building || null);
-          // 手动调整：建筑 contributionSettings
-          const settings = building?.contributionSettings;
+          // 手动调整：仅启用状态的建筑生效
+          const settings = building?.status === 'active' ? building.contributionSettings : undefined;
           let workContribution = baseWorkContribution;
           if (settings) {
             if (typeof settings.monthlyGainPerDisciple === 'number') {
@@ -1937,8 +1974,8 @@ export const useGameStore = create<GameState>()(
           // 在建筑产出循环中统一扣减
           
           // 满意度系统计算
-          // 检查是否有工作
-          const hasWork = building !== undefined || d2.status === 'elder';
+          // 检查是否有工作（未成年稚子只修炼不劳作，不算“无业”）
+          const hasWork = (building !== undefined && building.status === 'active') || d2.status === 'elder' || d2.age < ADULT_AGE;
           const currentResidence = buildings.find(b =>
             (b.type === 'outer_residence' || b.type === 'inner_residence' ||
              b.type === 'core_residence' ||
@@ -1982,11 +2019,14 @@ export const useGameStore = create<GameState>()(
             d2.maxSatisfactionLossResidence = Math.max(0, d2.maxSatisfactionLossResidence - 1);
           }
           
-          // 更新满意度
-          d2.satisfaction = Math.max(0, 100 - d2.maxSatisfactionLossWork - d2.maxSatisfactionLossResidence);
+          // 更新满意度：志向影响对不满的敏感度（护宗/寻亲更耐受，复仇更易生怨）
+          const prevSatisfaction = d2.satisfaction;
+          const satLossMult = getAmbitionEffects(d2.ambition)?.satisfactionLossMult ?? 1;
+          const rawSatLoss = d2.maxSatisfactionLossWork + d2.maxSatisfactionLossResidence;
+          d2.satisfaction = Math.max(0, Math.min(100, 100 - Math.round(rawSatLoss * satLossMult)));
 
-          // 满意度开始下降时通知（从100%降到99%时）
-          if (d2.satisfaction < 100 && d2.satisfaction === 99 - d2.maxSatisfactionLossWork - d2.maxSatisfactionLossResidence + 1) {
+          // 满意度开始下降时通知（从 100% 首次下降）
+          if (prevSatisfaction >= 100 && d2.satisfaction < 100) {
             const reasons: string[] = [];
             if (!hasWork) reasons.push('无工作');
             if (actualIndex < requiredIndex) reasons.push('居所不匹配');
@@ -2100,7 +2140,8 @@ export const useGameStore = create<GameState>()(
             .map(buff => ({ ...buff, remainingMonths: buff.remainingMonths - 1 }))
             .filter(buff => buff.remainingMonths > 0);
 
-          d2 = { ...d2, age: d2.age + 1 / 4 };
+          // 年龄以"年"存储，每过 1 个游戏月 +1/12 年（与日历 12 月/年一致）
+          d2 = { ...d2, age: d2.age + 1 / 12 };
 
           return d2;
         });
@@ -2109,13 +2150,8 @@ export const useGameStore = create<GameState>()(
         const trainingGround = currentBuildings.find(b => b.type === 'training_ground' && b.status === 'active');
         if (trainingGround) {
           // 等级效益：Lv1=耗20贡+5经验, Lv2=耗18贡+7经验, Lv3=耗15贡+10经验
-          const TRAINING_COST_TABLE: Record<number, { cost: number; gain: number }> = {
-            1: { cost: 20, gain: 5 },
-            2: { cost: 18, gain: 7 },
-            3: { cost: 15, gain: 10 },
-          };
           const lv = Math.min(trainingGround.level, 3);
-          const { cost, gain } = TRAINING_COST_TABLE[lv] || TRAINING_COST_TABLE[1];
+          const { cost, gain } = TRAINING_GROUND_LEVEL_TABLE[lv] || TRAINING_GROUND_LEVEL_TABLE[1];
           const trainingDisciples = updatedDisciples.map(d => {
             if (trainingGround.assignedDisciples.includes(d.id)) {
               if (d.contributionPoints >= cost) {
@@ -2166,11 +2202,32 @@ export const useGameStore = create<GameState>()(
         newNotifications.push(...depResult.notifications);
         pendingSectHistory.push(...depResult.sectHistories);
 
+        // 英灵祠：登记本月寿终弟子，供日后供奉
+        const newFallenDisciples: FallenDisciple[] = depResult.fallenDisciples.map(f => ({
+          id: f.id,
+          name: f.name,
+          status: f.status,
+          realm: f.realm,
+          contribution: f.contributionPoints,
+          age: f.age,
+          avatarSeed: f.avatarSeed,
+          deathYear: year,
+          deathMonth: month,
+          enshrined: false,
+        }));
+
         // 兼容旧代码：用新的幸存者替换 activeDisciples（leftDisciples 保留概念性字段避免后续 lint 报错）
         const leftDisciples: Disciple[] = []; // 语义保留，不再使用旧的 status=mortal 粗暴标记
         const activeDisciples = depResult.survivors;
 
         currentBuildings = [...buildings];
+
+        // 清理已离宗（寿终/叛逃）弟子在建筑中的残留分配，避免虚占床位与岗位
+        const activeIdSet = new Set(activeDisciples.map(d => d.id));
+        currentBuildings = currentBuildings.map(b => {
+          const kept = b.assignedDisciples.filter(id => activeIdSet.has(id));
+          return kept.length === b.assignedDisciples.length ? b : { ...b, assignedDisciples: kept };
+        });
 
         finalDisciples = activeDisciples.map(disciple => {
           let d = disciple;
@@ -2364,14 +2421,15 @@ export const useGameStore = create<GameState>()(
         // ⚠️ 需求1：取消"每月自动招收弟子"。弟子仅由玩家在「弟子管理」面板手动招募，
         // 不再由系统随机拜师进入宗门。
 
-        // 弟子每月维护费：按身份等级消耗灵石（凡人0、杂役1、外门2、内门4、核心6、长老10）
+        // 弟子每月维护费：按身份等级消耗灵石（凡人0、杂役2、外门5、内门12、核心25、长老50）
+        // 身份越高，月俸越高；杂役产出基础材料，外门及以上负责生产与修炼
         const DISCIPLE_MAINTENANCE_COST: Record<string, number> = {
           mortal: 0,
-          servant: 1,
-          outer: 2,
-          inner: 4,
-          core: 6,
-          elder: 10,
+          servant: 2,
+          outer: 5,
+          inner: 12,
+          core: 25,
+          elder: 50,
         };
         const discipleMaintenanceRaw = finalDisciples.reduce(
           (sum, d) => sum + (DISCIPLE_MAINTENANCE_COST[d.status] || 0),
@@ -2393,6 +2451,23 @@ export const useGameStore = create<GameState>()(
         finalDisciples = managerResult.disciples;
         currentBuildings = managerResult.buildings;
 
+        // 每月自动收徒：为尚无师承的外门/内门弟子指派师傅（师傅死亡后由继承逻辑处理衣钵）
+        finalDisciples = autoAssignMasters(finalDisciples);
+
+        // 血脉结算：道侣有概率诞下子嗣（受政策、弟子上限、外门床位三重约束）
+        const lineageResult = processMonthlyLineage(finalDisciples, currentBuildings, {
+          enabled: state.encourageDaoPartners,
+          discipleCap: SectLevelDiscipleCap[state.sectLevel],
+          sectLevel: state.sectLevel,
+          gameDate: { year, month },
+          createNotification,
+        });
+        if (lineageResult.newborns.length > 0) {
+          finalDisciples = [...finalDisciples, ...lineageResult.newborns];
+          currentBuildings = lineageResult.buildings;
+        }
+        newNotifications.push(...lineageResult.notifications);
+
         // 宗门扩张加成：每扩张一次 +5% 全局产出
         const expansionMultiplier = 1 + state.expansionCount * 0.05;
         totalSpiritStoneIncome = Math.floor(totalSpiritStoneIncome * expansionMultiplier);
@@ -2404,7 +2479,7 @@ export const useGameStore = create<GameState>()(
         });
 
         spiritStones += totalSpiritStoneIncome - totalMaintenance - rivalStoneLoss;
-        reputation += reputationChange + buildingReputation + rivalRepGain - rivalRepLoss;
+        reputation += reputationChange + buildingReputation + enshrinementBonus.reputationPerMonth + rivalRepGain - rivalRepLoss;
         
         // 声望上限检查
         const repCap = SectLevelReputationCap[state.sectLevel];
@@ -2418,7 +2493,7 @@ export const useGameStore = create<GameState>()(
           );
         }
         
-        // 跨年：正邪度每年自然回归中立 +1；所有互动产生的好感度 buff 也以每年 1 点向中立(50)回归
+        // 跨年：正邪度每年向中立(0)回归 1 点；所有互动产生的好感度 buff 也以每年 1 点向中立(50)回归
         let karmaYearlyRecover = 0;
         // 跨年回归时：每个宗门的 baseFavorability 向 50 靠拢 ±1（已达 50 的不调整）
         // 敌对/附庸门派不参与好感度自动回归（已是特殊关系）
@@ -2427,11 +2502,12 @@ export const useGameStore = create<GameState>()(
         if (month > 12) {
           month = 1;
           year += 1;
-          karmaYearlyRecover = 1;  // 跨年恢复 1 点正邪度
-          if (state.karma < 100) {
+          // 善恶都会随时间淡化：极善回落到中立，极恶也回落到中立
+          karmaYearlyRecover = state.karma > 0 ? -1 : state.karma < 0 ? 1 : 0;
+          if (karmaYearlyRecover !== 0) {
             newNotifications.push(createNotification(
               'info', '正邪自然回归',
-              `新的一年到來，宗门正邪度悄然回归中立 +1（当前 ${Math.min(100, state.karma + 1)}）。`,
+              `新的一年到來，宗门正邪度向中立回归 1 点（当前 ${state.karma + karmaYearlyRecover}）。`,
               { year, month },
             ));
           }
@@ -2839,9 +2915,9 @@ export const useGameStore = create<GameState>()(
         //       战力最匹配的空闲弟子（战力 >= requiredPower 优先，至少 >= 0.8 倍避免必败）。
         //       每个弟子每月最多被自动派遣一次，避免冲突。
         if (state.autoTrialEnabled) {
-          // 收集空闲弟子（非试炼中、非突破中、非学习秘籍、未离开）
+          // 收集空闲弟子（非试炼中、非突破中、非学习秘籍、已成年、未离开）
           const idleDisciples = finalDisciples.filter(d =>
-            !d.onTrialId && !d.isBreakingThrough && !d.isLearningSecret && d.status !== 'mortal',
+            !d.onTrialId && !d.isBreakingThrough && !d.isLearningSecret && d.status !== 'mortal' && d.age >= ADULT_AGE,
           );
           // 已被自动派遣占用的弟子ID集合
           const assignedIds = new Set<string>();
@@ -3372,7 +3448,7 @@ export const useGameStore = create<GameState>()(
 
         const emergentResult = processMonthlyEmergentEvents(
           activeDisciples, currentBuildings, finalSpiritStones, finalReputation, state.karma,
-          monthsNeg, { year, month }, createNotification, Math.random,
+          monthsNeg, { year, month }, createNotification, Math.random, state.sectLevel,
         );
         // 合并涌现事件通知
         newNotifications.push(...emergentResult.notifications);
@@ -3468,7 +3544,7 @@ export const useGameStore = create<GameState>()(
           // 计算自预警开始经过的月数
           const startYear = warning.warningStartYear ?? year;
           const startMonth = warning.warningStartMonth ?? month;
-          const monthsSinceWarning = (year - startYear) * 4 + (month - startMonth);
+          const monthsSinceWarning = (year - startYear) * 12 + (month - startMonth);
           if (monthsSinceWarning < warning.warningMonths) continue; // 预警期未到，继续等待
           // 预警到期触发
           newNotifications.push(createNotification(
@@ -3489,12 +3565,13 @@ export const useGameStore = create<GameState>()(
           collapsed: emergentResult.collapsed,
           collapseReason: emergentResult.collapseReason,
         };
-        // 灵石 ≤ -5000 时弹出警告
-        if (finalSpiritStones <= -5000 && !emergentResult.collapsed) {
+        // 濒临破产预警：已连续赤字 3 个月且负债达到上限一半时提示，给玩家半年调整期
+        const debtLimit = getSectDebtLimit(state.sectLevel);
+        if (!emergentResult.collapsed && monthsNeg >= 3 && finalSpiritStones < -debtLimit * 0.5) {
           newNotifications.push(createNotification(
             'danger',
             '灵石枯竭警告',
-            `连续四季度灵石负 5000，游戏将失败！`,
+            `宗门已连续 ${monthsNeg} 个月赤字，负债 ${Math.abs(Math.floor(finalSpiritStones))} 灵石。若连续 6 个月赤字且负债超过 ${debtLimit}，宗门将解散！`,
             { year, month },
           ));
         }
@@ -3535,6 +3612,19 @@ export const useGameStore = create<GameState>()(
         // 贡献值流水：将本月新记录合并到状态头部，最多保留 5000 条（避免存档无限膨胀）
         const mergedContributionLogs = [...pendingContributionLogs, ...state.contributionLogs].slice(0, 5000);
 
+        // 弟子心愿：过期结算 + 按概率生成新心愿（不阻塞时钟）
+        const wishResult = processMonthlyWishes({
+          disciples: finalDisciples,
+          wishes: state.wishes || [],
+          year,
+          month,
+          pillInventory: finalPillInventory,
+          spiritStones: finalSpiritStones,
+          unlockedRegions: currentUnlocked,
+          createNotification,
+        });
+        newNotifications.push(...wishResult.notifications);
+
         // 合并任务计数增量
         let mergedTaskCounters = state.taskCounters;
         if (Object.keys(counterDelta).length > 0) {
@@ -3562,6 +3652,8 @@ export const useGameStore = create<GameState>()(
           disciples: finalDisciples,
           buildings: [...currentBuildings],
           pillInventory: finalPillInventory,
+          wishes: wishResult.wishes,
+          fallenDisciples: [...(state.fallenDisciples || []), ...newFallenDisciples],
           artifactInventory: accArtifactInventory,
           talismanInventory: accTalismanInventory,
           beastInventory: newBeastInventory,
@@ -3604,8 +3696,8 @@ export const useGameStore = create<GameState>()(
           activeCalamity: newActiveCalamity,
           calamityWarnings: newCalamityWarnings,
           lastCalamityYear: newLastCalamityYear,
-          // 正邪度年度自然回复（每年+1，封顶+100）
-          karma: Math.min(100, state.karma + karmaYearlyRecover),
+          // 正邪度年度自然回归（每年向中立回归 1 点）
+          karma: Math.max(-100, Math.min(100, state.karma + karmaYearlyRecover)),
         });
         // 每月结束后同步排行榜（防抖 30 秒）
         const finalState = get();
@@ -3648,8 +3740,9 @@ export const useGameStore = create<GameState>()(
         if (state.choiceEvent || state.pendingEncounters.length > 0) return null;
         if (state.pendingEvents.length >= 3) return null;
 
-        const pity = state.eventCheckMisses >= 2;
-        if (!pity && Math.random() > 0.45) {
+        // 每月一次检定：15% 概率触发；连续 4 次未中则保底触发
+        const pity = state.eventCheckMisses >= 4;
+        if (!pity && Math.random() > 0.15) {
           set({ eventCheckMisses: state.eventCheckMisses + 1 });
           return null;
         }
@@ -3660,10 +3753,10 @@ export const useGameStore = create<GameState>()(
           return null;
         }
         const pending = createPendingEvent(config, view, Math.random);
+        // 事件只进待处理队列，不主动弹窗、不暂停时钟：玩家可通过「待处理异闻」入口自行处理
         set({
           pendingEvents: [...state.pendingEvents, pending],
           eventCheckMisses: 0,
-          activeEventId: config.id,
           notifications: [
             createNotification('info', '异闻现世', `【${config.title}】${config.description}`, { year: state.year, month: state.month }),
             ...state.notifications,
@@ -3789,10 +3882,18 @@ export const useGameStore = create<GameState>()(
       expireEvents: () => {
         const state = get();
         const absNow = getAbsMonth(state.year, state.month);
-        const expired = state.pendingEvents.filter(p => p.expiresAt <= absNow);
+        const expired = state.pendingEvents.filter(p => p.expiresAt <= absNow && p.eventId !== state.activeEventId);
         for (const p of expired) {
           const config = GAME_EVENT_MAP[p.eventId];
-          if (config) get().resolveEvent(p.eventId, config.choices[0].id, true);
+          if (!config) continue;
+          // 默认选项：优先使用事件配置的 defaultChoiceId，缺省取第一项
+          const preferred = config.choices.find(c => c.id === config.defaultChoiceId) ?? config.choices[0];
+          // 超时自动结算不应逼玩家破财：默认项负担不起时，退而选择第一个可负担项
+          const view = toEventView(get());
+          const chosen = canAffordChoice(view, preferred).ok
+            ? preferred
+            : (config.choices.find(c => canAffordChoice(view, c).ok) ?? preferred);
+          get().resolveEvent(p.eventId, chosen.id, true);
         }
       },
 
@@ -4030,7 +4131,8 @@ export const useGameStore = create<GameState>()(
           upgradeCost = getResidenceUpgradeCost(building);
           if (!upgradeCost) return false;
         } else {
-          upgradeCost = building.upgradeCosts[building.level - 1];
+          // 以配置表为准，避免旧存档中建筑自带的 upgradeCosts 仍保留"首次免费"档位
+          upgradeCost = BUILDING_CONFIGS[building.type].upgradeCosts[building.level - 1];
           if (!upgradeCost) return false;
         }
 
@@ -4068,7 +4170,16 @@ export const useGameStore = create<GameState>()(
           reputation: state.reputation - needReputation,
           buildings: state.buildings.map(b =>
             b.id === buildingId
-              ? { ...b, level: newLevel, discipleCapacity: newCapacity, baseMaintenanceCost: newMaintenanceCost }
+              ? {
+                  ...b,
+                  level: newLevel,
+                  discipleCapacity: newCapacity,
+                  baseMaintenanceCost: newMaintenanceCost,
+                  // 升级后同步为最新配置费用，保证降级返还与实际支出对称（旧存档的免费档位随之作废）
+                  upgradeCosts: isCaveMansion
+                    ? b.upgradeCosts
+                    : (BUILDING_CONFIGS[b.type]?.upgradeCosts ?? b.upgradeCosts),
+                }
               : b
           ),
           sectHistory: [historyEntry, ...state.sectHistory].slice(0, 200),
@@ -4098,11 +4209,18 @@ export const useGameStore = create<GameState>()(
             refundSpiritStones = cost.spiritStones;
           }
         } else if (isResidence) {
-          const prevLevelBuilding = { ...building, level: building.level - 1 };
-          const cost = getResidenceUpgradeCost(prevLevelBuilding);
-          if (cost) {
-            refundSpiritStones = cost.spiritStones;
-            refundReputation = cost.reputation ?? 0;
+          // 优先使用建筑实际记录的升级费用（旧存档为旧价格，避免多退）
+          const storedCost = building.upgradeCosts[building.level - 2];
+          if (storedCost) {
+            refundSpiritStones = storedCost.spiritStones;
+            refundReputation = storedCost.reputation ?? 0;
+          } else {
+            const prevLevelBuilding = { ...building, level: building.level - 1 };
+            const cost = getResidenceUpgradeCost(prevLevelBuilding);
+            if (cost) {
+              refundSpiritStones = cost.spiritStones;
+              refundReputation = cost.reputation ?? 0;
+            }
           }
         } else {
           const cost = building.upgradeCosts[building.level - 2];
@@ -4178,11 +4296,11 @@ export const useGameStore = create<GameState>()(
       
       recruitDisciple: (opts) => {
         const state = get();
-        // 固定规则：首次打开生成候选、以及「换一批」刷新候选都扣 50 灵石；招入免费
-        const FIXED_COST = 50;
+        // 生成/刷新候选按宗门等级收费；招入时再按候选主天赋单独收费
+        const refreshCost = getRecruitRefreshCost(state.sectLevel);
         // 灵石不足：拒绝生成/刷新候选（返回空数组，UI 会显示无候选）
-        if (state.spiritStones < FIXED_COST) {
-          return { candidates: [], costPerDisciple: FIXED_COST };
+        if (state.spiritStones < refreshCost) {
+          return { candidates: [] };
         }
         // 按招收规则生成 3~5 名候选弟子
         const rule = state.promotionRules.recruitment;
@@ -4214,19 +4332,30 @@ export const useGameStore = create<GameState>()(
           c.contributionPoints = 0;
           candidates.push(c);
         }
-        // 首次打开 & 刷新都扣 50 灵石；招入时免费
+        // 首次打开 & 刷新都扣刷新费；招入时按天赋另计
         set({
           recruitCandidates: candidates,
-          recruitCostPerDisciple: FIXED_COST,
-          recruitRefreshCost: FIXED_COST,
-          spiritStones: state.spiritStones - FIXED_COST,
+          spiritStones: state.spiritStones - refreshCost,
         });
-        return { candidates, costPerDisciple: FIXED_COST };
+        return { candidates };
       },
 
-      // 确认招收候选弟子（不再扣灵石，灵石费已在生成候选时一次性扣除）
+      // 确认招收候选弟子：按天赋收取招收费
       recruitConfirmDisciple: (candidate) => {
         const state = get();
+
+        // 1) 弟子上限：由宗门等级决定
+        const discipleCap = SectLevelDiscipleCap[state.sectLevel];
+        if (discipleCap !== null && state.disciples.length >= discipleCap) {
+          return { ok: false, reason: `宗门弟子已达上限（${discipleCap} 人），请晋升宗门等级或遣散弟子。` };
+        }
+
+        // 2) 招收费用：按候选主天赋定价，天赋越高越贵
+        const hireCost = calculateRecruitCost(candidate);
+        if (state.spiritStones < hireCost) {
+          return { ok: false, reason: `灵石不足（招收该弟子需 ${hireCost} 灵石）` };
+        }
+
         const newDisciple: Disciple = { ...candidate, id: generateId() };
 
         // 师承关系
@@ -4257,16 +4386,20 @@ export const useGameStore = create<GameState>()(
           );
           newDisciple.assignedBuilding = servantHall.id;
         }
-        const { newBuildings } = autoAssignResidence(newDisciple, currentBuildings);
+        // 3) 床位：杂役也要睡外门通铺，没有空床位就不能再招人
+        const { buildingId: bedBuildingId, newBuildings } = autoAssignResidence(newDisciple, currentBuildings);
+        if (!bedBuildingId) {
+          return { ok: false, reason: '外门居所已满，无法安置新弟子，请先升级或扩建外门居所。' };
+        }
         const joinNotif = createNotification(
           'success', '新弟子加入',
-          `${newDisciple.name} 已拜入山门，从杂役做起。`,
+          `${newDisciple.name} 以 ${hireCost} 灵石拜入山门，从杂役做起。`,
           { year: state.year, month: state.month },
         );
         set(state => ({
           disciples: [...state.disciples, newDisciple],
           buildings: newBuildings,
-          // 招入时免费：灵石已在生成/刷新候选列表时一次性扣除
+          spiritStones: state.spiritStones - hireCost,
           recruitCandidates: state.recruitCandidates.filter(c => c.id !== candidate.id),
           monthlyTaskCounters: incCounter(state.monthlyTaskCounters, 'monthlyRecruit'),
           notifications: [joinNotif, ...state.notifications].slice(0, 50),
@@ -4276,7 +4409,7 @@ export const useGameStore = create<GameState>()(
 
       // 清空招收候选
       clearRecruitCandidates: () => {
-        set({ recruitCandidates: [], recruitCostPerDisciple: 50, recruitRefreshCost: 50 });
+        set({ recruitCandidates: [] });
       },
       
       getDiscipleById: (id: string) => {
@@ -4336,6 +4469,53 @@ export const useGameStore = create<GameState>()(
           buildings: [...state.buildings, newBuilding],
         }));
 
+        return true;
+      },
+
+      enshrineDisciple: (fallenId: string): boolean => {
+        const state = get();
+        const hall = state.buildings.find(b => b.type === 'enshrinement_hall');
+        if (!hall || hall.status !== 'active') return false;
+        const fallen = state.fallenDisciples.find(f => f.id === fallenId);
+        if (!fallen) return false;
+        const enshrinedCount = state.fallenDisciples.filter(f => f.enshrined).length;
+        const check = canEnshrine(fallen, hall.level, enshrinedCount);
+        if (!check.ok) return false;
+
+        set(prev => ({
+          fallenDisciples: prev.fallenDisciples.map(f =>
+            f.id === fallenId ? { ...f, enshrined: true } : f,
+          ),
+          notifications: [
+            createNotification(
+              'success', '英灵入祠',
+              `${fallen.name}（${DiscipleStatusNames[fallen.status]}·${RealmNames[fallen.realm]}）已供奉于英灵祠，英灵庇佑宗门。`,
+              { year: prev.year, month: prev.month },
+            ),
+            ...prev.notifications,
+          ].slice(0, 50),
+        }));
+        return true;
+      },
+
+      unenshrineDisciple: (fallenId: string): boolean => {
+        const state = get();
+        const fallen = state.fallenDisciples.find(f => f.id === fallenId);
+        if (!fallen || !fallen.enshrined) return false;
+
+        set(prev => ({
+          fallenDisciples: prev.fallenDisciples.map(f =>
+            f.id === fallenId ? { ...f, enshrined: false } : f,
+          ),
+          notifications: [
+            createNotification(
+              'info', '英灵移出',
+              `${fallen.name} 的英灵牌位已从英灵祠移出。`,
+              { year: prev.year, month: prev.month },
+            ),
+            ...prev.notifications,
+          ].slice(0, 50),
+        }));
         return true;
       },
 
@@ -5360,6 +5540,7 @@ export const useGameStore = create<GameState>()(
         if (trial.status !== 'available') return { ok: false, reason: '该试炼不可派遣' };
         const disciple = state.disciples.find(d => d.id === discipleId);
         if (!disciple) return { ok: false, reason: '弟子不存在' };
+        if (disciple.age < ADULT_AGE) return { ok: false, reason: '未成年弟子尚不能外出试炼' };
         if (disciple.onTrialId) return { ok: false, reason: '该弟子正在执行其他试炼' };
         if (disciple.isBreakingThrough) return { ok: false, reason: '该弟子正在突破中' };
         if (disciple.isLearningSecret) return { ok: false, reason: '该弟子正在学习秘籍' };
@@ -5397,6 +5578,143 @@ export const useGameStore = create<GameState>()(
       toggleAutoTrial: () => {
         const state = get();
         set({ autoTrialEnabled: !state.autoTrialEnabled });
+      },
+
+      toggleEncourageDaoPartners: () => {
+        const state = get();
+        set({ encourageDaoPartners: !state.encourageDaoPartners });
+      },
+
+      acceptWish: (wishId) => {
+        const state = get();
+        const wish = state.wishes.find(w => w.id === wishId);
+        if (!wish || wish.status !== 'pending') return { ok: false, reason: '心愿不存在或已处理' };
+        const disciple = state.disciples.find(d => d.id === wish.discipleId);
+        if (!disciple) return { ok: false, reason: '该弟子已不在宗门' };
+
+        // 师徒联动：师傅在宗门内时替徒弟贴补一半灵石（无灵石花费的心愿不触发）
+        const master = disciple.master
+          ? state.disciples.find(d => d.name === disciple.master)
+          : undefined;
+        const baseStoneCost = wish.cost.spiritStones ?? 0;
+        const subsidized = !!master && baseStoneCost > 0;
+        const stoneCost = getEffectiveWishStoneCost(wish.cost, !!master);
+        if (stoneCost > 0 && state.spiritStones < stoneCost) {
+          return { ok: false, reason: `灵石不足（需 ${stoneCost}）` };
+        }
+        if (wish.cost.pillType) {
+          const pill = state.pillInventory.find(p => p.type === wish.cost.pillType);
+          if (!pill || pill.quantity <= 0) return { ok: false, reason: '所需丹药库存不足' };
+        }
+
+        // 结伴历练：直接派遣弟子前往指定区域
+        if (wish.kind === 'explore') {
+          if (!wish.cost.regionId) return { ok: false, reason: '目的地缺失' };
+          const res = get().initiateExploration(wish.cost.regionId, wish.discipleId);
+          if (!res.ok) return { ok: false, reason: res.reason || '该弟子暂无暇外出历练' };
+        }
+
+        // 道侣同行：道侣空闲（不在进行中的试炼）时一同前往，获得历练收益
+        const daoPartner = wish.kind === 'explore' && disciple.daoPartner
+          ? state.disciples.find(d => d.name === disciple.daoPartner)
+          : undefined;
+        const partnerAvailable = !!daoPartner && !state.trials.some(
+          t => t.status === 'in_progress' && t.assignedDiscipleId === daoPartner.id,
+        );
+
+        const stageReq = getStageBreakthroughRequired(disciple.realm, disciple.realmStage);
+        set(prev => {
+          let pillInventory = prev.pillInventory;
+          if (wish.cost.pillType) {
+            pillInventory = removeItem(prev.pillInventory, wish.cost.pillType as PillType);
+          }
+          const disciples = prev.disciples.map(d => {
+            // 师傅满意度提升：徒弟心愿得偿，师傅也有面子
+            if (subsidized && master && d.id === master.id) {
+              return { ...d, satisfaction: Math.min(100, d.satisfaction + 4) };
+            }
+            // 道侣同行：满意度与战斗经验提升
+            if (partnerAvailable && daoPartner && d.id === daoPartner.id) {
+              return {
+                ...d,
+                satisfaction: Math.min(100, d.satisfaction + 6),
+                combatExperience: Math.min(100, d.combatExperience + 10),
+              };
+            }
+            if (d.id !== wish.discipleId) return d;
+            // 徒弟额外满意度：师傅代付时更感激
+            const extra = subsidized ? 4 : 0;
+            switch (wish.kind) {
+              case 'pill':
+                return {
+                  ...d,
+                  satisfaction: Math.min(100, d.satisfaction + 12 + extra),
+                  realmProgress: Math.min(stageReq, d.realmProgress + Math.ceil(stageReq * 0.15)),
+                };
+              case 'book':
+                return {
+                  ...d,
+                  satisfaction: Math.min(100, d.satisfaction + 10 + extra),
+                  contributionPoints: d.contributionPoints + 30,
+                };
+              case 'home_visit':
+                return { ...d, satisfaction: Math.min(100, d.satisfaction + 15 + extra) };
+              case 'reconcile':
+                return { ...d, satisfaction: Math.min(100, d.satisfaction + 10 + extra), rival: null };
+              case 'explore':
+                return { ...d, satisfaction: Math.min(100, d.satisfaction + 8 + extra) };
+              default:
+                return d;
+            }
+          });
+          return {
+            wishes: prev.wishes.map(w => w.id === wishId
+              ? { ...w, status: 'accepted' as const, resolvedYear: prev.year, resolvedMonth: prev.month }
+              : w),
+            disciples,
+            pillInventory,
+            spiritStones: prev.spiritStones - stoneCost,
+            karma: wish.kind === 'reconcile'
+              ? Math.max(-100, Math.min(100, prev.karma + 2))
+              : prev.karma,
+          };
+        });
+
+        const st = get();
+        const wishContent = partnerAvailable && daoPartner
+          ? `宗门应允了 ${wish.discipleName} 的心愿「${wish.title}」，道侣 ${daoPartner.name} 一同前往历练。`
+          : subsidized && master
+            ? `宗门应允了 ${wish.discipleName} 的心愿「${wish.title}」，师傅 ${master.name} 代为贴补一半灵石。`
+            : `宗门应允了 ${wish.discipleName} 的心愿「${wish.title}」。`;
+        const notif = createNotification(
+          'success', '心愿已了',
+          wishContent,
+          { year: st.year, month: st.month },
+        );
+        set(prev => ({ notifications: [notif, ...prev.notifications].slice(0, 50) }));
+        return { ok: true };
+      },
+
+      rejectWish: (wishId) => {
+        const state = get();
+        const wish = state.wishes.find(w => w.id === wishId);
+        if (!wish || wish.status !== 'pending') return { ok: false, reason: '心愿不存在或已处理' };
+        set(prev => ({
+          wishes: prev.wishes.map(w => w.id === wishId
+            ? { ...w, status: 'rejected' as const, resolvedYear: prev.year, resolvedMonth: prev.month }
+            : w),
+          disciples: prev.disciples.map(d => d.id === wish.discipleId
+            ? { ...d, satisfaction: Math.max(0, d.satisfaction - 8) }
+            : d),
+        }));
+        const st = get();
+        const notif = createNotification(
+          'info', '心愿被拒',
+          `${wish.discipleName} 的心愿「${wish.title}」未获应允，心中略有失落。`,
+          { year: st.year, month: st.month },
+        );
+        set(prev => ({ notifications: [notif, ...prev.notifications].slice(0, 50) }));
+        return { ok: true };
       },
 
       toggleAutoExplore: (regionId: string) => {
@@ -5682,7 +6000,13 @@ export const useGameStore = create<GameState>()(
         const snapshot = loadFromSlotUtil(slotIndex);
         if (!snapshot) return false;
         // 读取快照后替换全部 state，保留 action 函数（set 会合并）
-        set({ ...snapshot, showMainMenu: false, gameStarted: true });
+        set({
+          ...snapshot,
+          // 兼容旧存档：英灵祠记录字段缺失时补空数组
+          fallenDisciples: snapshot.fallenDisciples ?? [],
+          showMainMenu: false,
+          gameStarted: true,
+        });
         // 加载后同步排行榜
         const newState = get();
         const totalPower = calculateSectCombatPower(newState.disciples, newState.buildings).totalPower;
@@ -6389,6 +6713,7 @@ export const useGameStore = create<GameState>()(
         const st = get();
         const d = st.disciples.find(x => x.id === discipleId);
         if (!d) return { canPromote: false, nextStatus: null, reason: '弟子不存在' };
+        if (d.age < ADULT_AGE) return { canPromote: false, nextStatus: null, reason: '未成年弟子尚不能晋升，成年后方可考核' };
         const rules = st.promotionRules;
         const statusOrder: DiscipleStatus[] = ['servant', 'outer', 'inner', 'core', 'elder'];
         const curIdx = statusOrder.indexOf(d.status as DiscipleStatus);
@@ -6611,10 +6936,20 @@ export const useGameStore = create<GameState>()(
     }),
     {
       name: 'sect-game-save',
-      version: 12,
+      version: 15,
       migrate: (persistedState: any, version) => {
         if (!persistedState) return persistedState;
         const state = persistedState as GameState;
+        // v14: 英灵祠（寿终弟子记录）
+        if (!state.fallenDisciples) state.fallenDisciples = [];
+        // v13: 弟子心愿 + 弟子志向
+        if (!state.wishes) state.wishes = [];
+        if (state.disciples) {
+          const ambitions = ['dao', 'revenge', 'protect', 'kinship', 'longevity'];
+          state.disciples = state.disciples.map((d: any, i: number) => (
+            d.ambition ? d : { ...d, ambition: ambitions[i % ambitions.length] }
+          ));
+        }
         // v7: 新增 sectName 字段，旧存档默认为「修仙宗门」
         if (!state.sectName) {
           state.sectName = '修仙宗门';
@@ -6655,15 +6990,51 @@ export const useGameStore = create<GameState>()(
           state.showReport = false;
           state.reportView = null;
         }
+        // v15: 建筑类型键名修正（sutra_hall → forge_hall 炼器堂，artifact_hall → talisman_hall 符堂）
+        // 必须在下方 validTypes 白名单过滤之前执行，否则旧存档中的炼器堂/符堂会被当作非法建筑删除
+        if (state.buildings) {
+          state.buildings = state.buildings.map((b: any) => {
+            if (b.type === 'sutra_hall') return { ...b, type: 'forge_hall' };
+            if (b.type === 'artifact_hall') return { ...b, type: 'talisman_hall' };
+            return b;
+          });
+        }
+        // v15: 建筑实例里存的是建号时的经济快照，不同步刷新会导致老存档继续用旧产出/旧维护费
+        // （例：杂役堂仍是 25 灵石+3 灵草，阵堂还在产灵石），新经济只对新建账号生效。
+        if (state.buildings) {
+          state.buildings = state.buildings.map((b: any) => {
+            const cfg = BUILDING_CONFIGS[b.type as BuildingType];
+            if (!cfg) return b;
+            // 居所/洞府的升级价由专门函数按等级计算，保留历史快照，避免返还口径变化
+            const keepUpgradeCosts =
+              b.type === 'cave_mansion' || RESIDENCE_TYPES.includes(b.type);
+            return {
+              ...b,
+              name: cfg.name,
+              maxLevel: cfg.maxLevel,
+              baseOutput: cfg.baseOutput,
+              baseMaintenanceCost: cfg.baseMaintenanceCost,
+              upgradeCosts: keepUpgradeCosts ? b.upgradeCosts : cfg.upgradeCosts,
+              description: cfg.description,
+              category: cfg.category,
+              primaryOutput: cfg.primaryOutput,
+              buildCost: cfg.buildCost,
+              minDiscipleStatus: cfg.minDiscipleStatus,
+              monthlyContributionCost: cfg.monthlyContributionCost,
+              unlockRequirement: cfg.unlockRequirement,
+              discipleEffect: cfg.discipleEffect,
+            };
+          });
+        }
         if (state.buildings) {
           // 有效建筑类型（杂役居所已移除，旧存档中的杂役居所会被过滤）
           const validTypes = new Set([
             'mountain_gate', 'lecture_hall', 'servant_hall',
-            'pill_hall', 'sutra_hall', 'artifact_hall',
+            'pill_hall', 'forge_hall', 'talisman_hall',
             'secret_library', 'array_hall', 'spirit_beast_garden',
             'skyscraper_tower', 'training_ground',
             'outer_residence', 'inner_residence', 'core_residence',
-            'cave_mansion'
+            'cave_mansion', 'enshrinement_hall'
           ]);
           const removedIds = new Set(
             state.buildings
@@ -6708,6 +7079,10 @@ export const useGameStore = create<GameState>()(
         // 补齐 autoTrialEnabled（旧存档没有此字段）
         if (typeof state.autoTrialEnabled !== 'boolean') {
           state.autoTrialEnabled = false;
+        }
+        // 补齐 encourageDaoPartners（旧存档没有此字段，默认开启）
+        if (typeof state.encourageDaoPartners !== 'boolean') {
+          state.encourageDaoPartners = true;
         }
         // 关注弟子列表
         if (!state.followedDiscipleIds) {

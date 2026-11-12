@@ -11,11 +11,11 @@ function makePillHall(overrides: Partial<Building> = {}): Building {
     level: 1,
     maxLevel: 3,
     status: 'active',
-    baseOutput: { spiritStones: 25, pills: 1 },
-    baseMaintenanceCost: 25,
+    baseOutput: { spiritStones: 5 },
+    baseMaintenanceCost: 60,
     upgradeCosts: [
-      { spiritStones: 400 },
-      { spiritStones: 1200 },
+      { spiritStones: 600 },
+      { spiritStones: 1500 },
     ],
     elderBonus: 0,
     discipleCapacity: 10,
@@ -43,13 +43,13 @@ describe('upgradeBuilding / downgradeBuilding — 两类资源对称扣返', () 
     const ok = store.upgradeBuilding('pill-1');
     expect(ok).toBe(true);
     const after = useGameStore.getState();
-    // L1→L2 费用：spiritStones 400
-    expect(after.spiritStones).toBe(10000 - 400);
+    // L1→L2 费用：spiritStones 600
+    expect(after.spiritStones).toBe(10000 - 600);
     expect(after.buildings[0].level).toBe(2);
   });
 
   it('灵石不足时拒绝升级', () => {
-    useGameStore.setState({ spiritStones: 100 }); // 不足 400
+    useGameStore.setState({ spiritStones: 100 }); // 不足 600
     const store = useGameStore.getState();
     const ok = store.upgradeBuilding('pill-1');
     expect(ok).toBe(false);
@@ -64,31 +64,42 @@ describe('upgradeBuilding / downgradeBuilding — 两类资源对称扣返', () 
     const before = useGameStore.getState();
     const result = before.downgradeBuilding('pill-1');
     expect(result.success).toBe(true);
-    expect(result.refundSpiritStones).toBe(400);
+    expect(result.refundSpiritStones).toBe(600);
     const after = useGameStore.getState();
     // 返还后应回到升级前的资源水平
     expect(after.spiritStones).toBe(10000);
     expect(after.buildings[0].level).toBe(1);
   });
 
-  it('声望类升级费用也被同步扣除与返还', () => {
-    // 构造一个含 reputation 成本的建筑
+  it('旧存档中“首次免费”的升级档位不再生效，扣费与返还按配置对称', () => {
+    // 旧存档建筑自带 [{ spiritStones: 0 }]，升级应以配置价 600 收取
     useGameStore.setState({
       spiritStones: 10000,
-      reputation: 1000,
-      buildings: [makePillHall({
-        id: 'rep-1',
-        upgradeCosts: [{ spiritStones: 500, reputation: 100 }],
-      })],
+      buildings: [makePillHall({ id: 'legacy-1', upgradeCosts: [{ spiritStones: 0 }] })],
     });
-    const store = useGameStore.getState();
-    expect(store.upgradeBuilding('rep-1')).toBe(true);
-    const after = useGameStore.getState();
-    expect(after.reputation).toBe(1000 - 100);
-    // 降级返还
-    const r = useGameStore.getState().downgradeBuilding('rep-1');
+    expect(useGameStore.getState().upgradeBuilding('legacy-1')).toBe(true);
+    expect(useGameStore.getState().spiritStones).toBe(10000 - 600);
+
+    // 升级时同步了配置费用，降级返还与支出对称
+    const r = useGameStore.getState().downgradeBuilding('legacy-1');
     expect(r.success).toBe(true);
-    expect(useGameStore.getState().reputation).toBe(1000);
+    expect(r.refundSpiritStones).toBe(600);
+    expect(useGameStore.getState().spiritStones).toBe(10000);
+  });
+});
+
+describe('关闭建筑 — 在岗弟子不再视为有工作', () => {
+  it('关闭杂役堂后，驻守弟子开始累计“无工作”满意度损失', () => {
+    useGameStore.getState().newGame('关闭建筑测试宗');
+    const hall = useGameStore.getState().buildings.find(b => b.type === 'servant_hall')!;
+    expect(hall.assignedDisciples.length).toBeGreaterThan(0);
+    const discipleId = hall.assignedDisciples[0];
+
+    useGameStore.getState().toggleBuilding(hall.id);
+    useGameStore.getState().nextMonth();
+
+    const after = useGameStore.getState().disciples.find(d => d.id === discipleId)!;
+    expect(after.maxSatisfactionLossWork).toBeGreaterThanOrEqual(1);
   });
 });
 

@@ -121,6 +121,8 @@ export interface GameEventConfig {
   conditions?: EventCondition;
   description: string;
   targetDisciple?: EventTargetMode;
+  /** 默认选项：玩家超时未处理时自动执行（缺省取 choices[0]） */
+  defaultChoiceId?: string;
   choices: EventChoice[];
 }
 

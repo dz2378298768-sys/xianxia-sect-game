@@ -64,6 +64,8 @@ export const TasksPanel: React.FC<Props> = ({ mobileMode }) => {
   const { setMobileSidePanel, setSelectedDiscipleId, setActivePanel } = useUIStore();
   const [activeTab, setActiveTab] = useState<TabKey>('main');
   const [expanded, setExpanded] = useState(false);
+  // 桌面端浮动任务栏可最小化，收起为右侧竖条，避免长期遮挡画面
+  const [minimized, setMinimized] = useState(false);
 
   const view: TaskStateView = {
     sectLevel,
@@ -206,6 +208,28 @@ export const TasksPanel: React.FC<Props> = ({ mobileMode }) => {
     );
   };
 
+  // 最小化后只保留右侧竖条，点击展开
+  if (!mobileMode && minimized) {
+    return (
+      <button
+        type="button"
+        onClick={() => setMinimized(false)}
+        title="展开任务栏"
+        className="absolute top-[76px] right-0 z-20 flex flex-col items-center gap-1 pl-1.5 pr-1 py-2.5 rounded-l-lg border border-r-0 border-[rgba(212,168,87,0.35)] bg-[rgba(18,22,26,0.92)] text-[var(--gold-200)] hover:text-[var(--gold-300)] btn-press"
+      >
+        <SectIcon name="chevronUp" size={13} strokeWidth={2} />
+        <span className="text-[10px] font-display [writing-mode:vertical-rl] tracking-widest">任务</span>
+        {claimableCount > 0 ? (
+          <span className="mt-0.5 inline-flex items-center justify-center min-w-[14px] h-[14px] px-0.5 rounded-full bg-[var(--cinnabar)] text-white text-[9px]">
+            {claimableCount}
+          </span>
+        ) : (
+          <SectIcon name="scroll" size={12} strokeWidth={1.6} className="text-[var(--gold-300)]/60" />
+        )}
+      </button>
+    );
+  }
+
   const followedHeight = mobileMode ? 0 : (hasFollowed ? Math.min(68 + followedDisciples.length * 24, 180) : 52);
   const taskMaxHeight = mobileMode ? undefined : `calc(100vh - 280px - ${followedHeight}px)`;
 
@@ -218,7 +242,7 @@ export const TasksPanel: React.FC<Props> = ({ mobileMode }) => {
     <div className={containerClass} style={containerStyle}>
       {/* 标签页 */}
       <div className="flex border-b border-[rgba(212,168,87,0.3)] shrink-0">
-        {(Object.keys(TAB_LABELS) as TabKey[]).filter(k => !mobileMode || k !== 'achievement').map(tab => {
+        {(Object.keys(TAB_LABELS) as TabKey[]).map(tab => {
           const badge = tabBadge(tab);
           return (
             <button
@@ -235,10 +259,17 @@ export const TasksPanel: React.FC<Props> = ({ mobileMode }) => {
             </button>
           );
         })}
-        {mobileMode && (
+        {mobileMode ? (
           <button className="text-[var(--ink-400)] hover:text-[var(--gold-300)] px-2 flex items-center"
-            onClick={() => setMobileSidePanel('tasks')}>
+            onClick={() => setMobileSidePanel('tasks')}
+            title="关闭">
             <SectIcon name="close" size={16} strokeWidth={2} />
+          </button>
+        ) : (
+          <button className="text-[var(--ink-400)] hover:text-[var(--gold-300)] px-2 flex items-center shrink-0"
+            onClick={() => setMinimized(true)}
+            title="最小化">
+            <SectIcon name="minus" size={16} strokeWidth={2} />
           </button>
         )}
       </div>

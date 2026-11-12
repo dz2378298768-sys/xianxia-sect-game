@@ -3,8 +3,8 @@ export type BuildingType =
   | 'lecture_hall'
   | 'servant_hall'
   | 'pill_hall'
-  | 'sutra_hall'
-  | 'artifact_hall'
+  | 'forge_hall'
+  | 'talisman_hall'
   | 'secret_library'
   | 'array_hall'
   | 'spirit_beast_garden'
@@ -13,7 +13,8 @@ export type BuildingType =
   | 'outer_residence'
   | 'inner_residence'
   | 'core_residence'
-  | 'cave_mansion';
+  | 'cave_mansion'
+  | 'enshrinement_hall';
 
 // 居所类建筑判定集合（单一来源，消除散落字面量）
 // 不含 cave_mansion：用于"按居所升级公式计算"的场景（洞府 maxLevel=1，不走该分支）
@@ -31,8 +32,8 @@ export const BuildingTypeNames: Record<BuildingType, string> = {
   lecture_hall: '讲经堂',
   servant_hall: '杂役堂',
   pill_hall: '丹堂',
-  sutra_hall: '炼器堂',
-  artifact_hall: '符堂',
+  forge_hall: '炼器堂',
+  talisman_hall: '符堂',
   secret_library: '藏经阁',
   array_hall: '阵堂',
   spirit_beast_garden: '灵兽原',
@@ -42,6 +43,7 @@ export const BuildingTypeNames: Record<BuildingType, string> = {
   inner_residence: '内门居所',
   core_residence: '核心居所',
   cave_mansion: '洞府',
+  enshrinement_hall: '英灵祠',
 };
 
 export type BuildingStatus = 'locked' | 'active' | 'closed';

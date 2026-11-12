@@ -67,13 +67,25 @@ describe('computeBuildingOutput — 升级不变量', () => {
     expect(lv2.spiritStones).toBeGreaterThanOrEqual(lv1.spiritStones);
   });
 
-  it('升级应带来明显的产出增长（L1→L2 至少 +40%）', () => {
+  it('升级只提升容量，同样人手不凭空增产（避免等级×容量双重复利）', () => {
     const workers = Array.from({ length: 10 }, (_, i) =>
       makeDisciple({ id: `w${i}`, hiddenTalents: { rootBone: 50, spiritRhythm: 50, daoFate: 50 } })
     );
     const lv1 = computeBuildingOutput(buildingInput({ level: 1, capacity: 10 }), workers);
     const lv2 = computeBuildingOutput(buildingInput({ level: 2, capacity: 20 }), workers);
-    expect(lv2.spiritStones).toBeGreaterThan(lv1.spiritStones * 1.4);
+    // 10 人未填满 Lv2 的 20 个工位，产出应与 Lv1 持平，不应乘等级倍率
+    expect(lv2.spiritStones).toBe(lv1.spiritStones);
+  });
+
+  it('扩容后补满人手，产出随在岗人数线性增长', () => {
+    const mk = (n: number) => Array.from({ length: n }, (_, i) =>
+      makeDisciple({ id: `w${i}`, hiddenTalents: { rootBone: 50, spiritRhythm: 50, daoFate: 50 } })
+    );
+    const lv1Full = computeBuildingOutput(buildingInput({ level: 1, capacity: 10 }), mk(10));
+    const lv2Full = computeBuildingOutput(buildingInput({ level: 2, capacity: 20 }), mk(20));
+    // 人数翻倍 → 产出约翻倍（不叠加等级倍率，增长速度保持在一次方）
+    expect(lv2Full.spiritStones).toBeGreaterThanOrEqual(lv1Full.spiritStones * 1.95);
+    expect(lv2Full.spiritStones).toBeLessThanOrEqual(lv1Full.spiritStones * 2.05);
   });
 });
 
@@ -165,20 +177,19 @@ describe('computeMaintenance — 单一来源，无双重计费（月度 1/3 折
     expect(computeMaintenance('mountain_gate', 3)).toBe(20);
   });
 
-  it('丹堂 L2 维护费为表值折算 23，而非 base×1.75 的双重计费值', () => {
-    // 旧实现：baseMaintenanceCost 被覆写为 55 后再 ×1.75 = 96（错误）
-    // 新实现：单一查表 70，再按月度 1/3 折算 → 23
-    expect(computeMaintenance('pill_hall', 2)).toBe(23);
+  it('丹堂 L2 维护费为表值折算 40，而非 base×1.75 的双重计费值', () => {
+    // 单一查表 120，再按月度 1/3 折算 → 40
+    expect(computeMaintenance('pill_hall', 2)).toBe(40);
     expect(computeMaintenance('pill_hall', 2)).not.toBe(Math.round(55 * 1.75));
   });
 
-  it('演武场维护费为 10（单级建筑）', () => {
-    expect(computeMaintenance('training_ground', 1)).toBe(10);
+  it('演武场维护费为 13（表值 40 按月度 1/3 折算）', () => {
+    expect(computeMaintenance('training_ground', 1)).toBe(13);
   });
 
   it('超出表范围按末两级差值线性外推', () => {
-    // secret_library 表 [30,60,120,200]，L5 原始值 = 200 + (200-120)*1 = 280，折算后 93
-    expect(computeMaintenance('secret_library', 5)).toBe(93);
+    // secret_library 表 [45,90,180,300]，L5 原始值 = 300 + (300-180)*1 = 420，折算后 140
+    expect(computeMaintenance('secret_library', 5)).toBe(140);
   });
 
   it('未知建筑类型维护费为 0', () => {
@@ -297,7 +308,7 @@ describe('computeMonthlyContribution — 所有生产建筑给正贡献，杜绝
 
   it('outer 在丹堂/炼器堂/符堂/阵堂/灵兽原都比闲逛赚得多', () => {
     const idle = workIn(null);
-    for (const type of ['pill_hall', 'sutra_hall', 'artifact_hall', 'array_hall', 'spirit_beast_garden']) {
+    for (const type of ['pill_hall', 'forge_hall', 'talisman_hall', 'array_hall', 'spirit_beast_garden']) {
       expect(workIn(type)).toBeGreaterThan(idle);
     }
   });

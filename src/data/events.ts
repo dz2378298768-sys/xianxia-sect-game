@@ -14,6 +14,7 @@ export const GAME_EVENTS: GameEventConfig[] = [
     conditions: { minDisciples: 1, minRealm: 'qi', cooldownMonths: 12 },
     description: '一名弟子在打坐中忽有所感，若能助其闭关，或可更进一步。',
     targetDisciple: 'highestRealm',
+    defaultChoiceId: 'b',
     choices: [
       {
         id: 'a',
@@ -61,6 +62,7 @@ export const GAME_EVENTS: GameEventConfig[] = [
     conditions: { minDisciples: 3, cooldownMonths: 15 },
     description: '一名弟子家中传来书信，言及父母年迈，盼其归家一探。',
     targetDisciple: 'random',
+    defaultChoiceId: 'b',
     choices: [
       {
         id: 'a',
@@ -109,6 +111,7 @@ export const GAME_EVENTS: GameEventConfig[] = [
     conditions: { maxSpiritRootQuality: 80, cooldownMonths: 24 },
     description: '一名弟子体内灵根隐隐共鸣，似有觉醒之象。',
     targetDisciple: 'random',
+    defaultChoiceId: 'b',
     choices: [
       {
         id: 'a',
@@ -133,6 +136,7 @@ export const GAME_EVENTS: GameEventConfig[] = [
     conditions: { maxSatisfaction: 40, cooldownMonths: 18 },
     description: '一名弟子心生去意，跪在山门前请求离宗。',
     targetDisciple: 'lowestSatisfaction',
+    defaultChoiceId: 'b',
     choices: [
       {
         id: 'a',
@@ -157,6 +161,7 @@ export const GAME_EVENTS: GameEventConfig[] = [
     conditions: { minSectLevel: 'famous', cooldownMonths: 36 },
     description: '藏经阁深处，一册无名古卷自行翻开，其上功法玄妙难测。',
     targetDisciple: 'random',
+    defaultChoiceId: 'b',
     choices: [
       {
         id: 'a',
@@ -180,6 +185,7 @@ export const GAME_EVENTS: GameEventConfig[] = [
     conditions: { minDisciples: 5, cooldownMonths: 24 },
     description: '一名弟子与山下凡人女子互生情愫，欲结成道侣。',
     targetDisciple: 'random',
+    defaultChoiceId: 'b',
     choices: [
       {
         id: 'a',
@@ -205,6 +211,7 @@ export const GAME_EVENTS: GameEventConfig[] = [
     rarity: 'common',
     conditions: { needsBuilding: 'mountain_gate', cooldownMonths: 18 },
     description: '风雨侵蚀，山门牌匾斑驳，护山石阶亦有松动。',
+    defaultChoiceId: 'b',
     choices: [
       {
         id: 'a',
@@ -250,6 +257,7 @@ export const GAME_EVENTS: GameEventConfig[] = [
     rarity: 'common',
     conditions: { minPills: 1, cooldownMonths: 24 },
     description: '丹房库房深夜失窃，几枚丹药不翼而飞。',
+    defaultChoiceId: 'b',
     choices: [
       {
         id: 'a',
@@ -273,6 +281,7 @@ export const GAME_EVENTS: GameEventConfig[] = [
     rarity: 'common',
     conditions: { minReputation: 50, cooldownMonths: 12 },
     description: '山下香客慕名而来，携礼求见，山门一时车马盈门。',
+    defaultChoiceId: 'b',
     choices: [
       {
         id: 'a',
@@ -297,6 +306,7 @@ export const GAME_EVENTS: GameEventConfig[] = [
     conditions: { requiresElderCount: 2, cooldownMonths: 24 },
     description: '两位长老为座次先后争执不下，堂中气氛剑拔弩张。',
     targetDisciple: 'randomElder',
+    defaultChoiceId: 'b',
     choices: [
       {
         id: 'a',
@@ -317,8 +327,9 @@ export const GAME_EVENTS: GameEventConfig[] = [
     title: '天降陨铁',
     category: 'sect',
     rarity: 'rare',
-    conditions: { needsBuilding: 'sutra_hall', cooldownMonths: 30 },
+    conditions: { needsBuilding: 'forge_hall', cooldownMonths: 30 },
     description: '一道流星坠落后山，砸出丈深大坑，坑底玄铁幽光流转。',
+    defaultChoiceId: 'b',
     choices: [
       {
         id: 'a',
@@ -397,6 +408,7 @@ export const GAME_EVENTS: GameEventConfig[] = [
     rarity: 'common',
     conditions: { hasDiscipleCapacity: true, cooldownMonths: 12 },
     description: '一名散修在山门外徘徊数日，自称仰慕宗门，愿拜入门下。',
+    defaultChoiceId: 'b',
     choices: [
       {
         id: 'a',
@@ -421,6 +433,7 @@ export const GAME_EVENTS: GameEventConfig[] = [
     conditions: { minSectLevel: 'known', cooldownMonths: 36 },
     description: '百里外的荒山忽现秘境入口，灵光冲天，引来四方修士。',
     targetDisciple: 'highestRealm',
+    defaultChoiceId: 'b',
     choices: [
       {
         id: 'a',
@@ -450,6 +463,7 @@ export const GAME_EVENTS: GameEventConfig[] = [
     rarity: 'uncommon',
     conditions: { requiresAlly: true, cooldownMonths: 18 },
     description: '同盟宗门遣使求援，言其正遭宿敌围攻，危在旦夕。',
+    defaultChoiceId: 'b',
     choices: [
       {
         id: 'a',
@@ -473,6 +487,7 @@ export const GAME_EVENTS: GameEventConfig[] = [
     rarity: 'common',
     conditions: { minSpiritStones: 200, cooldownMonths: 12 },
     description: '一支远道而来的商队在山下歇脚，货箱中尽是稀罕材料。',
+    defaultChoiceId: 'b',
     choices: [
       {
         id: 'a',
@@ -538,6 +553,7 @@ export const GAME_EVENTS: GameEventConfig[] = [
     conditions: { minSectLevel: 'famous', oncePerGame: true, cooldownMonths: 999 },
     description: '山腹崩塌，露出一座丈高古碑，碑文道韵流转，似藏大道。',
     targetDisciple: 'highestRealm',
+    defaultChoiceId: 'b',
     choices: [
       {
         id: 'a',

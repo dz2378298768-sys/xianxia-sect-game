@@ -308,16 +308,16 @@ export const OverviewPanel: React.FC = () => {
       <div className="p-3">
         <div className="grid grid-cols-2 gap-3">
           <div className="scroll-panel-dark p-3 text-center">
-            <div className="text-xs text-[var(--ink-400)]">季度收入</div>
+            <div className="text-xs text-[var(--ink-400)]">本月收入</div>
             <div className="font-display text-lg text-green-400">+{totalOutput}</div>
           </div>
           <div className="scroll-panel-dark p-3 text-center">
-            <div className="text-xs text-[var(--ink-400)]">季度支出</div>
+            <div className="text-xs text-[var(--ink-400)]">本月支出</div>
             <div className="font-display text-lg text-red-400">-{totalMaintenance}</div>
           </div>
         </div>
         <div className={`text-center font-display text-lg mt-3 ${netIncome >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-          季度净收益 {netIncome >= 0 ? '+' : ''}{netIncome}
+          月净收益 {netIncome >= 0 ? '+' : ''}{netIncome}
         </div>
       </div>
 

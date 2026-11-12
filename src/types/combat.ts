@@ -15,6 +15,9 @@ export interface CombatPowerBreakdown {
   beastBonus: number;          // 灵兽战力
   equipmentBonus: number;      // 总装备战力
 
+  ambitionMultiplier?: number;  // 志向战力倍率（老存档无志向时不显示）
+  specialtyMultiplier?: number; // 专精战力倍率（斗法专精时 >1）
+
   total: number;               // 最终战力
 }
 

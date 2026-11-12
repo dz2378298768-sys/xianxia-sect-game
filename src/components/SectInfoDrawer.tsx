@@ -77,8 +77,8 @@ export const SectInfoDrawer: React.FC = () => {
 
   const netIncome = totalOutput - totalMaintenance;
 
-  // 统一手机端：全屏覆盖（左侧留出 SideNav 宽度）
-  const containerClass = 'absolute top-[44px] left-[var(--side-nav-width)] right-0 bottom-0 z-[35] scroll-panel-dark flex flex-col slide-in-left';
+  // 统一手机端：全屏覆盖（顶部让出「顶栏 + 常驻时间栏」的高度；侧栏已移除，左侧不再留空）
+  const containerClass = 'absolute top-[76px] left-0 right-0 bottom-0 z-[35] scroll-panel-dark flex flex-col slide-in-left';
 
   return (
     <>
@@ -192,16 +192,16 @@ export const SectInfoDrawer: React.FC = () => {
               </div>
               <div className="grid grid-cols-2 gap-1.5">
                 <div className="text-center px-1.5 py-1 rounded border border-[rgba(212,168,87,0.15)] bg-[rgba(20,30,45,0.4)]">
-                  <div className="text-[9px] text-[var(--ink-400)]">季度收入</div>
+                  <div className="text-[9px] text-[var(--ink-400)]">本月收入</div>
                   <div className="font-display text-sm text-green-400">+{totalOutput}</div>
                 </div>
                 <div className="text-center px-1.5 py-1 rounded border border-[rgba(212,168,87,0.15)] bg-[rgba(20,30,45,0.4)]">
-                  <div className="text-[9px] text-[var(--ink-400)]">季度支出</div>
+                  <div className="text-[9px] text-[var(--ink-400)]">本月支出</div>
                   <div className="font-display text-sm text-red-400">-{totalMaintenance}</div>
                 </div>
               </div>
               <div className={`text-center font-display text-sm mt-1.5 ${netIncome >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                季度净收益 {netIncome >= 0 ? '+' : ''}{netIncome}
+                月净收益 {netIncome >= 0 ? '+' : ''}{netIncome}
               </div>
               <div className="text-center text-[9px] text-[var(--gold-200)] mt-1">
                 灵石 <span className={spiritStones < 0 ? 'text-red-400' : ''}>{Math.floor(spiritStones).toLocaleString()}</span> · 声望 {Math.floor(reputation)} · 正邪 {karma > 0 ? '+' : ''}{karma}

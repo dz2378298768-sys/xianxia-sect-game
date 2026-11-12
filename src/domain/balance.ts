@@ -12,6 +12,7 @@ import { calculateSpiritRootBonus, calculateLifespan } from '@/utils/calculation
 import { RealmOrder } from '@/types/disciple';
 import type { OutputBreakdown } from '@/utils/gameLogic';
 import type { Disciple, DiscipleStatus } from '@/types/disciple';
+import { getDiscipleSpecialty, specialtyMatchesBuilding } from '@/domain/specialty';
 
 /** 建筑产出计算的输入（从 Building 实例映射而来，便于测试） */
 export interface BuildingOutputInput {
@@ -63,22 +64,24 @@ const MANAGER_STATUS_BONUS: Partial<Record<DiscipleStatus, number>> = {
   elder: 0.8,
 };
 
-// 按建筑类型计算单名工人的天赋得分
-function workerTalentScore(type: string, t: { rootBone: number; spiritRhythm: number; daoFate: number }): number {
-  const { rootBone, spiritRhythm, daoFate } = t;
+// 按建筑类型计算单名工人的天赋得分（专精匹配堂口时额外 ×1.15）
+function workerTalentScore(type: string, disciple: Disciple): number {
+  const { rootBone, spiritRhythm, daoFate } = disciple.hiddenTalents;
+  let base: number;
   switch (type) {
-    case 'servant_hall':       return spiritRhythm * 0.8 + 20;
-    case 'pill_hall':          return spiritRhythm * 1.5;
-    case 'sutra_hall':         return spiritRhythm * 1.0 + rootBone * 0.6;
-    case 'artifact_hall':      return spiritRhythm * 0.8 + daoFate * 0.7;
-    case 'secret_library':     return (rootBone + spiritRhythm + daoFate) / 3 * 0.8 + 25;
-    case 'array_hall':         return rootBone * 0.6 + spiritRhythm * 0.4 + 15;
-    case 'spirit_beast_garden':return daoFate * 1.0 + rootBone * 0.3;
-    case 'mountain_gate':      return daoFate * 0.5 + 10;
-    case 'lecture_hall':       return spiritRhythm * 0.6 + rootBone * 0.4 + 15;
-    case 'training_ground':    return rootBone * 0.8 + daoFate * 0.4 + 20;
-    default:                   return 30;
+    case 'servant_hall':       base = spiritRhythm * 0.8 + 20; break;
+    case 'pill_hall':          base = spiritRhythm * 1.5; break;
+    case 'forge_hall':         base = spiritRhythm * 1.0 + rootBone * 0.6; break;
+    case 'talisman_hall':      base = spiritRhythm * 0.8 + daoFate * 0.7; break;
+    case 'secret_library':     base = (rootBone + spiritRhythm + daoFate) / 3 * 0.8 + 25; break;
+    case 'array_hall':         base = rootBone * 0.6 + spiritRhythm * 0.4 + 15; break;
+    case 'spirit_beast_garden':base = daoFate * 1.0 + rootBone * 0.3; break;
+    case 'mountain_gate':      base = daoFate * 0.5 + 10; break;
+    case 'lecture_hall':       base = spiritRhythm * 0.6 + rootBone * 0.4 + 15; break;
+    case 'training_ground':    base = rootBone * 0.8 + daoFate * 0.4 + 20; break;
+    default:                   base = 30; break;
   }
+  return specialtyMatchesBuilding(getDiscipleSpecialty(disciple), type) ? base * 1.15 : base;
 }
 
 /**
@@ -101,9 +104,9 @@ export function computeBuildingOutput(
     return { spiritStones: 0, herbs: 0, iron: 0, paper: 0, reputation: 0, pills: 0, artifacts: 0, talismans: 0, beasts: 0, breakdown: ZERO_BREAKDOWN };
   }
 
-  const levelMultiplier = 1 + (building.level - 1) * 0.5
-    // 杂役堂 Lv6+ 额外加成：使满级(Lv10)产出倍率 = 6.0 = 2× Lv5(3.0)；Lv1-5 保持不变
-    + (building.type === 'servant_hall' && building.level > 5 ? (building.level - 5) * 0.1 : 0);
+  // 等级不再乘算产出：升级只提升在岗容量（见 upgradeBuilding 的容量增长）。
+  // 若同时乘等级倍率又扩容，产出会随等级平方增长（Lv10 可达 Lv1 的 60 倍），数值必然失控。
+  const levelMultiplier = 1;
 
   // 管理者加成
   let managerName: string | undefined;
@@ -113,6 +116,10 @@ export function computeBuildingOutput(
     if (manager) {
       managerName = manager.name;
       managerBonus = 1 + (MANAGER_STATUS_BONUS[manager.status] || 0);
+      // 堂主专精与堂口匹配：额外 +10% 管理效率
+      if (specialtyMatchesBuilding(getDiscipleSpecialty(manager), building.type)) {
+        managerBonus += 0.1;
+      }
     }
   }
 
@@ -124,7 +131,7 @@ export function computeBuildingOutput(
 
   // 工人质量因子（与容量解耦）
   const totalTalentScore = workers.reduce(
-    (sum, d) => sum + workerTalentScore(building.type, d.hiddenTalents),
+    (sum, d) => sum + workerTalentScore(building.type, d),
     0,
   );
   const qualityFactor = workers.length > 0 ? totalTalentScore / workers.length / 50 : 0;
@@ -151,16 +158,25 @@ export function computeBuildingOutput(
 
   const mul = (v: number | undefined) => Math.floor((v || 0) * totalMultiplier);
 
+  // 灵兽按「只」计数，向下取整会让半编灵兽原（如 5/10 人）永远产出 0，
+  // 变成「有人照料却什么都不出」的假建筑；只要有人在岗就至少出 1 只。
+  const beastBase = building.baseOutput.beasts || 0;
+  const beastOutput = beastBase > 0 && totalMultiplier > 0
+    ? Math.max(1, Math.floor(beastBase * totalMultiplier))
+    : 0;
+
   return {
     spiritStones: mul(building.baseOutput.spiritStones),
     herbs: mul(building.baseOutput.herbs),
     iron: mul(building.baseOutput.iron),
     paper: mul(building.baseOutput.paper),
-    reputation: (building.baseOutput.reputation || 0) > 0 ? mul(building.baseOutput.reputation) : 0,
+    // 声望为固定额产出，不受在岗人数/管理者/等级放大：
+    // 否则升满一座山门即可月产上百声望，直接架空宗门等级门槛。
+    reputation: building.baseOutput.reputation || 0,
     pills: mul(building.baseOutput.pills),
     artifacts: mul(building.baseOutput.artifacts),
     talismans: mul(building.baseOutput.talismans),
-    beasts: mul(building.baseOutput.beasts),
+    beasts: beastOutput,
     breakdown,
   };
 }
@@ -287,28 +303,30 @@ export const BUILDING_CONTRIBUTION_BONUS: Record<string, number> = {
   servant_hall: 5,         // 杂役堂基础
   lecture_hall: -5,        // 讲经堂：听讲消耗贡献
   pill_hall: 8,            // 丹堂
-  sutra_hall: 8,           // 炼器堂
-  artifact_hall: 8,        // 符堂
+  forge_hall: 8,           // 炼器堂
+  talisman_hall: 8,        // 符堂
   array_hall: 7,           // 阵堂
   spirit_beast_garden: 7,  // 灵兽原
   secret_library: 0,       // 藏经阁：无额外贡献（推演功法在 nextMonth 中单独处理）
   training_ground: 0,       // 演武场：消耗贡献修炼，不产出贡献
 };
 
-/** 按建筑类型，弟子主属性对贡献的额外加成（鼓励按天赋选堂口） */
-function buildingTalentContribution(type: string, t: { rootBone: number; spiritRhythm: number; daoFate: number }): number {
+/** 按建筑类型，弟子主属性对贡献的额外加成（鼓励按天赋选堂口；专精匹配再 +3） */
+function buildingTalentContribution(type: string, t: { rootBone: number; spiritRhythm: number; daoFate: number }, specialtyBonus: boolean): number {
   const { rootBone, spiritRhythm, daoFate } = t;
+  let base: number;
   switch (type) {
-    case 'servant_hall':        return Math.floor(spiritRhythm / 20);
-    case 'pill_hall':           return Math.floor(spiritRhythm / 20);
-    case 'sutra_hall':          return Math.floor(rootBone / 25);
-    case 'artifact_hall':       return Math.floor(daoFate / 25);
-    case 'array_hall':          return Math.floor((rootBone + spiritRhythm) / 40);
-    case 'spirit_beast_garden': return Math.floor(daoFate / 25);
-    case 'mountain_gate':       return Math.floor(daoFate / 30);
-    case 'lecture_hall':        return Math.floor(spiritRhythm / 30);
-    default:                    return 0;
+    case 'servant_hall':        base = Math.floor(spiritRhythm / 20); break;
+    case 'pill_hall':           base = Math.floor(spiritRhythm / 20); break;
+    case 'forge_hall':          base = Math.floor(rootBone / 25); break;
+    case 'talisman_hall':       base = Math.floor(daoFate / 25); break;
+    case 'array_hall':          base = Math.floor((rootBone + spiritRhythm) / 40); break;
+    case 'spirit_beast_garden': base = Math.floor(daoFate / 25); break;
+    case 'mountain_gate':       base = Math.floor(daoFate / 30); break;
+    case 'lecture_hall':        base = Math.floor(spiritRhythm / 30); break;
+    default:                    base = 0; break;
   }
+  return base + (specialtyBonus ? 3 : 0);
 }
 
 /**
@@ -331,7 +349,11 @@ export function computeMonthlyContribution(
   let buildingBonus = 0;
   if (building && building.status === 'active') {
     buildingBonus = BUILDING_CONTRIBUTION_BONUS[building.type] || 0;
-    buildingBonus += buildingTalentContribution(building.type, disciple.hiddenTalents);
+    buildingBonus += buildingTalentContribution(
+      building.type,
+      disciple.hiddenTalents,
+      specialtyMatchesBuilding(getDiscipleSpecialty(disciple), building.type),
+    );
   }
 
   // 贡献可以为负（如讲经堂听讲消耗），但不低于0

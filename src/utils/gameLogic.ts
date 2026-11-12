@@ -1,14 +1,15 @@
 import type { Disciple, HiddenTalents, Realm, DiscipleStatus, PromotionRules, RealmStage, DeducingBook, DiscipleBackpackItem, Personality, BackgroundStory, DisciplePreference } from '@/types/disciple';
 import type { SectSchool } from '@/types/game';
-import { SCHOOL_TALENT_TREES } from '@/types/game';
+import { SCHOOL_TALENT_TREES, SectLevelOrder } from '@/types/game';
 import type { CombatPowerBreakdown, SectCombatSummary } from '@/types/combat';
-import { RealmOrder, RealmStageOrder, DiscipleStatusNames, BreakthroughData, RealmNames, PersonalityNames, PersonalityDescriptions, PERSONALITY_CULTIVATION_MULT, PERSONALITY_SATISFACTION_MOD, PERSONALITY_DEFECTION_MULT, PERSONALITY_FRIEND_MULT, BackgroundStoryNames, BackgroundStoryDescriptions, BACKGROUND_EFFECTS } from '@/types/disciple';
+import { RealmOrder, RealmStageOrder, DiscipleStatusNames, BreakthroughData, RealmNames, PersonalityNames, PersonalityDescriptions, PERSONALITY_CULTIVATION_MULT, PERSONALITY_SATISFACTION_MOD, PERSONALITY_DEFECTION_MULT, PERSONALITY_FRIEND_MULT, BackgroundStoryNames, BackgroundStoryDescriptions, BACKGROUND_EFFECTS, AMBITION_EFFECTS } from '@/types/disciple';
+import type { Ambition } from '@/types/disciple';
 import type { Building, BuildingType } from '@/types/building';
 import { RESIDENCE_TYPES_WITH_CAVE } from '@/types/building';
 import { BUILDING_CONFIGS, INITIAL_BUILDING_TYPES, getRootBoneEffectiveness, BookTierNames, BOOK_TIER_BONUSES } from '@/data/buildings';
 import type { BookConfig, BookTier, BookType, BookAttribute } from '@/data/buildings';
-import { getRandomConstitution } from '@/data/constitutions';
-import { generateId, generateDiscipleName, randomInt, randomFloat, clamp } from '@/utils/random';
+import { getRandomConstitution, CONSTITUTIONS } from '@/data/constitutions';
+import { generateId, generateDiscipleName, generateChildName, randomInt, randomFloat, clamp } from '@/utils/random';
 import { generateTalentDisplay, calculateLifespan, calculateCultivationSpeed, generateSpiritRoots, calculateSpiritRootBonus } from '@/utils/calculations';
 import { canLearnBook, generateRandomBook } from '@/utils/bookGenerator';
 import type { MonthlyReport, GameDate, Notification, SectHistoryEntry, SectHistoryType, BuildingEvent, ChoiceEvent, ChainEvent, PendingChainEvent, CalamityEvent, SectLevel } from '@/types/game';
@@ -22,8 +23,20 @@ import type { ArtifactInventory, ArtifactType } from '@/types/artifact';
 import type { TalismanInventory, TalismanType } from '@/types/talisman';
 import type { BeastInventory, BeastType } from '@/types/beast';
 import { SPECIAL_MATERIALS, BASIC_MATERIALS } from '@/data/specialMaterials';
+import { getDiscipleSpecialty, specialtyMatchesBuilding } from '@/domain/specialty';
+
+/** 成年年龄：未满此岁的弟子（主要是道侣子嗣）只修炼、不劳作 */
+export const ADULT_AGE = 16;
+
+/** 启蒙年龄：未满此岁的稚子尚未开蒙，不增长修为 */
+export const CULTIVATION_START_AGE = 6;
 
 export function autoAssignBuilding(disciple: Disciple, buildings: Building[]): { buildingId: string | null; newBuildings: Building[] } {
+  // 稚子不安排工作，等成年后由月度重分配自动上岗
+  if (disciple.age < ADULT_AGE) {
+    return { buildingId: null, newBuildings: buildings };
+  }
+
   const statusOrder: DiscipleStatus[] = ['mortal', 'servant', 'outer', 'inner', 'core', 'elder'];
   const discipleIndex = statusOrder.indexOf(disciple.status as DiscipleStatus);
   const realmIndex = RealmOrder.indexOf(disciple.realm);
@@ -55,7 +68,7 @@ export function autoAssignBuilding(disciple: Disciple, buildings: Building[]): {
   // 生产工作堂集合：弟子应优先填入这些堂口为宗门生产物资，
   // 而非堆在山门(防御驻守)或讲经堂(听讲)等非生产场所。
   const WORK_HALL_TYPES = new Set([
-    'servant_hall', 'pill_hall', 'sutra_hall', 'artifact_hall', 'array_hall', 'spirit_beast_garden',
+    'servant_hall', 'pill_hall', 'forge_hall', 'talisman_hall', 'array_hall', 'spirit_beast_garden',
   ]);
 
   // 按建筑类型计算单名弟子的天赋匹配度（越高越适合在该堂工作）
@@ -64,8 +77,8 @@ export function autoAssignBuilding(disciple: Disciple, buildings: Building[]): {
     switch (type) {
       case 'servant_hall':        return spiritRhythm * 0.8 + 20;
       case 'pill_hall':           return spiritRhythm * 1.5;
-      case 'sutra_hall':          return spiritRhythm * 1.0 + rootBone * 0.6;
-      case 'artifact_hall':       return spiritRhythm * 0.8 + daoFate * 0.7;
+      case 'forge_hall':          return spiritRhythm * 1.0 + rootBone * 0.6;
+      case 'talisman_hall':       return spiritRhythm * 0.8 + daoFate * 0.7;
       case 'array_hall':          return rootBone * 0.6 + spiritRhythm * 0.4 + 15;
       case 'spirit_beast_garden': return daoFate * 1.0 + rootBone * 0.3;
       case 'mountain_gate':       return daoFate * 0.5 + 10;
@@ -73,6 +86,9 @@ export function autoAssignBuilding(disciple: Disciple, buildings: Building[]): {
       default:                    return 30;
     }
   };
+
+  // 专精：由天赋/性格/背景推导，匹配堂口时优先安排
+  const specialty = getDiscipleSpecialty(disciple);
 
   const buildingScores: { building: Building; score: number }[] = availableBuildings.map(building => {
     // 1. 天赋匹配度（主因素）：弟子应进入其天赋最能发挥的堂口
@@ -97,7 +113,14 @@ export function autoAssignBuilding(disciple: Disciple, buildings: Building[]): {
     const discipleNeedContribution = disciple.contributionPoints < 100 ? 1 : 0; // 贡献不足100视为需要赚贡献
     const contributionPriority = 1 + discipleNeedContribution * (buildingContributionYield / 20);
 
-    const score = talent * productionPriority * fillFactor * realmBonus * contributionPriority;
+    // 志向偏好：弟子更愿意去符合自身志向的堂口
+    const ambition = getAmbitionEffects(disciple.ambition);
+    const ambitionPriority = ambition?.favoredBuildings.includes(building.type) ? 1.35 : 1;
+
+    // 专精偏好：专精与堂口匹配时最优先，与志向加成叠乘
+    const specialtyPriority = specialtyMatchesBuilding(specialty, building.type) ? 1.5 : 1;
+
+    const score = talent * productionPriority * fillFactor * realmBonus * contributionPriority * ambitionPriority * specialtyPriority;
     return { building, score };
   });
 
@@ -114,19 +137,89 @@ export function autoAssignBuilding(disciple: Disciple, buildings: Building[]): {
   return { buildingId: bestBuilding.id, newBuildings };
 }
 
+/** 单名师傅最多同时收的徒弟数 */
+export const MAX_APPRENTICES_PER_MASTER = 3;
+
+/**
+ * 每月自动收徒：为尚无师承的外门/内门弟子指派师傅。
+ *
+ * 规则：
+ *  - 师傅须为核心弟子或长老、已成年，且境界至少高出徒弟 1 个大境界；
+ *  - 每名师傅最多 3 名徒弟，道侣之间不结师徒；
+ *  - 优先同堂口，其次徒弟少、境界高者。
+ *  - 未成年稚子、杂役与凡人不在收徒范围内。
+ *
+ * 以 disciple.master（师傅名称）为唯一数据源，同时维护师傅的 apprenticeIds 便于展示。
+ */
+export function autoAssignMasters(disciples: Disciple[]): Disciple[] {
+  const masters = disciples.filter(d =>
+    (d.status === 'core' || d.status === 'elder') && d.age >= ADULT_AGE,
+  );
+  if (masters.length === 0) return disciples;
+
+  const result = disciples.map(d => ({ ...d }));
+  const byId = new Map(result.map(d => [d.id, d]));
+  const existingNames = new Set(result.map(d => d.name));
+
+  // 师傅已离宗/身故：解除陈旧师承，本月经脉可另投名师
+  for (const d of result) {
+    if (d.master && !existingNames.has(d.master)) d.master = null;
+  }
+
+  // 现有徒弟数（按师傅名称统计）
+  const apprenticeCount = new Map<string, number>();
+  for (const d of result) {
+    if (d.master) apprenticeCount.set(d.master, (apprenticeCount.get(d.master) || 0) + 1);
+  }
+
+  // 待收徒弟子：高境界优先，便于强者先拜入名师
+  const candidates = result
+    .filter(d => !d.master && d.age >= ADULT_AGE && (d.status === 'outer' || d.status === 'inner'))
+    .sort((a, b) => RealmOrder.indexOf(b.realm) - RealmOrder.indexOf(a.realm));
+
+  for (const apprentice of candidates) {
+    const apprenticeRealmIndex = RealmOrder.indexOf(apprentice.realm);
+    const available = masters
+      .map(m => byId.get(m.id)!)
+      .filter(m =>
+        m.id !== apprentice.id &&
+        m.daoPartner !== apprentice.name &&
+        apprentice.daoPartner !== m.name &&
+        RealmOrder.indexOf(m.realm) >= apprenticeRealmIndex + 1 &&
+        (apprenticeCount.get(m.name) || 0) < MAX_APPRENTICES_PER_MASTER,
+      );
+    if (available.length === 0) continue;
+
+    available.sort((a, b) => {
+      const aSame = a.assignedBuilding && a.assignedBuilding === apprentice.assignedBuilding ? 1 : 0;
+      const bSame = b.assignedBuilding && b.assignedBuilding === apprentice.assignedBuilding ? 1 : 0;
+      if (aSame !== bSame) return bSame - aSame;
+      const aCount = apprenticeCount.get(a.name) || 0;
+      const bCount = apprenticeCount.get(b.name) || 0;
+      if (aCount !== bCount) return aCount - bCount;
+      return RealmOrder.indexOf(b.realm) - RealmOrder.indexOf(a.realm);
+    });
+
+    const master = available[0];
+    apprentice.master = master.name;
+    master.apprenticeIds = [...(master.apprenticeIds || []), apprentice.id];
+    apprenticeCount.set(master.name, (apprenticeCount.get(master.name) || 0) + 1);
+  }
+
+  return result;
+}
+
 const RESIDENCE_STATUS_MAP: Record<string, BuildingType> = {
   elder: 'cave_mansion',
   core: 'core_residence',
   inner: 'inner_residence',
   outer: 'outer_residence',
+  // 杂役/凡人同样要占床位（睡外门居所通铺），否则宗门可以无限招收杂役刷灵石
+  servant: 'outer_residence',
+  mortal: 'outer_residence',
 };
 
 export function autoAssignResidence(disciple: Disciple, buildings: Building[]): { buildingId: string | null; newBuildings: Building[] } {
-  // 杂役弟子不分配居所
-  if (disciple.status === 'servant' || disciple.status === 'mortal') {
-    return { buildingId: null, newBuildings: buildings };
-  }
-
   // 局部有序数组：cave_mansion→core→inner→outer（降序），用于"从弟子身份对应居所往低级居所回退查找空位"
   // 注意：导出常量 RESIDENCE_TYPES 顺序为 outer→inner→core（升序），语义不同，故此处保留局部有序数组
   const RESIDENCE_ORDERED: BuildingType[] = ['cave_mansion', 'core_residence', 'inner_residence', 'outer_residence'];
@@ -253,8 +346,11 @@ export function autoAssignManagers(
     );
     if (candidates.length === 0) return { ...b, managerId: null };
 
-    // 排序：身份 > 境界 > 贡献点
+    // 排序：专精匹配该堂 > 身份 > 境界 > 贡献点
     candidates.sort((a, c) => {
+      const aMatch = specialtyMatchesBuilding(getDiscipleSpecialty(a), b.type) ? 1 : 0;
+      const cMatch = specialtyMatchesBuilding(getDiscipleSpecialty(c), b.type) ? 1 : 0;
+      if (aMatch !== cMatch) return cMatch - aMatch;
       const sr = (statusRank[c.status] || 0) - (statusRank[a.status] || 0);
       if (sr !== 0) return sr;
       const rr = RealmOrder.indexOf(c.realm) - RealmOrder.indexOf(a.realm);
@@ -307,6 +403,12 @@ export function monthlyReassign(
   for (const disciple of currentDisciples) {
     // 跳过凡人和长老
     if (disciple.status === 'mortal' || disciple.status === 'elder') continue;
+
+    // 稚子只修炼不劳作：床位在出生时已分配，成年后自然进入下方分配流程
+    if (disciple.age < ADULT_AGE) {
+      disciple.assignedBuilding = null;
+      continue;
+    }
 
     // ========== 玩家手动分配：assignedBuilding 优先 ==========
     let assignedOk = false;
@@ -428,6 +530,21 @@ export function getResidenceUpgradeCost(building: Building): { spiritStones: num
   return { spiritStones, reputation: 0 };
 }
 
+// 居所修炼加成（百分比）：
+//  - 外门+10%、内门+20%、核心+30%
+//  - 洞府为最高级居所：Lv1 +35%，每级 +5%，最高 Lv5 +55%
+export function getResidenceCultivationBonus(type: string, level: number): number {
+  if (type === 'cave_mansion') {
+    return Math.min(55, 30 + Math.max(0, level) * 5);
+  }
+  const map: Record<string, number> = {
+    outer_residence: 10,
+    inner_residence: 20,
+    core_residence: 30,
+  };
+  return map[type] ?? 0;
+}
+
 // 居所容量公式：
 //  - 普通居所：每级10人（Lv1=10, Lv2=20, Lv3=30...）无上限
 //  - 洞府（cave_mansion）：Lv1=1 人，每级+2 人（Lv2=3, Lv3=5, Lv4=7, Lv5=9），最高 5 级
@@ -438,6 +555,29 @@ export function getResidenceCapacityByLevel(type: string, level: number): number
     return 1 + (cappedLevel - 1) * 2;
   }
   return level * 10;
+}
+
+/** 「换一批」候选的灵石费用：随宗门等级上调，避免后期刷候选零成本 */
+const RECRUIT_REFRESH_COST_BY_LEVEL: Record<SectLevel, number> = {
+  founding: 50,
+  known: 100,
+  famous: 200,
+  dominant: 400,
+  eternal: 800,
+};
+
+export function getRecruitRefreshCost(sectLevel: SectLevel): number {
+  return RECRUIT_REFRESH_COST_BY_LEVEL[sectLevel] ?? 50;
+}
+
+/**
+ * 招收一名候选弟子的费用：按其最高天赋定价（主天赋越高越贵）。
+ * 主天赋 20 → 约 47 灵石；60 → 80 灵石；100 → 113 灵石。
+ */
+export function calculateRecruitCost(disciple: Disciple): number {
+  const t = disciple.hiddenTalents;
+  const mainTalent = Math.max(t.rootBone, t.spiritRhythm, t.constitution, t.daoFate);
+  return Math.round(50 * (0.6 + mainTalent / 60));
 }
 
 // 演武场容量：Lv1=5, Lv2=8, Lv3=12
@@ -463,19 +603,20 @@ export function getCaveMansionUpgradeCost(currentLevel: number): { spiritStones:
 // 建筑维护费按等级递增表
 export const MAINTENANCE_COST_TABLE: Record<string, number[]> = {
   mountain_gate: [15, 30, 60, 100, 150, 220, 300, 400, 550, 750],
-  lecture_hall: [10, 25, 50],
+  lecture_hall: [15, 35, 70],
   servant_hall: [15, 25, 40, 55, 75, 100, 130, 165, 205, 250],
   outer_residence: [10, 20, 40],
   inner_residence: [15, 30, 60],
   core_residence: [20, 40, 80],
-  secret_library: [30, 60, 120, 200],
-  pill_hall: [35, 70, 140],
-  sutra_hall: [45, 90, 180],
-  artifact_hall: [30, 60, 120],
-  array_hall: [20, 45, 90],
-  spirit_beast_garden: [55, 110, 220],
-  training_ground: [30, 60, 120],
+  secret_library: [45, 90, 180, 300],
+  pill_hall: [60, 120, 240],
+  forge_hall: [75, 150, 300],
+  talisman_hall: [45, 90, 180],
+  array_hall: [30, 60, 120],
+  spirit_beast_garden: [60, 120, 240],
+  training_ground: [40, 80, 160],
   cave_mansion: [30, 60, 120, 240, 400],
+  enshrinement_hall: [30, 60, 120],
   skyscraper_tower: [0, 0, 0, 0, 0, 0, 0, 0, 0],
 };
 
@@ -518,6 +659,18 @@ export function generatePersonality(random: () => number = Math.random): Persona
 /** 随机生成弟子背景故事 */
 export function generateBackground(random: () => number = Math.random): BackgroundStory {
   return ALL_BACKGROUNDS[Math.floor(random() * ALL_BACKGROUNDS.length)];
+}
+
+const ALL_AMBITIONS: Ambition[] = ['dao', 'revenge', 'protect', 'kinship', 'longevity'];
+
+/** 随机生成弟子志向 */
+export function generateAmbition(random: () => number = Math.random): Ambition {
+  return ALL_AMBITIONS[Math.floor(random() * ALL_AMBITIONS.length)];
+}
+
+/** 读取志向效果；老存档无志向时返回空效果 */
+export function getAmbitionEffects(ambition?: Ambition) {
+  return ambition ? AMBITION_EFFECTS[ambition] : null;
 }
 
 /** 生成弟子喜好（基于背景和性格推荐） */
@@ -650,10 +803,161 @@ export function createInitialDisciple(status: DiscipleStatus = 'servant', realm:
   disciple.personality = personality;
   disciple.background = background;
   disciple.preferences = generatePreferences(personality, background);
+  disciple.ambition = generateAmbition();
 
   // 凡人基础速度由 0 改为 30（在引擎内），使其能累积修为突破到炼气。
   disciple.cultivationSpeed = recomputeCultivationSpeed(disciple);
   return disciple;
+}
+
+// ==================== 血脉系统：道侣子嗣 ====================
+
+/** 每对道侣每月诞生子嗣的概率（2%），并限制每月全宗最多 1 名新生儿 */
+export const LINEAGE_BIRTH_CHANCE = 0.02;
+
+/** 天赋融合：取双亲均值并带 ±8 波动 */
+function blendTalent(a: number, b: number, random: () => number): number {
+  return clamp(Math.round((a + b) / 2 + (random() - 0.5) * 16), 1, 100);
+}
+
+/**
+ * 由两名道侣生成一名新生儿。
+ * 天赋取双亲均值并加入波动，灵根/体质随机继承一方；新生弟子 0 岁、凡人境，成年后才劳作。
+ */
+export function createChildDisciple(
+  parentA: Disciple, parentB: Disciple, gameDate: GameDate,
+  sectLevel: SectLevel, random: () => number = Math.random,
+): Disciple {
+  const child = createInitialDisciple('servant', 'mortal', sectLevel);
+
+  const ta = parentA.hiddenTalents;
+  const tb = parentB.hiddenTalents;
+  const rootSource = random() < 0.5 ? ta : tb;
+  const hiddenTalents: HiddenTalents = {
+    rootBone: blendTalent(ta.rootBone, tb.rootBone, random),
+    spiritRhythm: blendTalent(ta.spiritRhythm, tb.spiritRhythm, random),
+    constitution: blendTalent(ta.constitution, tb.constitution, random),
+    daoFate: blendTalent(ta.daoFate, tb.daoFate, random),
+    spiritRoots: rootSource.spiritRoots.map(r => ({
+      type: r.type,
+      quality: clamp(Math.round(r.quality + (random() - 0.5) * 10), 0, 100),
+    })),
+  };
+  const constitution = CONSTITUTIONS.find(c => c.id === (random() < 0.5 ? parentA : parentB).constitutionId)
+    ?? getRandomConstitution();
+
+  child.name = generateChildName([parentA.name, parentB.name]);
+  child.age = 0;
+  child.hiddenTalents = hiddenTalents;
+  child.talentDisplay = generateTalentDisplay(hiddenTalents);
+  child.constitutionId = constitution.id;
+  child.maxAge = calculateLifespan(
+    60 + Math.floor(hiddenTalents.constitution * 0.4) + (constitution.effects.lifespanBonus || 0),
+    0,
+  );
+  child.realm = 'mortal';
+  child.realmStage = 'early';
+  child.realmProgress = 0;
+  child.contributionPoints = 0;
+  child.assignedBuilding = null;
+  child.managingBuilding = null;
+  child.joinDate = { ...gameDate };
+  child.parents = [parentA.name, parentB.name];
+  child.generation = Math.max(parentA.generation ?? 1, parentB.generation ?? 1) + 1;
+  child.background = 'cultivation_family';
+  // 志向随机继承父母一方；父母均无志向时随机生成
+  child.ambition = (random() < 0.5 ? parentA : parentB).ambition ?? generateAmbition(random);
+  child.satisfaction = 100;
+  child.maxSatisfactionLossWork = 0;
+  child.attack = Math.floor(10 + hiddenTalents.rootBone * 0.5 + (constitution.effects.attackBonus || 0));
+  child.defense = Math.floor(5 + hiddenTalents.constitution * 0.3 + (constitution.effects.defenseBonus || 0));
+  child.dodge = Math.floor(2 + hiddenTalents.daoFate * 0.1 + (constitution.effects.dodgeBonus || 0));
+  child.crit = Math.floor(2 + hiddenTalents.spiritRhythm * 0.05 + (constitution.effects.critBonus || 0));
+  child.maxHp = Math.floor(100 + hiddenTalents.constitution * 5 + (constitution.effects.hpBonus || 0));
+  child.cultivationSpeed = recomputeCultivationSpeed(child);
+  return child;
+}
+
+export interface LineageResult {
+  newborns: Disciple[];
+  buildings: Building[];
+  notifications: Notification[];
+}
+
+/**
+ * 月度血脉结算：道侣有概率诞下子嗣。
+ * 受以下条件约束：
+ *  - 宗门开启「鼓励道侣生育」政策；
+ *  - 未达到宗门弟子上限；
+ *  - 外门居所尚有床位（子嗣与杂役一样需要住处）。
+ * 每月最多 1 名新生儿，避免人口爆炸。
+ */
+export function processMonthlyLineage(
+  disciples: Disciple[], buildings: Building[],
+  options: {
+    enabled: boolean;
+    discipleCap: number | null;
+    sectLevel: SectLevel;
+    gameDate: GameDate;
+    createNotification: (type: 'info' | 'success' | 'warning' | 'danger', title: string, content: string, date: GameDate) => Notification;
+    random?: () => number;
+  },
+): LineageResult {
+  const { enabled, discipleCap, sectLevel, gameDate, createNotification, random = Math.random } = options;
+  const result: LineageResult = { newborns: [], buildings, notifications: [] };
+  if (!enabled) return result;
+  if (discipleCap !== null && disciples.length >= discipleCap) return result;
+
+  // 收集互为道侣的成对弟子（按姓名去重，只处理一次）
+  const byName = new Map(disciples.map(d => [d.name, d]));
+  const couples: [Disciple, Disciple][] = [];
+  for (const d of disciples) {
+    if (!d.daoPartner || d.age < 18) continue;
+    const p = byName.get(d.daoPartner);
+    if (!p || p.daoPartner !== d.name || p.age < 18) continue;
+    if (d.name > p.name) continue;
+    couples.push([d, p]);
+  }
+  if (couples.length === 0) return result;
+
+  const lucky = couples.filter(() => random() < LINEAGE_BIRTH_CHANCE);
+  if (lucky.length === 0) return result;
+
+  // 外门床位不足时暂缓生育（每年正月提示一次，避免刷屏）
+  const freeOuterBeds = buildings
+    .filter(b => b.type === 'outer_residence')
+    .reduce((sum, b) => sum + Math.max(0, b.discipleCapacity - b.assignedDisciples.length), 0);
+  if (freeOuterBeds <= 0) {
+    if (gameDate.month === 1) {
+      const [a, b] = lucky[0];
+      result.notifications.push(createNotification(
+        'warning', '血脉暂缓',
+        `${a.name}与${b.name}欲添子嗣，但外门居所已满，只得暂缓。扩建居所后自会开枝散叶。`,
+        gameDate,
+      ));
+    }
+    return result;
+  }
+
+  const [parentA, parentB] = lucky[Math.floor(random() * lucky.length)];
+  const child = createChildDisciple(parentA, parentB, gameDate, sectLevel, random);
+  const { buildingId, newBuildings } = autoAssignResidence(child, buildings);
+  if (!buildingId) return result;
+
+  const maxTalent = Math.max(
+    child.hiddenTalents.rootBone, child.hiddenTalents.spiritRhythm,
+    child.hiddenTalents.constitution, child.hiddenTalents.daoFate,
+  );
+  const talentDesc = maxTalent >= 80 ? '天资卓绝' : maxTalent >= 60 ? '资质上佳' : '资质平平';
+
+  result.newborns.push(child);
+  result.buildings = newBuildings;
+  result.notifications.push(createNotification(
+    'success', '宗门添丁',
+    `${parentA.name}与${parentB.name}喜得子嗣${child.name}（第${child.generation}代嫡传，${talentDesc}），已录入名册。成年后方可承担宗门事务。`,
+    gameDate,
+  ));
+  return result;
 }
 
 export function createInitialBuildings(): Building[] {
@@ -882,6 +1186,10 @@ export function attemptBreakthrough(disciple: Disciple, hasPill: boolean = false
   const talentBonus = (disciple.hiddenTalents.rootBone - 50) * 0.2;
   successRate += talentBonus;
 
+  // 志向加成：求道/长生等志向对突破更执着
+  const ambition = getAmbitionEffects(disciple.ambition);
+  if (ambition) successRate += ambition.breakthroughBonus;
+
   successRate = clamp(successRate, 5, 95);
 
   const roll = randomFloat(0, 100);
@@ -908,6 +1216,9 @@ export function attemptBreakthrough(disciple: Disciple, hasPill: boolean = false
 }
 
 export function processMonthlyCultivation(disciple: Disciple): Disciple {
+  // 稚子未开蒙，修为不增长
+  if (disciple.age < CULTIVATION_START_AGE) return disciple;
+
   if (disciple.realm === 'mortal') {
     const required = getStageBreakthroughRequired('mortal', disciple.realmStage);
     return {
@@ -951,7 +1262,9 @@ export function processMonthlyCultivation(disciple: Disciple): Disciple {
   // clamp：避免负加成（极端 buff 时）导致进度倒退；最高加成上限 250%（= 3.5 倍速度，约当 2 本高阶功法 + 讲经堂满配 + 洞府）
   const clampedBonus = Math.max(-50, Math.min(250, totalBonusPercent));
 
-  const speed = disciple.cultivationSpeed * (1 + clampedBonus / 100);
+  const speed = disciple.cultivationSpeed
+    * (getAmbitionEffects(disciple.ambition)?.cultivationMult ?? 1)
+    * (1 + clampedBonus / 100);
 
   const required = getStageBreakthroughRequired(disciple.realm, disciple.realmStage);
   const newProgress = Math.min(required, disciple.realmProgress + Math.max(1, Math.round(speed)));
@@ -968,10 +1281,17 @@ export function processMonthlyWork(disciple: Disciple, building: Building | null
 }
 
 // 讲经堂修炼加成表（按建筑等级）
-const LECTURE_HALL_BONUS_BY_LEVEL: Record<number, number> = {
+export const LECTURE_HALL_BONUS_BY_LEVEL: Record<number, number> = {
   1: 20,   // Lv1: +20%
   2: 35,   // Lv2: +35%
   3: 55,   // Lv3: +55%
+};
+
+// 演武场逐级贡献消耗与战力经验收益（UI 与结算共用同一份数据）
+export const TRAINING_GROUND_LEVEL_TABLE: Record<number, { cost: number; gain: number }> = {
+  1: { cost: 20, gain: 5 },
+  2: { cost: 18, gain: 7 },
+  3: { cost: 15, gain: 10 },
 };
 
 export function calculateLectureBonus(lecturer: Disciple | null, lectureHallLevel: number = 1): number {
@@ -1280,7 +1600,15 @@ export function calculateDiscipleCombatPower(disciple: Disciple): number {
   // 战力经验加成：满经验100 → +5%战力（线性缩放）
   const combatExpBonus = ((disciple.combatExperience || 0) / 100) * 5;
 
-  return Math.floor(basePower * (1 + totalBookBonus / 100 + combatExpBonus / 100) + equipmentBonus);
+  // 志向加成：复仇/护宗等志向令弟子战力更强
+  const ambitionMult = getAmbitionEffects(disciple.ambition)?.combatMult ?? 1;
+
+  // 专精加成：斗法专精弟子更擅攻伐
+  const specialtyMult = getDiscipleSpecialty(disciple) === 'combat' ? 1.08 : 1;
+
+  return Math.floor(
+    (basePower * (1 + totalBookBonus / 100 + combatExpBonus / 100) + equipmentBonus) * ambitionMult * specialtyMult,
+  );
 }
 
 // ===== 战力构成明细（带回源） =====
@@ -1343,7 +1671,11 @@ export function calculateDiscipleCombatPowerBreakdown(disciple: Disciple): Comba
     if (cfg?.combatPowerBonus) beastBonus = cfg.combatPowerBonus;
   }
   const equipmentBonus = artifactBonus + talismanBonus + beastBonus;
-  const total = Math.floor(basePower * (1 + bookBonusTotal / 100) + equipmentBonus);
+  // 志向加成：与 calculateDiscipleCombatPower 保持一致
+  const ambitionMultiplier = getAmbitionEffects(disciple.ambition)?.combatMult ?? 1;
+  // 专精加成：斗法专精 ×1.08
+  const specialtyMultiplier = getDiscipleSpecialty(disciple) === 'combat' ? 1.08 : 1;
+  const total = Math.floor((basePower * (1 + bookBonusTotal / 100) + equipmentBonus) * ambitionMultiplier * specialtyMultiplier);
 
   return {
     realmBase: realmPower,
@@ -1358,6 +1690,8 @@ export function calculateDiscipleCombatPowerBreakdown(disciple: Disciple): Comba
     talismanBonus,
     beastBonus,
     equipmentBonus,
+    ambitionMultiplier,
+    specialtyMultiplier,
     total,
   };
 }
@@ -1531,6 +1865,17 @@ export function calculateSectCombatPower(
     });
   }
   
+  // 阵堂加成：启用时全宗防御 +10%，每升1级额外 +5%
+  const arrayHall = buildings.find(b => b.type === 'array_hall' && b.status === 'active');
+  if (arrayHall) {
+    const arrayBonus = 0.1 + 0.05 * (arrayHall.level - 1);
+    bonuses.push({
+      name: '阵堂布阵',
+      multiplier: arrayBonus,
+      description: `阵堂Lv.${arrayHall.level}，全宗防御+${(arrayBonus * 100).toFixed(0)}%`,
+    });
+  }
+
   // 宗门流派/天赋树战力加成
   if (schoolBonuses?.combatPowerBonus) {
     const schoolCombatBonus = schoolBonuses.combatPowerBonus / 100;
@@ -1732,6 +2077,16 @@ export interface DiscipleDepartureResult {
   };
   /** 结构化离开事件列表（用于月度简报展示） */
   departureList: { name: string; status: string; reason: 'death' | 'defect'; detail: string }[];
+  /** 寿终弟子原始记录（供英灵祠收录；叛逃不记录） */
+  fallenDisciples: Array<{
+    id: string;
+    name: string;
+    status: DiscipleStatus;
+    realm: Realm;
+    contributionPoints: number;
+    age: number;
+    avatarSeed: Disciple['avatarSeed'];
+  }>;
 }
 
 /** 为 depart 事件创建一条宗门历史记录 */
@@ -1867,7 +2222,8 @@ export function generateDiscipleRelationships(
   random: () => number = Math.random,
 ): { type: 'friend' | 'dao_partner' | 'rival'; a: Disciple; b: Disciple }[] {
   const results: { type: 'friend' | 'dao_partner' | 'rival'; a: Disciple; b: Disciple }[] = [];
-  const active = disciples.filter(d => d.status !== 'mortal');
+  // 未成年稚子不参与人际网络（避免幼童被结为道侣/宿敌），凡人亦不参与
+  const active = disciples.filter(d => d.status !== 'mortal' && d.age >= ADULT_AGE);
   for (let i = 0; i < active.length; i++) {
     for (let j = i + 1; j < active.length; j++) {
       const a = active[i]; const b = active[j];
@@ -2027,19 +2383,19 @@ export function generateBuildingEvents(
         title: '阵法反噬', description: '阵堂试验新阵法时失控，灵气暴走，阵堂受损严重。',
         effects: { spiritStoneChange: -60, satisfactionChange: -5, reputationChange: -3 }, duration: 2 },
     ],
-    sutra_hall: [
-      { id: 'artifact_masterpiece', buildingType: 'sutra_hall', type: 'auspicious',
+    forge_hall: [
+      { id: 'artifact_masterpiece', buildingType: 'forge_hall', type: 'auspicious',
         title: '神兵出世', description: '炼器堂成功炼制出一件极品法器，器成之日霞光万丈！',
         effects: { reputationChange: 15, satisfactionChange: 5, spiritStoneChange: 50 }, duration: 1 },
-      { id: 'artifact_failure', buildingType: 'sutra_hall', type: 'disaster',
+      { id: 'artifact_failure', buildingType: 'forge_hall', type: 'disaster',
         title: '炼器失败', description: '炼器堂在炼制高阶法器时失败，材料尽毁，炉鼎受损。',
         effects: { spiritStoneChange: -50, satisfactionChange: -4 }, duration: 1 },
     ],
-    artifact_hall: [
-      { id: 'talisman_inspire', buildingType: 'artifact_hall', type: 'auspicious',
+    talisman_hall: [
+      { id: 'talisman_inspire', buildingType: 'talisman_hall', type: 'auspicious',
         title: '符道灵感', description: '符堂弟子在绘制符箓时灵光一闪，创出一种新的符箓画法！',
         effects: { outputMultiplier: 1.6, satisfactionChange: 4, spiritStoneChange: 25 }, duration: 1 },
-      { id: 'talisman_backfire', buildingType: 'artifact_hall', type: 'disaster',
+      { id: 'talisman_backfire', buildingType: 'talisman_hall', type: 'disaster',
         title: '符箓反噬', description: '符堂弟子绘制高阶符箓时灵力失控，符箓爆炸，多人受伤。',
         effects: { spiritStoneChange: -35, satisfactionChange: -6 }, duration: 1 },
     ],
@@ -2438,16 +2794,27 @@ export function calculateDiscipleWelfareCost(
 }
 
 /**
+ * 宗门负债上限：随宗门等级提升（草创 2000 → 万古长青 10000）。
+ * 等级越高家底越厚，越不容易因一时赤字解散。
+ */
+export function getSectDebtLimit(sectLevel: SectLevel): number {
+  const idx = Math.max(0, SectLevelOrder.indexOf(sectLevel));
+  return 2000 * (idx + 1);
+}
+
+/**
  * 检查宗门灭亡条件
  */
 export function checkSectCollapse(
   spiritStones: number, disciples: Disciple[], reputation: number,
-  monthsConsecutiveNegative: number,
+  monthsConsecutiveNegative: number, sectLevel: SectLevel = 'founding',
 ): { collapsed: boolean; reason: string } {
   if (disciples.filter(d => d.status !== 'mortal').length === 0)
     return { collapsed: true, reason: '宗门弟子全数离去，道统断绝。' };
-  if (monthsConsecutiveNegative >= 4 && spiritStones < -5000)
-    return { collapsed: true, reason: `宗门连续 ${monthsConsecutiveNegative} 个季度灵石赤字，负债累累，宗门解散。` };
+  const debtLimit = getSectDebtLimit(sectLevel);
+  // 连续 6 个月赤字且负债超过上限：玩家有半年时间调整开支，而不是一眼判死
+  if (monthsConsecutiveNegative >= 6 && spiritStones < -debtLimit)
+    return { collapsed: true, reason: `宗门连续 ${monthsConsecutiveNegative} 个月灵石赤字，负债超过 ${debtLimit} 灵石，宗门解散。` };
   if (reputation <= -500)
     return { collapsed: true, reason: '宗门声名狼藉，为正道所不容，被联合剿灭。' };
   return { collapsed: false, reason: '' };
@@ -2505,6 +2872,7 @@ export function processMonthlyEmergentEvents(
   monthsConsecutiveNegative: number, gameDate: GameDate,
   createNotification: (type: 'info' | 'success' | 'warning' | 'danger', title: string, content: string, date: GameDate) => Notification,
   random: () => number = Math.random,
+  sectLevel: SectLevel = 'founding',
 ): MonthlyProcessResult {
   const notifications: Notification[] = [];
   const sectHistories: SectHistoryEntry[] = [];
@@ -2548,7 +2916,7 @@ export function processMonthlyEmergentEvents(
   const choiceEvent = generateChoiceEvent(gameDate, reputation, spiritStones, random);
 
   // 4. 灭亡检查
-  const { collapsed, reason } = checkSectCollapse(spiritStones, disciples, reputation, monthsConsecutiveNegative);
+  const { collapsed, reason } = checkSectCollapse(spiritStones, disciples, reputation, monthsConsecutiveNegative, sectLevel);
 
   return { notifications, sectHistories, spiritStoneChange, reputationChange, karmaChange, buildingEvents, choiceEvent, collapsed, collapseReason: reason, updatedDisciples };
 }
@@ -2596,6 +2964,7 @@ export function processDiscipleDepartures(
       paper: 0,
     },
     departureList: [],
+    fallenDisciples: [],
   };
 
   const totalDisciples = inputDisciples.length;
@@ -2731,6 +3100,17 @@ export function processDiscipleDepartures(
         status: DiscipleStatusNames[dep.status as DiscipleStatus],
         reason: 'death',
         detail: `寿终正寝，${detail}`,
+      });
+
+      // 英灵祠收录：记录寿终弟子的生前功绩（叛逃者不记录）
+      result.fallenDisciples.push({
+        id: dep.id,
+        name: dep.name,
+        status: dep.status as DiscipleStatus,
+        realm: dep.realm,
+        contributionPoints: dep.contributionPoints ?? 0,
+        age: Math.floor(dep.age),
+        avatarSeed: dep.avatarSeed,
       });
 
       // 师傅寿终时触发衣钵继承

@@ -141,6 +141,52 @@ export const BACKGROUND_EFFECTS: Record<BackgroundStory, BackgroundEffects> = {
   artifact_artisan: { spiritRhythmBonus: 8, description: '灵韵+8' },
 };
 
+/** 弟子志向：决定其长期追求与行事侧重 */
+export type Ambition =
+  | 'dao'        // 求道 - 一心向道
+  | 'revenge'    // 复仇 - 心怀血仇
+  | 'protect'    // 护宗 - 以宗门为念
+  | 'kinship'    // 寻亲 - 牵挂亲故
+  | 'longevity'; // 长生 - 渴求长生
+
+export const AmbitionNames: Record<Ambition, string> = {
+  dao: '求道',
+  revenge: '复仇',
+  protect: '护宗',
+  kinship: '寻亲',
+  longevity: '长生',
+};
+
+export const AmbitionDescriptions: Record<Ambition, string> = {
+  dao: '一心向道，修炼与突破快人一步，却不耐俗务',
+  revenge: '心怀血仇，战力更强，但怨气难平',
+  protect: '以宗门为念，甘守山门，鲜少因琐事生怨',
+  kinship: '牵挂亲故，看重同门情谊，心性较为安稳',
+  longevity: '渴求长生，热衷丹道养生，心境平和',
+};
+
+/** 志向的实际数值效果 */
+export interface AmbitionEffects {
+  /** 修炼速度倍率 */
+  cultivationMult: number;
+  /** 突破成功率加成（百分点） */
+  breakthroughBonus: number;
+  /** 战力倍率 */
+  combatMult: number;
+  /** 满意度损失倍率（越低越不易生怨） */
+  satisfactionLossMult: number;
+  /** 偏好堂口，自动分配工作时优先考虑 */
+  favoredBuildings: string[];
+}
+
+export const AMBITION_EFFECTS: Record<Ambition, AmbitionEffects> = {
+  dao:       { cultivationMult: 1.06, breakthroughBonus: 6, combatMult: 1.00, satisfactionLossMult: 1.10, favoredBuildings: ['forge_hall', 'lecture_hall'] },
+  revenge:   { cultivationMult: 1.00, breakthroughBonus: 2, combatMult: 1.10, satisfactionLossMult: 1.15, favoredBuildings: ['mountain_gate', 'talisman_hall'] },
+  protect:   { cultivationMult: 1.00, breakthroughBonus: 1, combatMult: 1.05, satisfactionLossMult: 0.70, favoredBuildings: ['mountain_gate', 'servant_hall'] },
+  kinship:   { cultivationMult: 1.00, breakthroughBonus: 1, combatMult: 1.00, satisfactionLossMult: 0.85, favoredBuildings: ['spirit_beast_garden', 'lecture_hall'] },
+  longevity: { cultivationMult: 1.03, breakthroughBonus: 4, combatMult: 1.00, satisfactionLossMult: 0.90, favoredBuildings: ['pill_hall', 'forge_hall'] },
+};
+
 /** 喜好类型 */
 export interface DisciplePreference {
   /** 喜欢的丹药类型（有偏好时服用效果提升） */
@@ -372,6 +418,9 @@ export interface Disciple {
   master: string | null;        // 师傅名称
   friends: string[];            // 好友名称列表
   daoPartner: string | null;    // 道侣名称（新增）
+  // ===== 血脉系统：嫡传子嗣的父母与代数（普通弟子无此字段）=====
+  parents?: string[];           // 父母名称（用于族谱展示）
+  generation?: number;          // 宗族代数：开宗/外来弟子为 1，子嗣逐代 +1
   rival: string | null;         // 宿敌名称（新增）
   apprenticeIds: string[];      // 弟子ID列表（由 master 字段关联，新增）
   tournamentHistory: DiscipleTournamentRecord[];  // 大比历史记录
@@ -381,6 +430,7 @@ export interface Disciple {
   personality?: Personality;        // 性格特质
   background?: BackgroundStory;     // 背景故事
   preferences?: DisciplePreference; // 喜好偏好
+  ambition?: Ambition;              // 志向（老存档可能为空）
   // 藏经阁自动推演开关
   disableAutoDeduce?: boolean;      // true=不自动推演（默认false即允许自动推演，但新增弟子默认关）
   // 战力经验系统：满经验100时获得5%战力加成，可通过演武场/大比/试炼/探索获取

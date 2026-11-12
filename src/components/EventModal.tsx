@@ -31,6 +31,8 @@ export const EventModal: React.FC = () => {
     ? disciples.find(d => d.id === pending.targetDiscipleId)
     : null;
   const mul = getLevelMultiplier(sectLevel);
+  // 超时未处理时自动执行的选项
+  const defaultChoice = config.choices.find(c => c.id === config.defaultChoiceId) ?? config.choices[0];
 
   const choiceCost = (choice: EventChoice) => {
     const stones = choice.cost?.spiritStones ? Math.round(choice.cost.spiritStones * mul) : 0;
@@ -95,6 +97,11 @@ export const EventModal: React.FC = () => {
             涉及弟子：<span className="text-sect-gold">{targetDisciple.name}</span>
           </div>
         )}
+        {!resultText && pending && (
+          <div className="text-[11px] text-sect-jade/40">
+            超时未处理将自动选择「{defaultChoice.label}」
+          </div>
+        )}
 
         {resultText ? (
           <div className="space-y-3">
@@ -122,7 +129,14 @@ export const EventModal: React.FC = () => {
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm text-sect-gold font-display">{choice.label}</span>
+                    <span className="text-sm text-sect-gold font-display">
+                      {choice.label}
+                      {choice.id === defaultChoice.id && (
+                        <span className="ml-1.5 align-middle text-[10px] px-1 py-0.5 rounded border border-sect-gold/30 text-sect-gold/70">
+                          默认
+                        </span>
+                      )}
+                    </span>
                     <span className="text-[11px] text-sect-jade/50 shrink-0">
                       {stones > 0 && `-${stones} 灵石`}
                       {stones > 0 && pillName && ' · '}

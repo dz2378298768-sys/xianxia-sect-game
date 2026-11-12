@@ -139,12 +139,12 @@ export function pickTargetDisciple(
   }
 }
 
-/** 创建待处理事件 */
+/** 创建待处理事件（默认 2 个月后自行发展，给玩家处置时间） */
 export function createPendingEvent(
   event: GameEventConfig,
   state: EventStateView,
   rng: Rng = Math.random,
-  expireMonths = 1,
+  expireMonths = 2,
 ): PendingEvent {
   const absNow = getAbsMonth(state.year, state.month);
   return {

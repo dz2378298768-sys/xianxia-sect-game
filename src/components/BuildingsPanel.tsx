@@ -7,16 +7,18 @@ import { Badge } from '@/components/ui/Badge';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Modal } from '@/components/ui/Modal';
 import {
-  Building2, Wrench, Users, ArrowUp, ArrowDown, Power, PowerOff,
+  Building2, Users, ArrowUp, ArrowDown, Power, PowerOff,
   Lock, Gem, Star, DoorOpen, Heart, Sparkles,
   TrendingUp, Plus, Shield, BookOpen, FlaskConical,
   Hammer, Scroll, Zap, TreePine, Crown, Info, X, Swords
 } from 'lucide-react';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { LibraryPanel } from '@/components/LibraryPanel';
+import { BuildingEconomyCard } from '@/components/BuildingEconomyCard';
 import { calculateBuildingMaintenance, calculateBuildingOutput, getResidenceUpgradeCost, getCaveMansionUpgradeCost, calculateDiscipleCombatPower, SKYSCRAPER_TOWER_COMBAT_POWER } from '@/utils/gameLogic';
 import { RealmOrder, DiscipleStatusNames, getRealmDisplay } from '@/types/disciple';
 import { BuildingType, RESIDENCE_TYPES, RESIDENCE_TYPES_WITH_CAVE, isResidenceType, MAX_PRODUCTION_SLOTS, getAvailableSlots } from '@/types/building';
+import type { BuildingUpgradeCost } from '@/types/building';
 import { BUILDING_CONFIGS } from '@/data/buildings';
 import { PillTypeNames } from '@/types/pill';
 import { ArtifactTypeNames } from '@/types/artifact';
@@ -25,8 +27,8 @@ import { SectLevelNames } from '@/types/game';
 import { SectIcon } from '@/components/icons/SectIcons';
 import { SimpleAvatar } from '@/components/ui/Avatar';
 import { getBuildingImage } from '@/data/buildingImages';
-import { BUILDING_CONTRIBUTION_BONUS } from '@/domain/balance';
 import { BeastTypeNames } from '@/types/beast';
+import { getEnshrinementCapacity, getSpiritMeritTier, canEnshrine, ENSHRINEMENT_MIN_CONTRIBUTION } from '@/domain/enshrinement';
 
 /** 建筑圆形缩略图：优先用生成的水墨建筑图，无图则回退图标 */
 const BuildingThumb: React.FC<{ type: string; size?: number; locked?: boolean; className?: string }> = ({
@@ -81,8 +83,8 @@ function getBuildingIcon(type: string) {
     case 'lecture_hall': return <BookOpen size={24} />;
     case 'servant_hall': return <TreePine size={24} />;
     case 'pill_hall': return <FlaskConical size={24} />;
-    case 'sutra_hall': return <Hammer size={24} />;
-    case 'artifact_hall': return <Scroll size={24} />;
+    case 'forge_hall': return <Hammer size={24} />;
+    case 'talisman_hall': return <Scroll size={24} />;
     case 'secret_library': return <BookOpen size={24} />;
     case 'array_hall': return <Zap size={24} />;
     case 'spirit_beast_garden': return <TreePine size={24} />;
@@ -138,7 +140,7 @@ const ContributionSettingsEditor: React.FC<ContributionSettingsEditorProps> = ({
       </div>
       <div className="contribution-settings-grid">
         <label className="contribution-field">
-          <span className="contribution-field-label">每人季度获得 +</span>
+          <span className="contribution-field-label">每人每月获得 +</span>
           <input
             type="number"
             className="contribution-field-input"
@@ -157,7 +159,7 @@ const ContributionSettingsEditor: React.FC<ContributionSettingsEditorProps> = ({
           />
         </label>
         <label className="contribution-field">
-          <span className="contribution-field-label">每人季度消耗 -</span>
+          <span className="contribution-field-label">每人每月消耗 -</span>
           <input
             type="number"
             className="contribution-field-input"
@@ -207,8 +209,8 @@ const ProductionTargetSelector: React.FC<ProductionTargetSelectorProps> = ({
 
   // 该建筑对应的配方类型
   const isPill = building.type === 'pill_hall';
-  const isArtifact = building.type === 'sutra_hall';
-  const isTalisman = building.type === 'artifact_hall';
+  const isArtifact = building.type === 'forge_hall';
+  const isTalisman = building.type === 'talisman_hall';
 
   const recipes: string[] = isPill ? unlockedPillRecipes
     : isArtifact ? unlockedArtifactRecipes
@@ -366,6 +368,7 @@ export const BuildingsPanel: React.FC = () => {
     buyBeast, captureBeast, beastInventory,
     buyCaveMansion, challengeCaveMansion, challengeSkyscraperTower,
     assignDiscipleToBuilding,
+    fallenDisciples, enshrineDisciple, unenshrineDisciple,
   } = useGameStore();
   const { selectedBuildingId, setSelectedBuildingId, setActivePanel } = useUIStore();
   const [showBuildModal, setShowBuildModal] = useState(false);
@@ -410,7 +413,8 @@ export const BuildingsPanel: React.FC = () => {
       cost = getResidenceUpgradeCost(building);
       if (!cost) return '无法升级';
     } else {
-      cost = building.upgradeCosts[building.level - 1];
+      // 与 store 一致：以配置表为准，旧存档自带的“首次免费”档位不参与计算
+      cost = BUILDING_CONFIGS[building.type as BuildingType]?.upgradeCosts[building.level - 1];
       if (!cost) return '无法升级';
     }
 
@@ -422,7 +426,7 @@ export const BuildingsPanel: React.FC = () => {
 
   const canUpgrade = (building: any) => getUpgradeBlockReason(building) === null;
 
-  const getUpgradeCost = (building: any) => {
+  const getUpgradeCost = (building: any): BuildingUpgradeCost | null => {
     if (building.level >= building.maxLevel) return null;
     const isCave = building.type === 'cave_mansion';
     const isResidence = RESIDENCE_TYPES.includes(building.type);
@@ -432,7 +436,7 @@ export const BuildingsPanel: React.FC = () => {
     if (isResidence) {
       return getResidenceUpgradeCost(building);
     }
-    return building.upgradeCosts[building.level - 1] || null;
+    return BUILDING_CONFIGS[building.type as BuildingType]?.upgradeCosts[building.level - 1] || null;
   };
 
   const isResidenceBuilding = (type: string) => {
@@ -492,16 +496,6 @@ export const BuildingsPanel: React.FC = () => {
     return true;
   };
   
-  const getEffectTypeName = (type: string): string => {
-    const names: Record<string, string> = {
-      contribution: '贡献点收益',
-      cultivation: '修炼加成',
-      defense: '宗门防御',
-      morale: '宗门士气',
-    };
-    return names[type] || '特殊效果';
-  };
-  
   const activeBuildings = buildings.filter(b => b.status === 'active');
 
   // 空缺堂口：活跃、无管理者、有容量、非居所类建筑（居所无需长老管理）
@@ -547,10 +541,6 @@ export const BuildingsPanel: React.FC = () => {
     ? calculateBuildingMaintenance(selectedBuilding)
     : 0;
   
-  const totalMonthlyContribution = assignedDisciples.reduce((sum, d) => {
-    return sum + Math.floor((d.contributionPoints || 0) / 10);
-  }, 0);
-  
   function getRealmColor(realm: string): string {
     const colors: Record<string, string> = {
       mortal: 'text-gray-400',
@@ -570,24 +560,6 @@ export const BuildingsPanel: React.FC = () => {
     if (value >= 20) return '欠佳';
     return '低劣';
   }
-  
-  const renderBreakdownTooltip = (breakdown: any) => {
-    const lines = [];
-    lines.push(`建筑等级加成: +${breakdown.levelBonus.toFixed(0)}%`);
-    if (breakdown.managerBonus > 0) {
-      lines.push(`管理者加成: +${breakdown.managerBonus.toFixed(0)}% (${breakdown.managerName})`);
-    }
-    lines.push(`弟子天赋加成: ${breakdown.talentBonus >= 0 ? '+' : ''}${breakdown.talentBonus.toFixed(0)}%`);
-    lines.push(`人员配置: ${breakdown.capacityRatio.toFixed(0)}%`);
-    lines.push(`总加成倍率: ${(breakdown.totalMultiplier / 100).toFixed(2)}x`);
-    return (
-      <div className="text-left space-y-1">
-        {lines.map((line, i) => (
-          <div key={i} className="text-xs">{line}</div>
-        ))}
-      </div>
-    );
-  };
   
   const handleBuild = (type: BuildingType) => {
     const config = BUILDING_CONFIGS[type];
@@ -752,132 +724,25 @@ export const BuildingsPanel: React.FC = () => {
                       Lv.{selectedBuilding.level}/{selectedBuilding.maxLevel}
                     </span>
                     <span className="inline-flex items-center gap-1 text-[9px] text-sect-jade/50">
-                      维护 {maintenance}/月
-                    </span>
-                    <span className="inline-flex items-center gap-1 text-[9px] text-sect-jade/50">
                       弟子 {assignedDisciples.length}/{selectedBuilding.discipleCapacity}
                     </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* 概览指标：2 列网格，每项更宽更清晰 */}
-            <div className="grid grid-cols-2 gap-2">
-              {(() => {
-                const items: { label: string; value: number | string; color: string; icon: string }[] = [];
-                if (output.spiritStones > 0) items.push({ label: '灵石/月', value: output.spiritStones, color: 'text-green-400', icon: '✦' });
-                if (output.herbs > 0) items.push({ label: '灵草/月', value: output.herbs, color: 'text-green-400', icon: '🌿' });
-                if (output.iron > 0) items.push({ label: '玄铁/月', value: output.iron, color: 'text-sect-jade', icon: '⛏' });
-                if (output.paper > 0) items.push({ label: '灵纸/月', value: output.paper, color: 'text-sect-gold', icon: '📜' });
-                if (output.pills > 0) items.push({ label: '丹药/月', value: output.pills, color: 'text-sect-herb-light', icon: '💊' });
-                if (output.artifacts > 0) items.push({ label: '法器/月', value: output.artifacts, color: 'text-sect-jade', icon: '⚔' });
-                if (output.talismans > 0) items.push({ label: '符箓/月', value: output.talismans, color: 'text-sect-gold', icon: '🔮' });
-                if (output.reputation > 0) items.push({ label: '声望/月', value: output.reputation, color: 'text-yellow-400', icon: '⭐' });
-                if (maintenance > 0) items.push({ label: '维护/月', value: `-${maintenance}`, color: 'text-red-400', icon: '⚡' });
-                items.push({ label: '弟子', value: `${assignedDisciples.length}/${selectedBuilding.discipleCapacity}`, color: 'text-sect-jade', icon: '👤' });
-                if (selectedBuilding.minDiscipleStatus) {
-                  items.push({ label: '准入', value: DiscipleStatusDisplayNames[selectedBuilding.minDiscipleStatus], color: 'text-sect-gold', icon: '🔑' });
-                }
-                items.push({ label: '贡献/弟子', value: `+${BUILDING_CONTRIBUTION_BONUS[selectedBuilding.type] ?? 0}`, color: 'text-sect-herb-light', icon: '✨' });
-
-                const hasEffect = selectedBuilding.discipleEffect && selectedBuilding.discipleEffect.type !== 'none';
-
-                return (
-                  <>
-                    {items.map((item, i) => (
-                      <div key={i}
-                        className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-sect-gold/8 bg-gradient-to-br from-sect-ink-light/30 to-sect-ink-light/10 hover:border-sect-gold/25 hover:from-sect-ink-light/40 hover:to-sect-ink-light/20 transition-all duration-200"
-                      >
-                        <span className="text-[14px] leading-none">{item.icon}</span>
-                        <div className="flex-1 min-w-0">
-                          <div className={`text-xs font-display ${item.color} font-bold leading-none`}>
-                            {item.value}
-                          </div>
-                          <div className="text-[9px] text-sect-jade/50 mt-0.5">{item.label}</div>
-                        </div>
-                      </div>
-                    ))}
-                    {hasEffect && (
-                      <div className="col-span-2 flex items-center gap-3 px-3 py-2.5 rounded-xl border border-sect-gold/30 bg-gradient-to-br from-sect-gold/12 to-sect-gold/5">
-                        <span className="text-[16px]">⭐</span>
-                        <div className="flex-1">
-                          <div className="text-[10px] text-sect-gold/70">{getEffectTypeName(selectedBuilding.discipleEffect!.type)}</div>
-                          <div className="text-sm font-display text-sect-gold font-bold">{selectedBuilding.discipleEffect!.value}</div>
-                        </div>
-                      </div>
+                    {selectedBuilding.minDiscipleStatus && (
+                      <span className="inline-flex items-center gap-1 text-[9px] text-sect-jade/50">
+                        准入 {DiscipleStatusDisplayNames[selectedBuilding.minDiscipleStatus]}
+                      </span>
                     )}
-                  </>
-                );
-              })()}
+                  </div>
+                </div>
+              </div>
             </div>
 
-            {/* 特殊建筑作用说明 —— 装饰性卡片 */}
-            {selectedBuilding.type === 'mountain_gate' && (
-              <div className="relative overflow-hidden rounded-xl border border-blue-500/25 bg-gradient-to-br from-blue-500/8 to-blue-500/2 p-3">
-                <div className="absolute -top-8 -right-8 w-20 h-20 rounded-full bg-blue-500/5 blur-xl" />
-                <div className="flex items-center gap-2 mb-2 relative z-10">
-                  <span className="p-1.5 rounded-lg bg-blue-500/15">
-                    <Shield size={14} className="text-blue-300" />
-                  </span>
-                  <span className="font-display text-blue-300 text-xs">山门作用</span>
-                </div>
-                <div className="space-y-1.5 text-[11px] text-sect-jade/80 leading-snug ml-1 relative z-10">
-                  <div className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span>驻守弟子每月 +5 贡献点</div>
-                  <div className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span>每级满员 +5% 防御战力</div>
-                  <div className="flex items-center gap-1.5"><span className="text-amber-400">★</span>升至 10 级满员化为护山大阵，+50% 战力</div>
-                  <div className="flex items-center gap-1.5"><span className="text-blue-400">↑</span>每级 +10 容量，最高 10 级</div>
-                </div>
-                <div className="mt-2 text-[10px] text-blue-400/60 bg-blue-500/5 rounded-lg px-2 py-1 relative z-10">
-                  当前：Lv.{selectedBuilding.level} · 容量 {selectedBuilding.discipleCapacity} ·
-                  {selectedBuilding.assignedDisciples.length >= selectedBuilding.discipleCapacity
-                    ? <span className="text-emerald-400">已满员 +{(selectedBuilding.level * 5)}% 战力</span>
-                    : <span className="text-yellow-400">未满员（满员后生效）</span>}
-                </div>
-              </div>
-            )}
-
-            {selectedBuilding.type === 'lecture_hall' && (
-              <div className="relative overflow-hidden rounded-xl border border-purple-500/25 bg-gradient-to-br from-purple-500/8 to-purple-500/2 p-3">
-                <div className="absolute -top-8 -right-8 w-20 h-20 rounded-full bg-purple-500/5 blur-xl" />
-                <div className="flex items-center gap-2 mb-2 relative z-10">
-                  <span className="p-1.5 rounded-lg bg-purple-500/15">
-                    <BookOpen size={14} className="text-purple-300" />
-                  </span>
-                  <span className="font-display text-purple-300 text-xs">讲经堂作用</span>
-                </div>
-                <div className="space-y-1.5 text-[11px] text-sect-jade/80 leading-snug ml-1 relative z-10">
-                  <div className="flex items-center gap-1.5"><span className="text-orange-400">−</span>听讲弟子每月消耗 {Math.abs(BUILDING_CONTRIBUTION_BONUS['lecture_hall'] ?? -5)} 贡献</div>
-                  <div className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span>听讲弟子修炼 +10%，讲师越强加成越高</div>
-                  <div className="flex items-center gap-1.5"><span className="text-amber-400">★</span>讲师同享修炼加成</div>
-                </div>
-                {selectedBuilding.managerId && (
-                  <div className="mt-2 text-[10px] text-purple-400/60 bg-purple-500/5 rounded-lg px-2 py-1 relative z-10">
-                    当前讲师：{disciples.find(d => d.id === selectedBuilding.managerId)?.name || '未知'}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {selectedBuilding.type === 'servant_hall' && (
-              <div className="relative overflow-hidden rounded-xl border border-green-500/25 bg-gradient-to-br from-green-500/8 to-green-500/2 p-3">
-                <div className="absolute -top-8 -right-8 w-20 h-20 rounded-full bg-green-500/5 blur-xl" />
-                <div className="flex items-center gap-2 mb-2 relative z-10">
-                  <span className="p-1.5 rounded-lg bg-green-500/15">
-                    <Wrench size={14} className="text-green-300" />
-                  </span>
-                  <span className="font-display text-green-300 text-xs">杂役堂作用</span>
-                </div>
-                <div className="space-y-1.5 text-[11px] text-sect-jade/80 leading-snug ml-1 relative z-10">
-                  <div className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span>杂役弟子劳作赚取贡献点</div>
-                  <div className="flex items-center gap-1.5"><span className="text-amber-400">★</span>每名弟子每月 +10 贡献</div>
-                  <div className="flex items-center gap-1.5"><span className="text-blue-400">↑</span>每级 +10 容量；灵韵越高产出越多</div>
-                </div>
-                <div className="mt-2 text-[10px] text-green-400/60 bg-green-500/5 rounded-lg px-2 py-1 relative z-10">
-                  Lv.{selectedBuilding.level} · 容量 {selectedBuilding.discipleCapacity} · 最高 5 级
-                </div>
-              </div>
-            )}
+            {/* 统一数值档案：所有建筑共用同一手机端模板 */}
+            <BuildingEconomyCard
+              building={selectedBuilding}
+              output={output}
+              maintenance={maintenance}
+              upgradeCost={getUpgradeCost(selectedBuilding)}
+            />
 
             {selectedBuilding.type === 'spirit_beast_garden' && (
               <div className="relative overflow-hidden rounded-xl border border-emerald-500/25 bg-gradient-to-br from-emerald-500/8 to-emerald-500/2 p-3">
@@ -887,11 +752,6 @@ export const BuildingsPanel: React.FC = () => {
                     <TreePine size={14} className="text-emerald-300" />
                   </span>
                   <span className="font-display text-emerald-300 text-xs">灵兽原</span>
-                </div>
-                <div className="space-y-1.5 text-[11px] text-sect-jade/80 leading-snug ml-1 relative z-10">
-                  <div className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span>弟子于灵兽原培养，每月 +{BUILDING_CONTRIBUTION_BONUS['spirit_beast_garden'] ?? 7} 贡献</div>
-                  <div className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span>每只灵兽每月消耗 2 灵草维持</div>
-                  <div className="flex items-center gap-1.5"><span className="text-amber-400">★</span>解锁条件：山门达到 2 级</div>
                 </div>
 
                 {/* 购买 / 捕捉 */}
@@ -980,45 +840,6 @@ export const BuildingsPanel: React.FC = () => {
               </div>
             )}
 
-            {selectedBuilding.type === 'secret_library' && (
-              <div className="relative overflow-hidden rounded-xl border border-amber-500/25 bg-gradient-to-br from-amber-500/8 to-amber-500/2 p-3">
-                <div className="absolute -top-8 -right-8 w-20 h-20 rounded-full bg-amber-500/5 blur-xl" />
-                <div className="flex items-center gap-2 mb-2 relative z-10">
-                  <span className="p-1.5 rounded-lg bg-amber-500/15">
-                    <BookOpen size={14} className="text-amber-300" />
-                  </span>
-                  <span className="font-display text-amber-300 text-xs">藏经阁</span>
-                </div>
-                <div className="space-y-1.5 text-[11px] text-sect-jade/80 leading-snug ml-1 relative z-10">
-                  <div className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span>弟子于此学习功法，无额外基础贡献</div>
-                  <div className="flex items-center gap-1.5"><span className="text-amber-400">★</span>金丹期以上弟子可推演功法，每月获取贡献</div>
-                  <div className="flex items-center gap-1.5"><span className="text-blue-400">↑</span>推演贡献随道缘、藏经阁等级提升</div>
-                </div>
-                <div className="mt-2 text-[10px] text-amber-400/60 bg-amber-500/5 rounded-lg px-2 py-1 relative z-10">
-                  Lv.{selectedBuilding.level} · 可推演弟子：
-                  {assignedDisciples.filter(d => RealmOrder.indexOf(d.realm) >= RealmOrder.indexOf('golden')).length} 人
-                </div>
-              </div>
-            )}
-
-            {RESIDENCE_TYPES.includes(selectedBuilding.type) && selectedBuilding.type !== 'cave_mansion' && (
-              <div className="relative overflow-hidden rounded-xl border border-sect-gold/25 bg-gradient-to-br from-sect-gold/8 to-sect-gold/2 p-3">
-                <div className="absolute -top-8 -right-8 w-20 h-20 rounded-full bg-sect-gold/5 blur-xl" />
-                <div className="flex items-center gap-2 mb-2 relative z-10">
-                  <span className="p-1.5 rounded-lg bg-sect-gold/15">
-                    <Building2 size={14} className="text-sect-gold" />
-                  </span>
-                  <span className="font-display text-sect-gold text-xs">居所升级</span>
-                </div>
-                <div className="space-y-1.5 text-[11px] text-sect-jade/80 leading-snug ml-1 relative z-10">
-                  <div className="flex items-center gap-1.5"><span className="text-emerald-400">✓</span>每级 +10 可居住弟子</div>
-                </div>
-                <div className="mt-2 text-[10px] text-sect-jade/60 bg-sect-ink-light/30 rounded-lg px-2 py-1 relative z-10">
-                  Lv.{selectedBuilding.level} · 容量 {selectedBuilding.discipleCapacity}
-                </div>
-              </div>
-            )}
-
             {selectedBuilding.type === 'cave_mansion' && (() => {
               const residents = assignedDisciples;
               const elders = disciples.filter(d => d.status === 'elder');
@@ -1028,11 +849,6 @@ export const BuildingsPanel: React.FC = () => {
                 <div className="bg-gradient-to-br from-purple-500/10 to-yellow-500/5 border border-sect-gold/40 rounded p-2 text-[11px] space-y-2">
                   <div className="font-display text-sect-gold flex items-center gap-1">
                     <Crown size={12} />洞府长老居所
-                  </div>
-                  <div className="space-y-0.5 text-sect-jade/80 leading-snug">
-                    <div>✓ 专属长老居所，Lv1=1 人，每级 +2 人，最高 5 级（9 人）</div>
-                    <div>★ 洞府住满后，其他长老可挑战现任长老以夺取洞府居住权</div>
-                    <div>↑ 升级洞府以容纳更多长老</div>
                   </div>
                   <div className="text-[10px] text-sect-gold/80">
                     Lv.{selectedBuilding.level} · 容量 {selectedBuilding.assignedDisciples.length}/{selectedBuilding.discipleCapacity}
@@ -1281,26 +1097,10 @@ export const BuildingsPanel: React.FC = () => {
 
             {selectedBuilding.type === 'training_ground' && (() => {
               const trainingDisciples = disciples.filter(d => selectedBuilding.assignedDisciples.includes(d.id));
-              const lv = selectedBuilding.level;
-              const costTable = { 1: 20, 2: 18, 3: 15 };
-              const gainTable = { 1: 5, 2: 7, 3: 10 };
-              const cost = costTable[lv as keyof typeof costTable] || 20;
-              const gain = gainTable[lv as keyof typeof gainTable] || 5;
               return (
                 <div className="bg-gradient-to-br from-orange-500/10 to-red-600/5 border border-orange-400/40 rounded p-2 text-[11px] space-y-2">
                   <div className="font-display text-orange-300 flex items-center gap-1">
-                    <Swords size={12} />演武场 · 战力修炼 <span className="text-[10px] text-sect-jade/50">Lv.{lv}</span>
-                  </div>
-                  <div className="space-y-0.5 text-sect-jade/80 leading-snug">
-                    <div>✓ 每名弟子每月消耗 <span className="text-orange-300 font-mono">{cost}</span> 贡献点</div>
-                    <div>✓ 每月获得 <span className="text-orange-300 font-mono">{gain}</span> 战力经验</div>
-                    <div>★ 满 100 战力经验再 +<span className="text-yellow-300 font-mono">5%</span> 战力加成</div>
-                    <div className="text-[10px] text-sect-jade/50">（大比、试炼、探索也可获得战力经验）</div>
-                    {lv < 3 && (
-                      <div className="text-[10px] text-orange-400/60 mt-1">
-                        Lv{lv + 1} 效果：耗{gainTable[(lv + 1) as keyof typeof gainTable] || 15}贡 +{costTable[(lv + 1) as keyof typeof costTable] || 10}经验
-                      </div>
-                    )}
+                    <Swords size={12} />演武场 · 修炼弟子 <span className="text-[10px] text-sect-jade/50">Lv.{selectedBuilding.level}</span>
                   </div>
                   {trainingDisciples.length > 0 && (
                     <div className="space-y-0.5">
@@ -1322,6 +1122,172 @@ export const BuildingsPanel: React.FC = () => {
                   )}
                   {trainingDisciples.length === 0 && (
                     <div className="text-[10px] text-sect-jade/50">暂无弟子在此修炼，请分配弟子到演武场。</div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {selectedBuilding.type === 'enshrinement_hall' && (() => {
+              const capacity = getEnshrinementCapacity(selectedBuilding.level);
+              const enshrined = fallenDisciples.filter(f => f.enshrined);
+              const activeSpirits = enshrined.slice(0, capacity);
+              const dormantCount = Math.max(0, enshrined.length - capacity);
+              const reputationPerMonth = activeSpirits.reduce((s, f) => s + getSpiritMeritTier(f.contribution), 0);
+              const cultivationPercent = activeSpirits.reduce((s, f) => s + getSpiritMeritTier(f.contribution), 0);
+              const candidates = fallenDisciples
+                .filter(f => !f.enshrined && f.contribution >= ENSHRINEMENT_MIN_CONTRIBUTION)
+                .sort((a, b) => b.contribution - a.contribution);
+              const isActive = selectedBuilding.status === 'active';
+              const upgradeCost = getUpgradeCost(selectedBuilding);
+              const canUp = canUpgrade(selectedBuilding);
+              const tierName = (t: number) => (t >= 3 ? '三档·英烈' : t >= 2 ? '二档·功勋' : '一档·有功');
+              return (
+                <div className="rounded-lg border border-amber-400/30 bg-gradient-to-br from-amber-500/10 to-amber-700/5 p-2.5 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="font-display text-amber-200 flex items-center gap-1 text-xs">
+                      <Sparkles size={13} />英灵祠 · 英灵庇佑
+                      <span className="text-[10px] text-sect-jade/50">Lv.{selectedBuilding.level}</span>
+                    </div>
+                    <Button
+                      variant={isActive ? 'ghost' : 'gold'}
+                      size="sm"
+                      className="text-[10px] py-0.5 px-2"
+                      onClick={() => toggleBuilding(selectedBuilding.id)}
+                    >
+                      {isActive ? '暂停祭祀' : '恢复祭祀'}
+                    </Button>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-1.5 text-center">
+                    <div className="bg-sect-ink-light/40 rounded p-1">
+                      <div className="text-[10px] text-sect-jade/60">供奉</div>
+                      <div className="text-[12px] text-amber-200 font-mono">{enshrined.length}/{capacity}</div>
+                    </div>
+                    <div className="bg-sect-ink-light/40 rounded p-1">
+                      <div className="text-[10px] text-sect-jade/60">声望/月</div>
+                      <div className="text-[12px] text-amber-200 font-mono">+{isActive ? reputationPerMonth : 0}</div>
+                    </div>
+                    <div className="bg-sect-ink-light/40 rounded p-1">
+                      <div className="text-[10px] text-sect-jade/60">全宗修炼</div>
+                      <div className="text-[12px] text-amber-200 font-mono">+{isActive ? cultivationPercent : 0}%</div>
+                    </div>
+                  </div>
+
+                  {!isActive && (
+                    <div className="text-[10px] text-yellow-400/80">
+                      祭祀已暂停，英灵庇佑暂不生效；恢复后立即获得加成。
+                    </div>
+                  )}
+                  {dormantCount > 0 && (
+                    <div className="text-[10px] text-red-300/80">
+                      有 {dormantCount} 位英灵因祠内容量不足而休眠，升级英灵祠后自动生效。
+                    </div>
+                  )}
+
+                  <div>
+                    <div className="text-[11px] text-amber-200/90 mb-1">祠中英灵</div>
+                    {enshrined.length === 0 ? (
+                      <div className="text-[10px] text-sect-jade/45 py-1">
+                        尚无弟子入祠。寿终且生前贡献 ≥ {ENSHRINEMENT_MIN_CONTRIBUTION} 的弟子可在此供奉。
+                      </div>
+                    ) : (
+                      <div className="space-y-0.5 max-h-40 overflow-y-auto pr-1">
+                        {enshrined.map((f, idx) => {
+                          const dormant = idx >= capacity;
+                          return (
+                            <div
+                              key={f.id}
+                              className={`flex items-center gap-1.5 px-2 py-1 rounded border ${dormant
+                                ? 'border-sect-ink-light/40 bg-sect-ink-light/20 opacity-60'
+                                : 'border-amber-400/20 bg-sect-ink-light/40'}`}
+                            >
+                              <SimpleAvatar seed={f.avatarSeed} size={20} status={f.status} realm={f.realm} name={f.name} />
+                              <span className="text-[11px] text-sect-jade">{f.name}</span>
+                              <Badge variant="default" size="sm">{DiscipleStatusNames[f.status]}</Badge>
+                              <span className="text-[10px] text-sect-jade/60">贡献 {f.contribution}</span>
+                              <span className="text-[10px] text-amber-200/80">{tierName(getSpiritMeritTier(f.contribution))}</span>
+                              {dormant && <span className="text-[9px] text-red-300">休眠</span>}
+                              <button
+                                className="ml-auto text-sect-jade/30 hover:text-red-300"
+                                onClick={() => { if (!unenshrineDisciple(f.id)) showError('移出失败'); }}
+                              >
+                                <X size={11} />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <div className="text-[11px] text-amber-200/90 mb-1">
+                      可供奉英灵（生前贡献 ≥ {ENSHRINEMENT_MIN_CONTRIBUTION}）
+                    </div>
+                    {candidates.length === 0 ? (
+                      <div className="text-[10px] text-sect-jade/45 py-1">
+                        暂无符合条件的英灵。弟子寿终后会在此出现。
+                      </div>
+                    ) : (
+                      <div className="space-y-0.5 max-h-40 overflow-y-auto pr-1">
+                        {candidates.map(f => {
+                          const check = canEnshrine(f, selectedBuilding.level, enshrined.length);
+                          return (
+                            <div key={f.id} className="flex items-center gap-1.5 px-2 py-1 rounded bg-sect-ink-light/30">
+                              <SimpleAvatar seed={f.avatarSeed} size={20} status={f.status} realm={f.realm} name={f.name} />
+                              <span className="text-[11px] text-sect-jade">{f.name}</span>
+                              <Badge variant="default" size="sm">{DiscipleStatusNames[f.status]}</Badge>
+                              <span className="text-[10px] text-sect-jade/60">
+                                {getRealmDisplay({ realm: f.realm, realmStage: 'early' })} · 贡献 {f.contribution}
+                              </span>
+                              <Button
+                                variant="gold"
+                                size="sm"
+                                className="ml-auto text-[10px] py-0.5 px-2"
+                                disabled={!isActive || !check.ok}
+                                title={!isActive ? '祭祀已暂停，请先恢复祭祀' : check.reason}
+                                onClick={() => { if (!enshrineDisciple(f.id)) showError(check.reason || '供奉失败'); }}
+                              >
+                                {!isActive ? '祭祀暂停' : (check.ok ? '供奉' : '不可供奉')}
+                              </Button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 升级 */}
+                  {upgradeCost && selectedBuilding.level < selectedBuilding.maxLevel && (
+                    <div className="rounded border border-sect-gold/20 bg-sect-gold/5 p-2">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[11px] text-sect-gold flex items-center gap-1">
+                          <ArrowUp size={11} />升级英灵祠
+                        </span>
+                        <span className="text-[10px] text-sect-jade/70">
+                          Lv.{selectedBuilding.level} → Lv.{selectedBuilding.level + 1} · 容量 {capacity} → {getEnshrinementCapacity(selectedBuilding.level + 1)}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-sect-jade/80 flex items-center gap-1">
+                          <Gem size={11} className="text-sect-gold" />{upgradeCost.spiritStones}
+                        </span>
+                        {!!upgradeCost.reputation && (
+                          <span className="text-[10px] text-blue-300 flex items-center gap-1">
+                            <Star size={11} />{upgradeCost.reputation}
+                          </span>
+                        )}
+                        <Button
+                          variant="gold"
+                          size="sm"
+                          className="ml-auto text-[10px] py-0.5 px-2"
+                          disabled={!canUp}
+                          onClick={() => handleUpgrade(selectedBuilding.id)}
+                        >
+                          {canUp ? '升级' : (getUpgradeBlockReason(selectedBuilding) || '无法升级')}
+                        </Button>
+                      </div>
+                    </div>
                   )}
                 </div>
               );
@@ -1381,8 +1347,14 @@ export const BuildingsPanel: React.FC = () => {
                     const c = getCaveMansionUpgradeCost(selectedBuilding.level - 1);
                     if (c) refundStones = c.spiritStones;
                   } else if (isRes) {
-                    const c = getResidenceUpgradeCost({ ...selectedBuilding, level: selectedBuilding.level - 1 });
-                    if (c) refundStones = c.spiritStones;
+                    // 优先使用建筑实际记录的升级费用（旧存档为旧价格，避免多退）
+                    const stored = selectedBuilding.upgradeCosts[selectedBuilding.level - 2];
+                    if (stored) {
+                      refundStones = stored.spiritStones;
+                    } else {
+                      const c = getResidenceUpgradeCost({ ...selectedBuilding, level: selectedBuilding.level - 1 });
+                      if (c) refundStones = c.spiritStones;
+                    }
                   } else {
                     const c = selectedBuilding.upgradeCosts[selectedBuilding.level - 2];
                     if (c) refundStones = c.spiritStones;
@@ -1526,7 +1498,7 @@ export const BuildingsPanel: React.FC = () => {
                 })()}
 
                 {/* 生产目标选择器：丹堂/炼器堂/符堂（多槽位，按等级解锁） */}
-                {(selectedBuilding.type === 'pill_hall' || selectedBuilding.type === 'sutra_hall' || selectedBuilding.type === 'artifact_hall') && (
+                {(selectedBuilding.type === 'pill_hall' || selectedBuilding.type === 'forge_hall' || selectedBuilding.type === 'talisman_hall') && (
                   <ProductionTargetSelector
                     building={selectedBuilding}
                     unlockedPillRecipes={unlockedPillRecipes}

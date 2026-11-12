@@ -1,7 +1,5 @@
 import React, { useCallback } from 'react';
 import { useUIStore, PanelType } from '@/store/uiStore';
-import { useGameStore } from '@/store/gameStore';
-import { useClockStore } from '@/store/clockStore';
 import { SectIcon, IconName } from '@/components/icons/SectIcons';
 
 interface NavItem {
@@ -10,7 +8,7 @@ interface NavItem {
   label: string;
 }
 
-// 精简后的底部导航：6个核心面板 + 中央"下一月"按钮
+// 精简后的底部导航：6 个核心面板（时间推进交给顶部常驻时间栏）
 const NAV_ITEMS: NavItem[] = [
   { key: 'affairs',    icon: 'chart',     label: '宗务' },
   { key: 'disciples',  icon: 'disciple',  label: '弟子' },
@@ -22,13 +20,6 @@ const NAV_ITEMS: NavItem[] = [
 
 export const BottomNav: React.FC = () => {
   const { activePanel, setActivePanel } = useUIStore();
-  const { toggleShop } = useUIStore();
-  const { nextMonth, year, month } = useGameStore();
-  const resetMonth = useClockStore(s => s.resetMonth);
-  const handleSkipMonth = () => {
-    nextMonth();
-    resetMonth();
-  };
 
   const handleNavClick = useCallback((key: PanelType) => {
     // 点击已激活的面板 → 关闭
@@ -63,21 +54,7 @@ export const BottomNav: React.FC = () => {
           );
         })}
 
-        {/* 中央：推进下一回合 */}
-        <span className="nav-next-turn-wrap">
-          <button
-            className="nav-next-turn nav-next-turn-compact btn-press"
-            onClick={handleSkipMonth}
-            title="跳过本月（立即结算）"
-          >
-            <span className="nav-next-turn-icon">
-              <SectIcon name="nextMonth" size={18} strokeWidth={2} />
-            </span>
-            <span className="nav-next-turn-label">
-              第{year}年{month}月
-            </span>
-          </button>
-        </span>
+        {/* 中央推进按钮已移除：时间由顶部常驻时间栏自动推进，暂停/倍速也在那里 */}
       </div>
     </div>
   );

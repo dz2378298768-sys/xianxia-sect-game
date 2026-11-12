@@ -26,7 +26,7 @@ function makePillHall(targets?: ProductionTarget[]): Building {
 }
 
 function makeWorkBuilding(
-  type: 'sutra_hall' | 'artifact_hall',
+  type: 'forge_hall' | 'talisman_hall',
   id: string,
   name: string,
   targets: ProductionTarget[],
@@ -47,7 +47,7 @@ function makeWorkBuilding(
     managerId: null,
     description: '',
     category: 'production',
-    primaryOutput: type === 'sutra_hall' ? 'artifacts' : 'talismans',
+    primaryOutput: type === 'forge_hall' ? 'artifacts' : 'talismans',
     productionTargets: targets,
   } as Building;
 }
@@ -140,7 +140,7 @@ describe('工作建筑生产逻辑 — 消耗材料按配方产出成品', () =>
 
   it('炼器堂消耗玄铁产出法器并进入法器库存', () => {
     useGameStore.setState({
-      buildings: [makeWorkBuilding('sutra_hall', 'sutra-1', '炼器堂', [{ artifactType: 'flying_sword' }])],
+      buildings: [makeWorkBuilding('forge_hall', 'sutra-1', '炼器堂', [{ artifactType: 'flying_sword' }])],
       unlockedArtifactRecipes: ['flying_sword'],
       artifactInventory: [],
       ironInventory: 100,
@@ -156,7 +156,7 @@ describe('工作建筑生产逻辑 — 消耗材料按配方产出成品', () =>
 
   it('符堂消耗灵纸产出符箓并进入符箓库存', () => {
     useGameStore.setState({
-      buildings: [makeWorkBuilding('artifact_hall', 'talisman-1', '符堂', [{ talismanType: 'fire_talisman' }])],
+      buildings: [makeWorkBuilding('talisman_hall', 'talisman-1', '符堂', [{ talismanType: 'fire_talisman' }])],
       unlockedTalismanRecipes: ['fire_talisman'],
       talismanInventory: [],
       paperInventory: 100,

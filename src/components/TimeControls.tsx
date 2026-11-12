@@ -1,65 +1,76 @@
 import React from 'react';
 import { useGameStore } from '@/store/gameStore';
-import { MONTH_DURATION_MS, useClockStore } from '@/store/clockStore';
+import { DAY_DURATION_MS, DAYS_PER_MONTH, MONTH_DURATION_MS, useClockStore } from '@/store/clockStore';
 import type { GameSpeed } from '@/store/clockStore';
-import { Pause, Play, FastForward } from 'lucide-react';
+import { Pause, Play } from 'lucide-react';
 
-const speeds: GameSpeed[] = [1, 2, 4];
+const SPEEDS: GameSpeed[] = [1, 2, 4];
 
-/** 顶部即时时间进度条：暂停/继续、倍速、月进度、跳过本月（手机端紧凑布局） */
+/** 把 1-30 日写成「初一 / 十五 / 廿三 / 三十」这类农历日名 */
+function formatDay(day: number): string {
+  const digits = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
+  if (day <= 10) return `初${digits[day - 1]}`;
+  if (day < 20) return `十${digits[day - 11]}`;
+  if (day === 20) return '二十';
+  if (day < 30) return `廿${digits[day - 21]}`;
+  return '三十';
+}
+
+/**
+ * 常驻时间栏：日期 + 当月日进度 + 倍速 + 暂停。
+ * 1x 下 1 秒走 1 日，进度条按日分段；暂停时进度条变暗并提示「已暂停」。
+ */
 export const TimeControls: React.FC = () => {
-  const { paused, speed, monthElapsed, togglePause, setSpeed, resetMonth } = useClockStore();
-  const nextMonth = useGameStore(s => s.nextMonth);
+  const { year, month } = useGameStore();
+  const { paused, speed, monthElapsed, togglePause, setSpeed } = useClockStore();
 
+  const day = Math.min(DAYS_PER_MONTH, Math.floor(monthElapsed / DAY_DURATION_MS) + 1);
   const progress = Math.min(100, (monthElapsed / MONTH_DURATION_MS) * 100);
 
-  const handleSkip = () => {
-    nextMonth();
-    resetMonth();
-  };
-
   return (
-    <div className="relative z-20 flex items-center gap-1.5 px-2 py-1 shrink-0 border-b border-sect-gold/20 bg-black/55 backdrop-blur-sm text-sect-jade/80">
-      <button
-        onClick={togglePause}
-        title={paused ? '继续' : '暂停'}
-        aria-label={paused ? '继续' : '暂停'}
-        className="p-1.5 -my-0.5 rounded hover:bg-sect-gold/15 text-sect-gold transition-colors shrink-0"
-      >
-        {paused ? <Play size={14} /> : <Pause size={14} />}
-      </button>
-      <div className="flex items-center gap-0.5 shrink-0">
-        {speeds.map(s => (
+    <div className="clock-bar">
+      <div className="clock-date">
+        <span className="clock-date-main">
+          第{year}年 {month}月
+        </span>
+        <span className="clock-date-day">{formatDay(day)}</span>
+      </div>
+
+      <div className="clock-track">
+        <div
+          className={`clock-fill ${paused ? 'clock-fill-paused' : ''}`}
+          style={{ width: `${progress}%` }}
+        />
+        <div className="clock-ticks" />
+      </div>
+
+      {paused && <span className="clock-paused-tag">已暂停</span>}
+
+      <div className="clock-speed">
+        {SPEEDS.map(s => (
           <button
             key={s}
+            type="button"
             onClick={() => setSpeed(s)}
-            className={`px-1.5 py-1 rounded text-[10px] leading-none border transition-colors ${
-              speed === s
-                ? 'border-sect-gold/60 bg-sect-gold/20 text-sect-gold'
-                : 'border-white/10 text-sect-jade/50 hover:text-sect-gold'
-            }`}
+            className={`clock-speed-btn ${speed === s ? 'clock-speed-btn-active' : ''}`}
+            title={`${s} 倍速${s === 1 ? '（1 秒 1 日）' : ''}`}
           >
             {s}x
           </button>
         ))}
       </div>
-      <div className="flex-1 min-w-0 h-1.5 rounded bg-white/10 overflow-hidden">
-        <div
-          className="h-full bg-sect-gold/70 transition-[width] duration-150"
-          style={{ width: `${progress}%` }}
-        />
-      </div>
-      <span className="hidden min-[401px]:inline text-[10px] tabular-nums text-sect-jade/50 w-8 text-right shrink-0">
-        {Math.floor(progress)}%
-      </span>
+
       <button
-        onClick={handleSkip}
-        title="跳过本月（立即结算）"
-        aria-label="跳过本月"
-        className="flex items-center gap-0.5 px-1.5 py-1 -my-0.5 rounded text-[10px] leading-none border border-white/10 text-sect-jade/60 hover:text-sect-gold hover:border-sect-gold/40 transition-colors whitespace-nowrap shrink-0"
+        type="button"
+        onClick={togglePause}
+        className={`clock-pause-btn ${paused ? 'clock-pause-btn-paused' : ''}`}
+        title={paused ? '继续时间' : '暂停时间'}
+        aria-label={paused ? '继续时间' : '暂停时间'}
+        aria-pressed={paused}
       >
-        <FastForward size={12} />
-        <span className="hidden min-[401px]:inline">跳过本月</span>
+        {paused
+          ? <Play size={16} strokeWidth={2.4} fill="currentColor" />
+          : <Pause size={16} strokeWidth={2.4} fill="currentColor" />}
       </button>
     </div>
   );

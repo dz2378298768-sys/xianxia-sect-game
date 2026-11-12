@@ -13,11 +13,12 @@ const BUILDING_POSITIONS: Record<string, { x: number; y: number; scale?: number;
   // 中层（主殿）
   lecture_hall: { x: 33, y: 48, scale: 0.95, layer: 2 },
   pill_hall: { x: 20, y: 50, scale: 0.85, layer: 2 },
-  artifact_hall: { x: 87, y: 50, scale: 0.85, layer: 2 },
-  sutra_hall: { x: 13, y: 56, scale: 0.8, layer: 3 },
+  talisman_hall: { x: 87, y: 50, scale: 0.85, layer: 2 },
+  forge_hall: { x: 13, y: 56, scale: 0.8, layer: 3 },
   mountain_gate: { x: 50, y: 56, scale: 1.15, layer: 2 },
   servant_hall: { x: 67, y: 56, scale: 0.9, layer: 3 },
   spirit_beast_garden: { x: 90, y: 62, scale: 0.85, layer: 3 },
+  enshrinement_hall: { x: 27, y: 60, scale: 0.8, layer: 3 },
   // 前层（居所群）
   outer_residence: { x: 41, y: 68, scale: 0.8, layer: 3 },
   inner_residence: { x: 60, y: 68, scale: 0.8, layer: 3 },

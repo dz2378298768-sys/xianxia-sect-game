@@ -7,7 +7,7 @@ import { getSlots, SAVE_SLOT_COUNT, type SaveSlotMeta } from '@/utils/saveSlots'
 import { isMusicEnabled, isSfxEnabled, setMusicEnabled, setSfxEnabled } from '@/utils/audio';
 
 export const TopBar: React.FC = () => {
-  const { year, month, sectName, sectLevel, reputation, spiritStones, karma, disciples, herbInventory, ironInventory, paperInventory, setReturnToMenuConfirm, newGame, saveToSlot, redeemCodeUsed, useRedeemCode, grantAdReward, adRewardTotal, pendingEvents, openEvent } = useGameStore();
+  const { sectName, sectLevel, reputation, spiritStones, karma, disciples, buildings, herbInventory, ironInventory, paperInventory, setReturnToMenuConfirm, newGame, saveToSlot, redeemCodeUsed, useRedeemCode, grantAdReward, adRewardTotal, pendingEvents, openEvent } = useGameStore();
   const { sectInfoOpen, toggleSectInfo } = useUIStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const [showSavePicker, setShowSavePicker] = useState(false);
@@ -48,10 +48,10 @@ export const TopBar: React.FC = () => {
             </div>
             <div className="text-left">
               <div className="flex items-center gap-1">
-                <h1 className="font-display text-xs text-[var(--gold-200)] tracking-wider max-w-[80px] truncate">{sectName || '修仙宗门'}</h1>
-                <span className="seal-badge text-[9px] px-1">{SectLevelNames[sectLevel]}</span>
+                <h1 className="font-display text-[13px] text-[var(--gold-200)] tracking-wider max-w-[110px] truncate">{sectName || '修仙宗门'}</h1>
+                <span className="seal-badge text-[10px] px-1">{SectLevelNames[sectLevel]}</span>
               </div>
-              <div className="flex items-center gap-1.5 text-[9px] text-[var(--ink-300)] mt-0.5">
+              <div className="flex items-center gap-2 text-[10.5px] text-[var(--ink-300)] mt-0.5">
                 <span className="text-[var(--gold-300)]">声望</span>
                 <span className="font-bold text-[var(--gold-100)]">{Math.floor(reputation)}</span>
                 <span className="text-[var(--ink-400)]">|</span>
@@ -65,7 +65,7 @@ export const TopBar: React.FC = () => {
                 {pendingEvents.length > 0 && (
                   <span
                     onClick={e => { e.stopPropagation(); openEvent(pendingEvents[0].eventId); }}
-                    className="px-1.5 py-0.5 rounded border border-amber-400/40 bg-amber-400/10 text-amber-300 text-[10px] hover:bg-amber-400/20 transition-colors cursor-pointer"
+                    className="px-1.5 py-0.5 rounded border border-amber-400/40 bg-amber-400/10 text-amber-300 text-[10.5px] hover:bg-amber-400/20 transition-colors cursor-pointer"
                   >
                     待处理 {pendingEvents.length}
                   </span>
@@ -74,13 +74,16 @@ export const TopBar: React.FC = () => {
             </div>
           </button>
 
-          {/* 中央：年份和弟子数 */}
-          <div className="flex items-center gap-2 text-[9px] text-[var(--ink-300)]">
-            <span>第{year}年{month}月</span>
-            <span className="text-[var(--ink-400)]">|</span>
-            <span className="flex items-center gap-0.5">
-              <SectIcon name="disciple" size={10} strokeWidth={1.6} />
+          {/* 中央：弟子与建筑数量（日期在下方常驻时间栏） */}
+          <div className="flex items-center gap-2 text-[10.5px] text-[var(--ink-300)]">
+            <span className="flex items-center gap-1">
+              <SectIcon name="disciple" size={12} strokeWidth={1.8} />
               {disciples.length}
+            </span>
+            <span className="text-[var(--ink-400)]">|</span>
+            <span className="flex items-center gap-1">
+              <SectIcon name="building" size={12} strokeWidth={1.8} />
+              {buildings.filter(b => b.status === 'active').length}/{buildings.length}
             </span>
           </div>
 
@@ -96,20 +99,20 @@ export const TopBar: React.FC = () => {
 
             {menuOpen && (
               <div className="absolute right-0 top-full mt-1 w-40 scroll-panel-dark p-1.5 flex flex-col gap-0.5 z-50 shadow-xl" style={{ borderRadius: '8px' }}>
-                <button className="text-[11px] text-left px-2 py-1.5 rounded hover:bg-sect-ink-light/50 text-sect-jade" onClick={() => { setMenuOpen(false); setShowSavePicker(true); }}>
+                <button className="text-[11.5px] text-left px-2 py-2 rounded hover:bg-sect-ink-light/50 text-sect-jade" onClick={() => { setMenuOpen(false); setShowSavePicker(true); }}>
                   保存 / 读取
                 </button>
-                <button className="text-[11px] text-left px-2 py-1.5 rounded hover:bg-sect-ink-light/50 text-sect-jade" onClick={() => { setMenuOpen(false); setShowRedeemCode(true); }}>
+                <button className="text-[11.5px] text-left px-2 py-2 rounded hover:bg-sect-ink-light/50 text-sect-jade" onClick={() => { setMenuOpen(false); setShowRedeemCode(true); }}>
                   兑换码
                 </button>
-                <button className="text-[11px] text-left px-2 py-1.5 rounded hover:bg-sect-ink-light/50 text-sect-jade" onClick={() => { setMenuOpen(false); grantAdReward(); }} disabled={adRewardTotal <= 0}>
+                <button className="text-[11.5px] text-left px-2 py-2 rounded hover:bg-sect-ink-light/50 text-sect-jade" onClick={() => { setMenuOpen(false); grantAdReward(); }} disabled={adRewardTotal <= 0}>
                   广告奖励({adRewardTotal})
                 </button>
-                <button className="text-[11px] text-left px-2 py-1.5 rounded hover:bg-sect-ink-light/50 text-sect-jade" onClick={() => { setMenuOpen(false); setShowSettings(true); }}>
+                <button className="text-[11.5px] text-left px-2 py-2 rounded hover:bg-sect-ink-light/50 text-sect-jade" onClick={() => { setMenuOpen(false); setShowSettings(true); }}>
                   设置
                 </button>
                 <div className="border-t border-sect-ink-light/30 my-1" />
-                <button className="text-[11px] text-left px-2 py-1.5 rounded hover:bg-red-500/10 text-red-400" onClick={() => { setMenuOpen(false); setReturnToMenuConfirm(true); }}>
+                <button className="text-[11.5px] text-left px-2 py-2 rounded hover:bg-red-500/10 text-red-400" onClick={() => { setMenuOpen(false); setReturnToMenuConfirm(true); }}>
                   返回主菜单
                 </button>
               </div>

@@ -113,6 +113,44 @@ const BuildingsPanelContainer: React.FC = () => {
   );
 };
 
+/**
+ * 主界面速览：左上角常驻三枚数值胶囊，点击直达对应面板。
+ * 数据只取已有状态，避免与顶栏重复展示。
+ */
+const HomeHud: React.FC = () => {
+  const disciples = useGameStore(s => s.disciples);
+  const buildings = useGameStore(s => s.buildings);
+  const lastNet = useGameStore(s => {
+    const last = s.spiritStoneHistory[s.spiritStoneHistory.length - 1];
+    return last ? last.netIncome : null;
+  });
+  const setActivePanel = useUIStore(s => s.setActivePanel);
+
+  const activeBuildings = buildings.filter(b => b.status === 'active').length;
+
+  return (
+    <div className="home-hud">
+      <button className="home-hud-chip" onClick={() => setActivePanel('disciples')} title="查看弟子">
+        <SectIcon name="disciple" size={13} strokeWidth={1.8} />
+        <span className="home-hud-label">弟子</span>
+        <b className="home-hud-value">{disciples.length}</b>
+      </button>
+      <button className="home-hud-chip" onClick={() => setActivePanel('buildings')} title="查看建造">
+        <SectIcon name="building" size={13} strokeWidth={1.8} />
+        <span className="home-hud-label">建筑</span>
+        <b className="home-hud-value">{activeBuildings}/{buildings.length}</b>
+      </button>
+      <button className="home-hud-chip" onClick={() => setActivePanel('affairs')} title="查看宗务">
+        <SectIcon name={lastNet !== null && lastNet < 0 ? 'trendDown' : 'trendUp'} size={13} strokeWidth={1.8} />
+        <span className="home-hud-label">月净</span>
+        <b className={`home-hud-value ${lastNet === null ? '' : lastNet >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+          {lastNet === null ? '—' : `${lastNet >= 0 ? '+' : ''}${lastNet}`}
+        </b>
+      </button>
+    </div>
+  );
+};
+
 const GameLayout: React.FC = () => {
   const { buildings, gameStarted, showMainMenu, startGame, newGame, reportView, loadFromSlot } = useGameStore();
   const { activePanel, setActivePanel, selectedBuildingId, setSelectedBuildingId, mobileSidePanel, setMobileSidePanel } = useUIStore();
@@ -184,9 +222,11 @@ const GameLayout: React.FC = () => {
     <div className="h-full w-full sect-bg flex flex-col overflow-hidden overflow-x-hidden">
       <GameClock />
       <OrientationOverlay />
-      <TopBar />
-      {/* 顶部即时时间进度条 */}
-      <TimeControls />
+      {/* 常驻 HUD：顶栏 + 时间栏在所有游戏界面（含面板、任务浮层）之上保持可见 */}
+      <div className="game-hud">
+        <TopBar />
+        <TimeControls />
+      </div>
       <SectInfoDrawer />
 
       {/* 核心内容区 */}
@@ -197,6 +237,9 @@ const GameLayout: React.FC = () => {
           onBuildingClick={(id) => { setSelectedBuildingId(id); setActivePanel('buildings'); }}
         />
 
+        {/* 主界面速览（打开面板时隐藏） */}
+        {activePanel === null && mobileSidePanel !== 'tasks' && <HomeHud />}
+
         {/* 山门左下角：宗门事件 feed（打开面板时隐藏，避免遮挡） */}
         {activePanel === null && mobileSidePanel !== 'tasks' && <EventFeed />}
         <ReportBadge />
@@ -204,7 +247,7 @@ const GameLayout: React.FC = () => {
         {/* 紧凑布局：任务入口（内容区右上，位于时间条下方） */}
         {isCompact && activePanel === null && mobileSidePanel !== 'tasks' && (
           <button
-            className="absolute right-2 top-2 z-30 px-3 py-1.5 rounded-full scroll-panel-dark text-[var(--gold-200)] text-xs btn-press"
+            className="absolute right-2 top-2 z-30 px-3.5 py-2 rounded-full scroll-panel-dark text-[var(--gold-200)] text-[12px] btn-press"
             onClick={() => setMobileSidePanel('tasks')}
             title="任务与异闻"
           >
@@ -220,7 +263,7 @@ const GameLayout: React.FC = () => {
           >
             {/* 面板头部：标题 + 关闭按钮 */}
             <div className="flex items-center justify-between px-3 py-2 border-b border-sect-ink-light/30">
-              <span className="text-sm font-display text-sect-gold">
+              <span className="text-[12.5px] font-display text-sect-gold">
                 {activePanel === 'affairs' && '宗务'}
                 {activePanel === 'disciples' && '弟子'}
                 {activePanel === 'buildings' && '建造'}
@@ -229,7 +272,7 @@ const GameLayout: React.FC = () => {
                 {activePanel === 'warehouse' && '库房'}
               </span>
               <button
-                className="text-sect-jade/50 hover:text-sect-jade text-xs px-2 py-1"
+                className="text-sect-jade/60 hover:text-sect-jade text-[12px] px-2.5 py-1.5 -mr-1"
                 onClick={() => setActivePanel(null)}
               >
                 关闭
@@ -241,6 +284,12 @@ const GameLayout: React.FC = () => {
             </div>
           </div>
         )}
+        {/* 移动端：任务与异闻浮层（放在内容区内，天然让出顶部时间 HUD） */}
+        {isCompact && mobileSidePanel === 'tasks' && (
+          <div className="absolute inset-0 z-30 scroll-panel-dark p-2 pb-16">
+            <TasksPanel mobileMode />
+          </div>
+        )}
       </div>
 
       {/* 底部导航 */}
@@ -249,12 +298,6 @@ const GameLayout: React.FC = () => {
       {/* 桌面端：右上任务与异闻浮动面板 */}
       {!isCompact && <TasksPanel />}
 
-      {/* 移动端：任务与异闻浮层 */}
-      {isCompact && mobileSidePanel === 'tasks' && (
-        <div className="absolute inset-0 z-40 scroll-panel-dark p-2 pb-16">
-          <TasksPanel mobileMode />
-        </div>
-      )}
 
       {/* 模态框 */}
       {reportView && <MonthlyReportModal />}

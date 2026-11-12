@@ -50,3 +50,13 @@ export function generateDiscipleName(): string {
   const givenName = givenNames[randomInt(0, givenNames.length - 1)];
   return surname + givenName;
 }
+
+/** 血脉子嗣取名：随机继承父母之一的姓氏，再配一个新名 */
+export function generateChildName(parentNames: string[]): string {
+  const valid = parentNames.filter(n => typeof n === 'string' && n.length > 0);
+  const surname = valid.length > 0
+    ? valid[randomInt(0, valid.length - 1)][0]
+    : surnames[randomInt(0, surnames.length - 1)];
+  const givenName = givenNames[randomInt(0, givenNames.length - 1)];
+  return surname + givenName;
+}

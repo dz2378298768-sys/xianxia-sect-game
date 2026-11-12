@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { autoAssignBuilding, autoAssignManagers, autoLearnTechniqueOnBreakthrough, generateBuildingEvents } from './gameLogic';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { autoAssignBuilding, autoAssignManagers, autoLearnTechniqueOnBreakthrough, generateBuildingEvents, processDiscipleDepartures, calculateSectCombatPower, getResidenceCultivationBonus, MAINTENANCE_COST_TABLE } from './gameLogic';
 import { BUILDING_CONFIGS } from '@/data/buildings';
 import type { Building, BuildingType } from '@/types/building';
 import type { BookConfig, BookTier, BookType } from '@/data/buildings';
@@ -25,6 +25,7 @@ function makeDisciple(overrides: Record<string, any> = {}): Disciple {
     breakthroughBonus: 0,
     isBreakingThrough: false,
     learnedTechnique: null,
+    learnedBattles: [],
     learnedSecrets: [],
     buffs: [],
     constitutionId: 'normal_1',
@@ -64,13 +65,13 @@ function makeBuilding(type: BuildingType, overrides: Partial<Building> = {}): Bu
 
 // 五大生产堂（用户点名的炼器/丹/符/阵/灵兽原）+ 杂役堂
 const PRODUCTION_HALLS: BuildingType[] = [
-  'pill_hall', 'sutra_hall', 'artifact_hall', 'array_hall', 'spirit_beast_garden',
+  'pill_hall', 'forge_hall', 'talisman_hall', 'array_hall', 'spirit_beast_garden',
 ];
 
 // 事件池必须按真实 BuildingType 建键，避免「同一建筑两套名字」导致事件永远不触发
 describe('generateBuildingEvents — 事件池键名与实际建筑类型一致', () => {
   const TYPES_WITH_EVENTS: BuildingType[] = [
-    'pill_hall', 'sutra_hall', 'artifact_hall', 'array_hall', 'spirit_beast_garden',
+    'pill_hall', 'forge_hall', 'talisman_hall', 'array_hall', 'spirit_beast_garden',
     'servant_hall', 'secret_library', 'lecture_hall', 'mountain_gate',
     'skyscraper_tower', 'outer_residence', 'inner_residence', 'core_residence', 'cave_mansion',
   ];
@@ -98,11 +99,11 @@ describe('autoAssignBuilding — 按天赋选最优生产建筑', () => {
     const d = makeDisciple({ id: 'd-rb', hiddenTalents: talents(80, 30, 30) });
     const buildings = [
       makeBuilding('servant_hall'),
-      makeBuilding('sutra_hall'),
+      makeBuilding('forge_hall'),
       makeBuilding('pill_hall'),
     ];
     const { buildingId } = autoAssignBuilding(d, buildings);
-    expect(buildingId).toBe('sutra_hall-b');
+    expect(buildingId).toBe('forge_hall-b');
   });
 
   it('高悟性外门弟子 → 灵兽原或符堂（悟性主导）', () => {
@@ -110,11 +111,11 @@ describe('autoAssignBuilding — 按天赋选最优生产建筑', () => {
     const buildings = [
       makeBuilding('servant_hall'),
       makeBuilding('mountain_gate'),
-      makeBuilding('artifact_hall'),
+      makeBuilding('talisman_hall'),
       makeBuilding('spirit_beast_garden'),
     ];
     const { buildingId } = autoAssignBuilding(d, buildings);
-    expect(['artifact_hall-b', 'spirit_beast_garden-b']).toContain(buildingId);
+    expect(['talisman_hall-b', 'spirit_beast_garden-b']).toContain(buildingId);
   });
 });
 
@@ -163,20 +164,20 @@ describe('autoAssignBuilding — 容量与状态', () => {
     const d = makeDisciple({ id: 'd-full', hiddenTalents: talents(30, 80, 30) });
     const buildings = [
       makeBuilding('pill_hall', { assignedDisciples: Array.from({ length: 10 }, (_, i) => `occ-${i}`) }),
-      makeBuilding('sutra_hall'),
+      makeBuilding('forge_hall'),
     ];
     const { buildingId } = autoAssignBuilding(d, buildings);
-    expect(buildingId).toBe('sutra_hall-b');
+    expect(buildingId).toBe('forge_hall-b');
   });
 
   it('跳过非激活(关闭)建筑', () => {
     const d = makeDisciple({ id: 'd-closed', hiddenTalents: talents(30, 80, 30) });
     const buildings = [
       makeBuilding('pill_hall', { status: 'closed' }),
-      makeBuilding('sutra_hall'),
+      makeBuilding('forge_hall'),
     ];
     const { buildingId } = autoAssignBuilding(d, buildings);
-    expect(buildingId).toBe('sutra_hall-b');
+    expect(buildingId).toBe('forge_hall-b');
   });
 
   it('不分配到居所类建筑', () => {
@@ -214,8 +215,8 @@ describe('autoAssignBuilding — 在生产堂间分散（不堆在同一座）',
     // 新实现：引入空缺系数后，应分散到多座生产堂。
     const halls: Building[] = [
       makeBuilding('pill_hall'),
-      makeBuilding('sutra_hall'),
-      makeBuilding('artifact_hall'),
+      makeBuilding('forge_hall'),
+      makeBuilding('talisman_hall'),
     ];
     let currentBuildings = halls;
     for (let i = 0; i < 6; i++) {
@@ -263,7 +264,7 @@ describe('autoAssignManagers — 每月自动任命堂主', () => {
   it('身份相同则境界更高者任堂主（元婴高于金丹）', () => {
     const qiD = makeDisciple({ id: 'qi-1', status: 'inner', realm: 'golden' });
     const foundD = makeDisciple({ id: 'found-1', status: 'inner', realm: 'nascent' });
-    const b = makeBuilding('sutra_hall', { assignedDisciples: ['qi-1', 'found-1'] });
+    const b = makeBuilding('forge_hall', { assignedDisciples: ['qi-1', 'found-1'] });
     const { buildings } = autoAssignManagers([qiD, foundD], [b]);
     expect(buildings[0].managerId).toBe('found-1');
   });
@@ -271,7 +272,7 @@ describe('autoAssignManagers — 每月自动任命堂主', () => {
   it('身份与境界均同则贡献点更高者任堂主', () => {
     const low = makeDisciple({ id: 'low-c', status: 'outer', realm: 'golden', contributionPoints: 10 });
     const high = makeDisciple({ id: 'high-c', status: 'outer', realm: 'golden', contributionPoints: 200 });
-    const b = makeBuilding('artifact_hall', { assignedDisciples: ['low-c', 'high-c'] });
+    const b = makeBuilding('talisman_hall', { assignedDisciples: ['low-c', 'high-c'] });
     const { buildings } = autoAssignManagers([low, high], [b]);
     expect(buildings[0].managerId).toBe('high-c');
   });
@@ -319,7 +320,7 @@ describe('autoAssignManagers — 每月自动任命堂主', () => {
     const coreD = makeDisciple({ id: 'core-only', status: 'core', realm: 'golden' });
     // core-only 同时被分到两座堂（异常场景，验证防呆）
     const b1 = makeBuilding('pill_hall', { assignedDisciples: ['core-only'] });
-    const b2 = makeBuilding('sutra_hall', { assignedDisciples: ['core-only'] });
+    const b2 = makeBuilding('forge_hall', { assignedDisciples: ['core-only'] });
     const { buildings, disciples } = autoAssignManagers([coreD], [b1, b2]);
     const managed = buildings.filter(b => b.managerId === 'core-only');
     expect(managed.length).toBe(1);
@@ -481,5 +482,116 @@ describe('autoLearnTechniqueOnBreakthrough — 突破后自动学更优功法（
     ];
     const result = autoLearnTechniqueOnBreakthrough(d, books);
     expect(result.learningBook!.bookId).toBe('b-tech');
+  });
+});
+
+// 英灵祠：寿终登记
+describe('processDiscipleDepartures — 英灵祠寿终记录', () => {
+  const notify = (kind: any, title: string, description: string, date: any) => ({
+    id: `n-${title}`, kind, title, description, date: date ?? { year: 0, month: 0 }, read: false,
+  }) as any;
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('寿终弟子会生成 fallenDisciples 记录（含生前贡献与享年）', () => {
+    const d = makeDisciple({
+      id: 'd-dead', name: '寿终者', age: 100, maxAge: 100, contributionPoints: 250,
+    });
+    const result = processDiscipleDepartures([d], { year: 3, month: 5 }, notify);
+
+    expect(result.deadCount).toBe(1);
+    expect(result.fallenDisciples).toHaveLength(1);
+    expect(result.fallenDisciples[0]).toMatchObject({
+      id: 'd-dead', name: '寿终者', contributionPoints: 250, age: 100,
+    });
+    expect(result.survivors.some(s => s.id === 'd-dead')).toBe(false);
+  });
+
+  it('叛逃弟子不会生成 fallenDisciples 记录', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0); // 必定触发叛逃
+    const d = makeDisciple({
+      id: 'd-defect', name: '叛逃者', satisfaction: 10, lowSatisfactionMonths: 3,
+      contributionPoints: 500,
+    });
+    const result = processDiscipleDepartures([d], { year: 3, month: 5 }, notify);
+
+    expect(result.defectedCount).toBe(1);
+    expect(result.fallenDisciples).toHaveLength(0);
+  });
+});
+
+// 阵堂：启用时提供全宗防御（战力）加成
+describe('calculateSectCombatPower — 阵堂防御加成', () => {
+  const d = makeDisciple({ id: 'pw-1' });
+
+  it('阵堂启用时战力 +10%', () => {
+    const base = calculateSectCombatPower([d], []);
+    const withArray = calculateSectCombatPower([d], [makeBuilding('array_hall')]);
+
+    expect(withArray.bonuses.some(b => b.name === '阵堂布阵')).toBe(true);
+    expect(withArray.basePower).toBe(base.basePower);
+    expect(withArray.totalPower).toBe(Math.floor(base.basePower * 1.1));
+  });
+
+  it('阵堂关闭时加成不生效', () => {
+    const withClosed = calculateSectCombatPower([d], [makeBuilding('array_hall', { status: 'closed' })]);
+
+    expect(withClosed.bonuses.some(b => b.name === '阵堂布阵')).toBe(false);
+    expect(withClosed.totalPower).toBe(withClosed.basePower);
+  });
+
+  it('阵堂随等级增强：Lv3 提供 +20% 防御', () => {
+    const base = calculateSectCombatPower([d], []);
+    const lv3 = calculateSectCombatPower([d], [makeBuilding('array_hall', { level: 3 })]);
+
+    expect(lv3.totalPower).toBe(Math.floor(base.basePower * 1.2));
+  });
+});
+
+// 建筑维护费必须与维护表一致，避免「配置显示一个价、实际扣另一个价」
+describe('BUILDING_CONFIGS — 维护费与维护表口径一致', () => {
+  const allTypes = Object.keys(BUILDING_CONFIGS) as BuildingType[];
+
+  it.each(allTypes)('%s 的 Lv1 配置维护费 = 维护表首项', (type) => {
+    const table = MAINTENANCE_COST_TABLE[type];
+    if (!table) return;
+    expect(BUILDING_CONFIGS[type].baseMaintenanceCost).toBe(table[0]);
+  });
+});
+
+// 洞府必须是最高级居所：Lv1 起就高于核心居所
+describe('getResidenceCultivationBonus — 居所修炼加成', () => {
+  it('普通居所：外门10%、内门20%、核心30%', () => {
+    expect(getResidenceCultivationBonus('outer_residence', 1)).toBe(10);
+    expect(getResidenceCultivationBonus('inner_residence', 1)).toBe(20);
+    expect(getResidenceCultivationBonus('core_residence', 1)).toBe(30);
+  });
+
+  it('洞府 Lv1 +35%，每级+5%，Lv5 +55%，始终高于核心居所', () => {
+    expect(getResidenceCultivationBonus('cave_mansion', 1)).toBe(35);
+    expect(getResidenceCultivationBonus('cave_mansion', 2)).toBe(40);
+    expect(getResidenceCultivationBonus('cave_mansion', 5)).toBe(55);
+    expect(getResidenceCultivationBonus('cave_mansion', 1))
+      .toBeGreaterThan(getResidenceCultivationBonus('core_residence', 1));
+  });
+});
+
+// 建筑升级费用守卫：所有可升级建筑的每一档都必须收费
+describe('BUILDING_CONFIGS — 升级费用无“首次免费”档位', () => {
+  const upgradableTypes = (Object.keys(BUILDING_CONFIGS) as BuildingType[])
+    .filter(type => BUILDING_CONFIGS[type].maxLevel > 1);
+
+  it.each(upgradableTypes)('%s 的每个升级档位都有实际花费（首档不再免费）', (type) => {
+    const config = BUILDING_CONFIGS[type];
+    expect(config.upgradeCosts.length).toBeGreaterThan(0);
+    for (const cost of config.upgradeCosts) {
+      expect(cost.spiritStones > 0 || (cost.reputation ?? 0) > 0).toBe(true);
+    }
+    // 居所 maxLevel=999（无上限），仅有限等级建筑校验档位数量
+    if (config.maxLevel <= 10) {
+      expect(config.upgradeCosts).toHaveLength(config.maxLevel - 1);
+    }
   });
 });

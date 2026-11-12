@@ -14,7 +14,7 @@ import { TalismanTypeNames } from '@/types/talisman';
 import type { ArtifactType } from '@/types/artifact';
 import { ArtifactTypeNames } from '@/types/artifact';
 import { randomInt, pickRandom, weightedRandom } from './random';
-import { calculateDiscipleCombatPower } from './gameLogic';
+import { calculateDiscipleCombatPower, ADULT_AGE } from './gameLogic';
 
 // 弟子名字片段
 const NAME_SURNAMES = ['李', '王', '张', '刘', '陈', '杨', '赵', '黄', '周', '吴', '徐', '孙', '胡', '朱', '高', '林', '何', '郭', '马', '罗', '梁', '宋', '郑', '谢', '韩', '唐', '冯', '于', '董', '萧'];
@@ -134,9 +134,9 @@ export function runTournament(params: RunTournamentParams): TournamentResult {
   const { scope, frequency, config, disciples, otherSects, date } = params;
   const { division } = config;
 
-  // 筛选我方参赛弟子
+  // 筛选我方参赛弟子（未成年稚子不参赛）
   const ourParticipants = disciples
-    .filter(d => discipleMatchesDivision(d, division))
+    .filter(d => d.age >= ADULT_AGE && discipleMatchesDivision(d, division))
     .map(d => ({
       id: d.id,
       name: d.name,

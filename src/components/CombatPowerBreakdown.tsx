@@ -96,6 +96,14 @@ export const CombatPowerBreakdownView: React.FC<Props> = ({ breakdown }) => {
         />
       )}
 
+      {/* 专精加成（斗法专精时显示） */}
+      {b.specialtyMultiplier !== undefined && b.specialtyMultiplier > 1 && (
+        <div className="flex items-center justify-between pl-5 text-[10px] text-[var(--gold-200)]">
+          <span>专精加成</span>
+          <span className="font-mono">×{b.specialtyMultiplier.toFixed(2)}</span>
+        </div>
+      )}
+
       {/* 装备明细（微缩） */}
       {(b.artifactBonus > 0 || b.talismanBonus > 0 || b.beastBonus > 0) && (
         <div className="pl-5 space-y-0.5 text-[10px] text-[var(--ink-400)]">

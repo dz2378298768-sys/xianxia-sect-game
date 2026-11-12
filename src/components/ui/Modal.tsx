@@ -48,7 +48,8 @@ export const Modal: React.FC<ModalProps> = ({
             <h2 className="font-display text-lg text-gold-gradient">{title}</h2>
             <button
               onClick={onClose}
-              className="p-1 text-sect-jade/60 hover:text-sect-gold transition-colors"
+              aria-label="关闭"
+              className="flex h-9 w-9 -my-1 -mr-2 items-center justify-center rounded text-sect-jade/60 transition-colors hover:text-sect-gold"
             >
               <X size={18} />
             </button>

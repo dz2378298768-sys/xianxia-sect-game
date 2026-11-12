@@ -8,13 +8,14 @@ export const BUILDING_IMAGE_MAP: Record<string, string> = {
   inner_residence: '/buildings/inner-residence.jpg',
   core_residence: '/buildings/core-residence.jpg',
   pill_hall: '/buildings/pill-hall.jpg',
-  sutra_hall: '/buildings/sutra-hall.jpg',
-  artifact_hall: '/buildings/artifact-hall.jpg',
+  forge_hall: '/buildings/sutra-hall.jpg',
+  talisman_hall: '/buildings/artifact-hall.jpg',
   array_hall: '/buildings/array-hall.jpg',
   spirit_beast_garden: '/buildings/spirit-beast-garden.jpg',
   cave_mansion: '/buildings/cave-mansion.jpg',
   skyscraper_tower: '/buildings/skyscraper-tower.jpg',
   training_ground: '/buildings/training-ground.jpg',
+  enshrinement_hall: '/buildings/enshrinement-hall.jpg',
 };
 
 export function getBuildingImage(type: string): string | undefined {

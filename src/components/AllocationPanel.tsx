@@ -663,10 +663,10 @@ function autoAssignBuilding(disciple: any, buildings: any[]): { buildingId: stri
       case 'pill_hall':
         score = spiritRhythm * 1.5;
         break;
-      case 'sutra_hall':
+      case 'forge_hall':
         score = spiritRhythm * 1.0 + rootBone * 0.6;
         break;
-      case 'artifact_hall':
+      case 'talisman_hall':
         score = spiritRhythm * 0.8 + daoFate * 0.7;
         break;
       case 'secret_library':

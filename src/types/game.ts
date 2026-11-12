@@ -73,7 +73,7 @@ export const SectLevelRequirementsMap: Record<SectLevel, SectLevelRequirements> 
 export const SectLevelUnlockBuildings: Record<SectLevel, string[]> = {
   founding: ['mountain_gate', 'lecture_hall', 'servant_hall', 'outer_residence', 'secret_library'],
   known: ['inner_residence', 'pill_hall'],
-  famous: ['core_residence', 'sutra_hall', 'artifact_hall', 'array_hall'],
+  famous: ['core_residence', 'forge_hall', 'talisman_hall', 'array_hall'],
   dominant: ['cave_mansion', 'spirit_beast_garden'],
   eternal: ['skyscraper_tower'],
 };
