@@ -12,7 +12,7 @@ import { generateId, generateDiscipleName, randomInt, randomFloat, clamp } from 
 import { generateTalentDisplay, calculateLifespan, calculateCultivationSpeed, generateSpiritRoots, calculateSpiritRootBonus } from '@/utils/calculations';
 import { canLearnBook, generateRandomBook } from '@/utils/bookGenerator';
 import type { MonthlyReport, GameDate, Notification, SectHistoryEntry, SectHistoryType, BuildingEvent, ChoiceEvent, ChainEvent, PendingChainEvent, CalamityEvent, SectLevel } from '@/types/game';
-import { computeBuildingOutput, computeMaintenance, recomputeCultivationSpeed, computeMonthlyContribution } from '@/domain/balance';
+import { computeBuildingOutput, computeMaintenance, recomputeCultivationSpeed, computeMonthlyContribution, MAINTENANCE_MONTHLY_SCALE } from '@/domain/balance';
 import { ARTIFACT_CONFIGS } from '@/data/artifacts';
 import { TALISMAN_CONFIGS } from '@/data/talismans';
 import { BEAST_CONFIGS } from '@/data/beasts';
@@ -482,14 +482,17 @@ export const MAINTENANCE_COST_TABLE: Record<string, number[]> = {
 export function getMaintenanceCostByLevel(type: string, level: number): number {
   const table = MAINTENANCE_COST_TABLE[type];
   if (!table) return 0;
+  let raw: number;
   if (level <= table.length) {
-    return table[level - 1] || 0;
+    raw = table[level - 1] || 0;
+  } else {
+    // 超过表范围：以末两级差值线性递增
+    const last = table[table.length - 1];
+    const prev = table.length >= 2 ? table[table.length - 2] : last;
+    const step = Math.max(last - prev, 1);
+    raw = last + step * (level - table.length);
   }
-  // 超过表范围：以末两级差值线性递增
-  const last = table[table.length - 1];
-  const prev = table.length >= 2 ? table[table.length - 2] : last;
-  const step = Math.max(last - prev, 1);
-  return last + step * (level - table.length);
+  return Math.round(raw * MAINTENANCE_MONTHLY_SCALE);
 }
 
 export function getResidenceLevelForStatus(status: DiscipleStatus): number {

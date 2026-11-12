@@ -151,34 +151,34 @@ describe('computeBuildingOutput — 状态', () => {
   });
 });
 
-describe('computeMaintenance — 单一来源，无双重计费', () => {
-  it('杂役堂维护费按等级递增：15 / 25 / 40 / 55', () => {
-    expect(computeMaintenance('servant_hall', 1)).toBe(15);
-    expect(computeMaintenance('servant_hall', 2)).toBe(25);
-    expect(computeMaintenance('servant_hall', 3)).toBe(40);
-    expect(computeMaintenance('servant_hall', 4)).toBe(55);
+describe('computeMaintenance — 单一来源，无双重计费（月度 1/3 折算）', () => {
+  it('杂役堂维护费按等级递增：5 / 8 / 13 / 18', () => {
+    expect(computeMaintenance('servant_hall', 1)).toBe(5);
+    expect(computeMaintenance('servant_hall', 2)).toBe(8);
+    expect(computeMaintenance('servant_hall', 3)).toBe(13);
+    expect(computeMaintenance('servant_hall', 4)).toBe(18);
   });
 
-  it('山门维护费按表逐级递增：15 / 30 / 60', () => {
-    expect(computeMaintenance('mountain_gate', 1)).toBe(15);
-    expect(computeMaintenance('mountain_gate', 2)).toBe(30);
-    expect(computeMaintenance('mountain_gate', 3)).toBe(60);
+  it('山门维护费按表逐级递增：5 / 10 / 20', () => {
+    expect(computeMaintenance('mountain_gate', 1)).toBe(5);
+    expect(computeMaintenance('mountain_gate', 2)).toBe(10);
+    expect(computeMaintenance('mountain_gate', 3)).toBe(20);
   });
 
-  it('丹堂 L2 维护费为表值 70，而非 base×1.75 的双重计费值', () => {
+  it('丹堂 L2 维护费为表值折算 23，而非 base×1.75 的双重计费值', () => {
     // 旧实现：baseMaintenanceCost 被覆写为 55 后再 ×1.75 = 96（错误）
-    // 新实现：单一查表 = 70
-    expect(computeMaintenance('pill_hall', 2)).toBe(70);
-    expect(computeMaintenance('pill_hall', 2)).not.toBe(55 * 1.75);
+    // 新实现：单一查表 70，再按月度 1/3 折算 → 23
+    expect(computeMaintenance('pill_hall', 2)).toBe(23);
+    expect(computeMaintenance('pill_hall', 2)).not.toBe(Math.round(55 * 1.75));
   });
 
-  it('演武场维护费为 30（单级建筑）', () => {
-    expect(computeMaintenance('training_ground', 1)).toBe(30);
+  it('演武场维护费为 10（单级建筑）', () => {
+    expect(computeMaintenance('training_ground', 1)).toBe(10);
   });
 
   it('超出表范围按末两级差值线性外推', () => {
-    // secret_library 表 [30,60,120,200]，L5 = 200 + (200-120)*1 = 280
-    expect(computeMaintenance('secret_library', 5)).toBe(280);
+    // secret_library 表 [30,60,120,200]，L5 原始值 = 200 + (200-120)*1 = 280，折算后 93
+    expect(computeMaintenance('secret_library', 5)).toBe(93);
   });
 
   it('未知建筑类型维护费为 0', () => {

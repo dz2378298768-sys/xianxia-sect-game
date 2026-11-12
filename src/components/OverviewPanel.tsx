@@ -8,6 +8,7 @@ import {
 } from '@/types/game';
 import type { SectHistoryEntry, SectSchool } from '@/types/game';
 import { BuildingTypeNames } from '@/types/building';
+import { MAINTENANCE_MONTHLY_SCALE } from '@/domain/balance';
 
 const HISTORY_TYPE_STYLES: Record<SectHistoryEntry['type'], { icon: string; color: string }> = {
   building_upgrade: { icon: '▲', color: 'text-blue-400' },
@@ -47,16 +48,17 @@ export const OverviewPanel: React.FC = () => {
   const elderCount = disciples.filter(d => d.status === 'elder').length;
 
   const DISCIPLE_MAINTENANCE_COST: Record<string, number> = {
-    servant: 2,
+    servant: 1,
     outer: 2,
     inner: 4,
     core: 6,
     elder: 10,
   };
-  const discipleMaintenance = disciples.reduce(
+  const discipleMaintenanceRaw = disciples.reduce(
     (sum, d) => sum + (DISCIPLE_MAINTENANCE_COST[d.status] || 0),
     0,
   );
+  const discipleMaintenance = Math.round(discipleMaintenanceRaw * MAINTENANCE_MONTHLY_SCALE);
 
   const totalMaintenance = buildings.reduce((sum, b) => {
     if (b.status !== 'active') return sum;

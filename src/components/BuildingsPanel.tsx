@@ -698,7 +698,7 @@ export const BuildingsPanel: React.FC = () => {
                   )}
                   {/* 维护费叠加层（右下角）— 仅对开启中建筑显示 */}
                   {!isLocked && !isClosed && (
-                    <span className="building-avatar-maintenance" title={`季度维护 ${calculateBuildingMaintenance(building)} 灵石`}>
+                    <span className="building-avatar-maintenance" title={`每月维护 ${calculateBuildingMaintenance(building)} 灵石`}>
                       -{calculateBuildingMaintenance(building)}
                     </span>
                   )}

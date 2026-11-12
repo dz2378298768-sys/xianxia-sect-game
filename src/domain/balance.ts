@@ -166,27 +166,36 @@ export function computeBuildingOutput(
 }
 
 /**
+ * 12 月制维护费折算系数。
+ * 维护表原本按「一季一回合」的旧节奏设计；改为按月结算后整体按 1/3 收取，
+ * 使年度维护支出与旧版 4 回合/年保持一致。
+ */
+export const MAINTENANCE_MONTHLY_SCALE = 1 / 3;
+
+/**
  * 建筑维护费（单一来源）。
  *
- * 直接查 MAINTENANCE_COST_TABLE，按等级取值；超出表范围按末两级差值线性外推。
+ * 直接查 MAINTENANCE_COST_TABLE，按等级取值；超出表范围按末两级差值线性外推，
+ * 最后乘以月度折算系数。
  *
  * 替换旧实现的两处混乱：
  *  - 旧 calculateBuildingMaintenance 把 baseMaintenanceCost 再 ×(1+(level-1)*0.75)，造成双重计费；
  *  - 旧 upgradeBuilding 又把 baseMaintenanceCost 覆写为表值，使 level 信息被计入两次。
- *
- * 新实现：表即真相，无任何二次乘法。杂役堂各级恒为 10，丹堂 L2=55（而非 96）。
  */
 export function computeMaintenance(type: string, level: number): number {
   const table = MAINTENANCE_COST_TABLE[type];
   if (!table || table.length === 0) return 0;
+  let raw: number;
   if (level <= table.length) {
-    return table[level - 1] || 0;
+    raw = table[level - 1] || 0;
+  } else {
+    // 超过表范围：以末两级差值线性递增
+    const last = table[table.length - 1];
+    const prev = table.length >= 2 ? table[table.length - 2] : last;
+    const step = Math.max(last - prev, 1);
+    raw = last + step * (level - table.length);
   }
-  // 超过表范围：以末两级差值线性递增
-  const last = table[table.length - 1];
-  const prev = table.length >= 2 ? table[table.length - 2] : last;
-  const step = Math.max(last - prev, 1);
-  return last + step * (level - table.length);
+  return Math.round(raw * MAINTENANCE_MONTHLY_SCALE);
 }
 
 // 各境界基础修炼速度（修为/月）—— 按普通天赋（根骨50/三灵根60品质/凡人体质）设计：

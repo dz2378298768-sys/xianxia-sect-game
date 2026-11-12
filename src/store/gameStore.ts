@@ -57,7 +57,7 @@ import {
   getMaxDeduceTier,
 } from '@/utils/gameLogic';
 import { randomInt, generateId } from '@/utils/random';
-import { recomputeCultivationSpeed, applySatisfactionPenalty, recomputeLifespan, computeMonthlyContribution } from '@/domain/balance';
+import { recomputeCultivationSpeed, applySatisfactionPenalty, recomputeLifespan, computeMonthlyContribution, MAINTENANCE_MONTHLY_SCALE } from '@/domain/balance';
 import { generateOtherSects, refreshSectRelations, generateTrials } from '@/utils/worldGenerator';
 import type { SiegeReportData } from '@/store/siegeReport';
 import type { TournamentConfig, TournamentResult, TournamentFrequency, FrequencyTournamentConfig } from '@/types/tournament';
@@ -2373,10 +2373,11 @@ export const useGameStore = create<GameState>()(
           core: 6,
           elder: 10,
         };
-        const discipleMaintenance = finalDisciples.reduce(
+        const discipleMaintenanceRaw = finalDisciples.reduce(
           (sum, d) => sum + (DISCIPLE_MAINTENANCE_COST[d.status] || 0),
           0,
         );
+        const discipleMaintenance = Math.round(discipleMaintenanceRaw * MAINTENANCE_MONTHLY_SCALE);
         if (discipleMaintenance > 0) {
           spiritStoneExpense.push({ source: '弟子维护费', amount: discipleMaintenance });
           totalMaintenance += discipleMaintenance;
