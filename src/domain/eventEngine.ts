@@ -144,7 +144,7 @@ export function createPendingEvent(
   event: GameEventConfig,
   state: EventStateView,
   rng: Rng = Math.random,
-  expireMonths = 6,
+  expireMonths = 1,
 ): PendingEvent {
   const absNow = getAbsMonth(state.year, state.month);
   return {

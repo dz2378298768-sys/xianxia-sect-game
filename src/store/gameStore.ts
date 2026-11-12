@@ -6642,6 +6642,7 @@ export const useGameStore = create<GameState>()(
           state.monthlyTaskIds = selectMonthlyTaskIds(MONTHLY_TASK_POOL);
         }
         if (!state.claimedTasks) state.claimedTasks = {};
+        if (state.reportView === undefined) state.reportView = null;
         // 旧存档读入时不强制弹窗
         if (version < 12) {
           state.showReport = false;
