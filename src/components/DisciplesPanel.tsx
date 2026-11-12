@@ -250,8 +250,8 @@ export const DisciplesPanel: React.FC = () => {
       list = [...list].sort((a, b) => calculateDiscipleCombatPower(b) - calculateDiscipleCombatPower(a));
     } else if (sortBy === 'joinDate') {
       list = [...list].sort((a, b) => {
-        const aTime = a.joinDate.year * 4 + a.joinDate.month;
-        const bTime = b.joinDate.year * 4 + b.joinDate.month;
+        const aTime = a.joinDate.year * 12 + a.joinDate.month;
+        const bTime = b.joinDate.year * 12 + b.joinDate.month;
         return aTime - bTime; // 最早入宗的排前面
       });
     }
@@ -1518,7 +1518,7 @@ export const DisciplesPanel: React.FC = () => {
                       events.push({
                         year: log.date.year,
                         month: log.date.month,
-                        sortKey: log.date.year * 4 + log.date.month,
+                        sortKey: log.date.year * 12 + log.date.month,
                         content: (
                           <div className="flex items-start gap-2 text-xs p-2 rounded bg-sect-ink-light/40">
                             <span className="shrink-0">{meta.icon}</span>
@@ -1540,8 +1540,8 @@ export const DisciplesPanel: React.FC = () => {
                       const rankColor = record.rank === 1 ? 'text-yellow-400' : record.rank === 2 ? 'text-gray-300' : record.rank === 3 ? 'text-orange-400' : 'text-sect-jade/50';
                       events.push({
                         year: record.year,
-                        month: 4, // 大比通常在年底，排在该年后部
-                        sortKey: record.year * 4 + 4,
+                        month: 12, // 大比通常在年底，排在该年后部
+                        sortKey: record.year * 12 + 12,
                         content: (
                           <div className="flex items-start gap-2 text-xs p-2 rounded bg-sect-ink-light/40">
                             <span className="shrink-0">🏆</span>

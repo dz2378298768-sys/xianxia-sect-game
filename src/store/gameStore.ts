@@ -77,12 +77,8 @@ import { syncLeaderboardScores } from '@/services/tapLeaderboard';
 import { TALISMAN_CONFIGS } from '@/data/talismans';
 import { BEAST_CONFIGS } from '@/data/beasts';
 import { EXPLORATION_REGIONS, getEncountersByRegion, getRegionById } from '@/data/exploration';
-import type { CraftingTask, CraftingResult } from '@/types/crafting';
-import { QualityNames } from '@/types/crafting';
-import { processMonthlyCrafting, createCraftingTask as createCraftingTaskLogic } from '@/utils/gameLogic';
 import { generateChainEvents, processPendingChainEvents, generatePriceFluctuations, calculateExpansionCost, calculateDiscipleWelfareCost, checkCalamityTrigger, generateCalamity, getSchoolTalentBonuses } from '@/utils/gameLogic';
 import { SCHOOL_TALENT_TREES } from '@/types/game';
-import { RECIPE_MAP } from '@/data/recipes';
 
 interface GameState {
   year: number;
@@ -191,11 +187,6 @@ interface GameState {
   autoTrade: Record<string, AutoTradeRule>;
   setAutoTradeRule: (shopItemId: string, rule: Partial<AutoTradeRule>) => void;  // 设置/覆盖某物品的自动交易规则
   toggleAutoTrade: (shopItemId: string, enabled: boolean) => void;               // 某物品启用/停用自动交易
-  // 炼制系统
-  craftingTasks: CraftingTask[];
-  startCrafting: (recipeId: string, category: 'pill' | 'artifact' | 'talisman', itemType: string, discipleId: string | null, quantity: number) => { success: boolean; reason?: string };
-  cancelCrafting: (taskId: string) => void;
-  collectCraftingResult: (taskId: string) => void;
   nextMonth: () => void;
   dismissReport: () => void;
   openReport: (kind: ReportKind) => void;
@@ -630,7 +621,6 @@ const createInitialState = () => {
     recruitCostPerDisciple: 50,
     recruitRefreshCost: 50,
     autoTrade: {},
-    craftingTasks: [],
   };
 };
 
@@ -951,7 +941,7 @@ export const useGameStore = create<GameState>()(
           ? state.disciples.map(d => ({ ...d, satisfaction: Math.max(0, Math.min(100, d.satisfaction + satChange)) }))
           : state.disciples;
         // 生成连锁事件
-        const currentMonthTotal = state.year * 4 + state.month;
+        const currentMonthTotal = state.year * 12 + state.month;
         const newChainEvents = generateChainEvents(
           state.choiceEvent.id,
           choice.label,
@@ -3378,38 +3368,6 @@ export const useGameStore = create<GameState>()(
 
         // ===== 涌现事件系统：关系网 + 建筑随机事件 + 分支选择 + 灭亡检查 =====
         const monthsNeg = netIncome < 0 ? state.monthsConsecutiveNegative + 1 : 0;
-        // 月度炼制进度推进
-        const { completedTasks, updatedTasks } = processMonthlyCrafting(
-          state.craftingTasks,
-          { herbInventory: accHerbs, ironInventory: accIron, paperInventory: accPaper, specialMaterials: accSpecialMaterials },
-          activeDisciples,
-          currentBuildings,
-          Math.random,
-        );
-        // 完成的炼制任务加入通知
-        for (const ct of completedTasks) {
-          const qualityName = QualityNames[ct.quality];
-          newNotifications.push(createNotification(
-            'success',
-            '炼制完成',
-            `${ct.category === 'pill' ? '丹药' : ct.category === 'artifact' ? '法器' : '符箓'}炼制完成：${RECIPE_MAP[ct.recipeId]?.name ?? ct.itemType} x${ct.quantity}（${qualityName}）${ct.isCritical ? '【暴击】' : ''}`,
-            { year, month },
-          ));
-          // 自动入库
-          if (ct.category === 'pill') {
-            const idx = finalPillInventory.findIndex(p => p.type === ct.itemType as any);
-            if (idx >= 0) finalPillInventory[idx] = { ...finalPillInventory[idx], quantity: finalPillInventory[idx].quantity + ct.quantity };
-            else finalPillInventory.push({ type: ct.itemType as any, quantity: ct.quantity });
-          } else if (ct.category === 'artifact') {
-            const idx = accArtifactInventory.findIndex(a => a.type === ct.itemType as any);
-            if (idx >= 0) accArtifactInventory[idx] = { ...accArtifactInventory[idx], quantity: accArtifactInventory[idx].quantity + ct.quantity };
-            else accArtifactInventory.push({ type: ct.itemType as any, quantity: ct.quantity });
-          } else if (ct.category === 'talisman') {
-            const idx = accTalismanInventory.findIndex(t => t.type === ct.itemType as any);
-            if (idx >= 0) accTalismanInventory[idx] = { ...accTalismanInventory[idx], quantity: accTalismanInventory[idx].quantity + ct.quantity };
-            else accTalismanInventory.push({ type: ct.itemType as any, quantity: ct.quantity });
-          }
-        }
 
         const emergentResult = processMonthlyEmergentEvents(
           activeDisciples, currentBuildings, finalSpiritStones, finalReputation, state.karma,
@@ -3430,7 +3388,7 @@ export const useGameStore = create<GameState>()(
         const pendingChoiceEvent = emergentResult.choiceEvent;
 
         // 处理连锁事件：检查到期的连锁事件
-        const currentMonthTotal = year * 4 + month;
+        const currentMonthTotal = year * 12 + month;
         const { activated: activatedChainEvents, remaining: remainingChainEvents } = processPendingChainEvents(
           state.pendingChainEvents,
           currentMonthTotal,
@@ -3628,8 +3586,6 @@ export const useGameStore = create<GameState>()(
           spiritStoneHistory: newSpiritStoneHistory,
           contributionLogs: mergedContributionLogs,
           sectHistory: [...pendingSectHistory, ...state.sectHistory].slice(0, 200),
-          // 炼制任务状态
-          craftingTasks: updatedTasks,
           // 涌现事件状态
           choiceEvent: pendingChoiceEvent,
           pendingChainEvents: remainingChainEvents,
@@ -5944,70 +5900,6 @@ export const useGameStore = create<GameState>()(
             enabled: false, buyBelow: 0, sellAbove: 0, monthlyBuyQty: 1, monthlySellQty: 1,
           };
           return { autoTrade: { ...state.autoTrade, [shopItemId]: { ...prev, enabled } } };
-        });
-      },
-
-      // 炼制系统
-      startCrafting: (recipeId: string, category: 'pill' | 'artifact' | 'talisman', itemType: string, discipleId: string | null, quantity: number) => {
-        const state = get();
-        const recipe = RECIPE_MAP[recipeId];
-        if (!recipe) return { success: false, reason: '配方不存在' };
-        // 检查解锁状态
-        if (category === 'pill' && !state.unlockedPillRecipes.includes(itemType as any)) return { success: false, reason: '丹方未解锁' };
-        if (category === 'artifact' && !state.unlockedArtifactRecipes.includes(itemType as any)) return { success: false, reason: '图谱未解锁' };
-        if (category === 'talisman' && !state.unlockedTalismanRecipes.includes(itemType as any)) return { success: false, reason: '符谱未解锁' };
-
-        const task = createCraftingTaskLogic(recipeId, category, itemType, discipleId, quantity, {
-          herbInventory: state.herbInventory,
-          ironInventory: state.ironInventory,
-          paperInventory: state.paperInventory,
-          specialMaterials: { ...state.specialMaterials },
-        });
-
-        if (!task) return { success: false, reason: '材料不足' };
-
-        set({
-          craftingTasks: [...state.craftingTasks, task],
-          herbInventory: state.herbInventory,
-          ironInventory: state.ironInventory,
-          paperInventory: state.paperInventory,
-          specialMaterials: state.specialMaterials,
-        });
-        return { success: true };
-      },
-
-      cancelCrafting: (taskId: string) => {
-        set(state => ({
-          craftingTasks: state.craftingTasks.filter(t => t.id !== taskId),
-        }));
-      },
-
-      collectCraftingResult: (taskId: string) => {
-        set(state => {
-          const task = state.craftingTasks.find(t => t.id === taskId);
-          if (!task || task.status !== 'completed') return state;
-          // 将成品加入库存
-          const resultQuality = task.resultQuality ?? 'mortal';
-          if (task.category === 'pill') {
-            const inv = [...state.pillInventory];
-            const idx = inv.findIndex(p => p.type === task.itemType as any);
-            if (idx >= 0) inv[idx] = { ...inv[idx], quantity: inv[idx].quantity + task.quantity };
-            else inv.push({ type: task.itemType as any, quantity: task.quantity });
-            return { craftingTasks: state.craftingTasks.filter(t => t.id !== taskId), pillInventory: inv };
-          } else if (task.category === 'artifact') {
-            const inv = [...state.artifactInventory];
-            const idx = inv.findIndex(a => a.type === task.itemType as any);
-            if (idx >= 0) inv[idx] = { ...inv[idx], quantity: inv[idx].quantity + task.quantity };
-            else inv.push({ type: task.itemType as any, quantity: task.quantity });
-            return { craftingTasks: state.craftingTasks.filter(t => t.id !== taskId), artifactInventory: inv };
-          } else if (task.category === 'talisman') {
-            const inv = [...state.talismanInventory];
-            const idx = inv.findIndex(t => t.type === task.itemType as any);
-            if (idx >= 0) inv[idx] = { ...inv[idx], quantity: inv[idx].quantity + task.quantity };
-            else inv.push({ type: task.itemType as any, quantity: task.quantity });
-            return { craftingTasks: state.craftingTasks.filter(t => t.id !== taskId), talismanInventory: inv };
-          }
-          return { craftingTasks: state.craftingTasks.filter(t => t.id !== taskId) };
         });
       },
 

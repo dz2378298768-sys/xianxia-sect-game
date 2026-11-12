@@ -3,7 +3,6 @@ import { PILL_CONFIGS } from './pills';
 import { ARTIFACT_CONFIGS } from './artifacts';
 import { TALISMAN_CONFIGS } from './talismans';
 import { BEAST_CONFIGS } from './beasts';
-import { PILL_RECIPES, ARTIFACT_RECIPES, TALISMAN_RECIPES } from './recipes';
 import { SHOP_ITEMS } from './shop';
 import { PillTypeNames } from '@/types/pill';
 import { ArtifactTypeNames } from '@/types/artifact';
@@ -37,16 +36,6 @@ describe('成品名称一致性', () => {
     for (const beast of Object.values(BEAST_CONFIGS)) {
       expect(beast.name, beast.type).toBe(BeastTypeNames[beast.type]);
     }
-  });
-
-  it('配方名 = 成品名', () => {
-    const pillNames = new Set(Object.values(PILL_CONFIGS).map(p => p.name));
-    const artifactNames = new Set(Object.values(ARTIFACT_CONFIGS).map(a => a.name));
-    const talismanNames = new Set(Object.values(TALISMAN_CONFIGS).map(t => t.name));
-
-    PILL_RECIPES.forEach(r => expect(pillNames.has(r.name), r.name).toBe(true));
-    ARTIFACT_RECIPES.forEach(r => expect(artifactNames.has(r.name), r.name).toBe(true));
-    TALISMAN_RECIPES.forEach(r => expect(talismanNames.has(r.name), r.name).toBe(true));
   });
 
   it('商店成品名 = 配置名', () => {
