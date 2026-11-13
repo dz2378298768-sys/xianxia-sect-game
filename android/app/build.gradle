@@ -9,10 +9,10 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         // 版本号支持通过 Gradle 属性覆盖（用于一次代码生成多个版本）：
         //   打 1.6 测试包：cd android && ./gradlew assembleRelease -PVERSION_CODE=6 -PVERSION_NAME=1.6
-        //   打 1.9.12 正式包：cd android && ./gradlew assembleRelease -PVERSION_CODE=58 -PVERSION_NAME=1.9.12
-        // 若不传属性，则使用下面默认的 1.9.12 版本。
-        versionCode project.hasProperty("VERSION_CODE") ? project.property("VERSION_CODE").toInteger() : 58
-        versionName project.hasProperty("VERSION_NAME") ? project.property("VERSION_NAME").toString() : "1.9.12"
+        //   打 1.9.18 正式包：cd android && ./gradlew assembleRelease -PVERSION_CODE=64 -PVERSION_NAME=1.9.18
+        // 若不传属性，则使用下面默认的 1.9.18 版本。
+        versionCode project.hasProperty("VERSION_CODE") ? project.property("VERSION_CODE").toInteger() : 64
+        versionName project.hasProperty("VERSION_NAME") ? project.property("VERSION_NAME").toString() : "1.9.18"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -96,6 +96,8 @@ dependencies {
     // 文档：https://developer.taptap.cn/docs/sdk/taptap-login/guide/
     implementation "com.taptap.sdk:tap-core:4.10.8"
     implementation "com.taptap.sdk:tap-login:4.10.8"
+    // 合规认证（实名认证 / 防沉迷 / 年龄段授权）：useAgeRange 在 SectApp 初始化时开启
+    implementation "com.taptap.sdk:tap-compliance:4.10.8"
 
     // === TapTap 更新唤起 SDK v4 ==============================================================
     // 官方文档：https://developer.taptap.cn/docs/sdk/update/guide/

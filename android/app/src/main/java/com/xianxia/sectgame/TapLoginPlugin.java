@@ -5,6 +5,7 @@ import android.util.Log;
 
 import androidx.annotation.NonNull;
 
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -99,6 +100,20 @@ public class TapLoginPlugin extends Plugin {
             Log.i(TAG, "resolve 成功: login=" + (loginMethod != null)
                 + " getCurrent=" + (getCurrentMethod != null)
                 + " logout=" + (logoutMethod != null));
+
+            // 把合规认证结果转成前端事件：TapLogin.addListener('complianceResult', ...)
+            TapComplianceBridge.setListener((code, name) -> {
+                JSObject payload = new JSObject();
+                payload.put("code", code);
+                payload.put("name", name);
+                payload.put("allowed", TapComplianceBridge.isAllowed(code));
+                payload.put("ageRange", TapComplianceBridge.getAgeRange());
+                // 合规回调可能来自子线程，统一切到主线程再通知 JS
+                final Activity act = getActivity();
+                Runnable push = () -> notifyListeners("complianceResult", payload);
+                if (act != null) act.runOnUiThread(push);
+                else push.run();
+            });
         } catch (ClassNotFoundException e) {
             Log.w(TAG, "TapTap SDK 类未找到（未引入 tap-login 依赖？）: " + e.getMessage());
         } catch (Throwable t) {
@@ -187,6 +202,13 @@ public class TapLoginPlugin extends Plugin {
                             settled[0] = true;
                             JSObject account = accountToJS(args[0]);
                             Log.i(TAG, "login onSuccess: openid=" + account.optString("openid", ""));
+                            TapDiag.log("登录成功");
+                            // 登录成功后立刻进入合规认证（实名 / 防沉迷 / 年龄段授权）
+                            final String openId = account.optString("openid", "");
+                            final Activity act = getActivity();
+                            if (act != null && !openId.isEmpty()) {
+                                act.runOnUiThread(() -> TapComplianceBridge.startup(act, openId));
+                            }
                             if (getActivity() != null) {
                                 getActivity().runOnUiThread(() ->
                                     call.resolve(makeResult(true, account, null)));
@@ -195,6 +217,7 @@ public class TapLoginPlugin extends Plugin {
                             settled[0] = true;
                             String errMsg = extractExceptionMessage(args[0]);
                             Log.w(TAG, "login onFail: " + errMsg);
+                            TapDiag.log("登录失败：" + errMsg);
                             if (getActivity() != null) {
                                 getActivity().runOnUiThread(() ->
                                     call.resolve(makeResult(false, null, errMsg)));
@@ -266,6 +289,8 @@ public class TapLoginPlugin extends Plugin {
         }
         try {
             logoutMethod.invoke(null);
+            // 退出账号时同步重置合规认证状态
+            TapComplianceBridge.exit();
             Log.i(TAG, "logout 成功");
             JSObject ret = new JSObject();
             ret.put("success", true);
@@ -276,8 +301,75 @@ public class TapLoginPlugin extends Plugin {
         }
     }
 
-    // ===== 工具方法 =====================================================================
+    // ===== 合规认证（实名 / 防沉迷 / 年龄段） =============================================
 
+    /**
+     * 获取玩家年龄段下限：-1 未知 / 0 / 8 / 16 / 18
+     * 前端调用：TapLogin.getAgeRange()
+     */
+    @PluginMethod
+    public void getAgeRange(final PluginCall call) {
+        JSObject ret = new JSObject();
+        ret.put("ageRange", TapComplianceBridge.getAgeRange());
+        ret.put("ready", TapComplianceBridge.isReady());
+        ret.put("lastCode", TapComplianceBridge.getLastResultCode());
+        call.resolve(ret);
+    }
+
+    /**
+     * 手动重新发起合规认证（例如玩家关闭实名窗口后重试）。
+     * 前端调用：TapLogin.startupCompliance({ openId })
+     */
+    @PluginMethod
+    public void startupCompliance(final PluginCall call) {
+        resolve();
+        String openId = call.getString("openId", "");
+        Activity activity = getActivity();
+        boolean ok = TapComplianceBridge.startup(activity, openId);
+        JSObject ret = new JSObject();
+        ret.put("success", ok);
+        if (!ok) ret.put("error", "合规模块未就绪或 openId 为空");
+        call.resolve(ret);
+    }
+
+    /**
+     * 退出合规认证（重置防沉迷状态）。
+     * 前端调用：TapLogin.exitCompliance()
+     */
+    @PluginMethod
+    public void exitCompliance(final PluginCall call) {
+        TapComplianceBridge.exit();
+        JSObject ret = new JSObject();
+        ret.put("success", true);
+        call.resolve(ret);
+    }
+
+    /**
+     * 诊断日志：返回最近几条原生关键步骤（登录 / 合规认证），用于真机排查。
+     * 前端调用：TapLogin.getDiag() → Promise<{ lines: string[] }>
+     */
+    @PluginMethod
+    public void getDiag(final PluginCall call) {
+        JSArray lines = new JSArray();
+        for (String line : TapDiag.tail(14)) lines.put(line);
+        JSObject ret = new JSObject();
+        ret.put("lines", lines);
+        call.resolve(ret);
+    }
+
+    /**
+     * 诊断探针：主动拉一次实名配置并输出合规内部状态，结果写入诊断日志。
+     * 前端调用：TapLogin.probeCompliance()
+     */
+    @PluginMethod
+    public void probeCompliance(final PluginCall call) {
+        TapComplianceBridge.probe();
+        JSObject ret = new JSObject();
+        ret.put("ok", true);
+        call.resolve(ret);
+    }
+
+    // ===== 工具方法 =====================================================================
     private static String extractExceptionMessage(Object exObj) {
         try {
             // TapTapException 可能有 getMessage() / getErrorMsg() 等方法

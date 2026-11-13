@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/Button';
 import {
   Play, PlusCircle, LogOut, Mountain,
@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { getSlots, deleteSlot, SAVE_SLOT_COUNT, type SaveSlotMeta } from '@/utils/saveSlots';
 import { SectLevelNames } from '@/types/game';
-import { login, getCurrentAccount, logout, type TapAccount } from '@/services/tapLogin';
+import { login, getCurrentAccount, logout, onComplianceResult, complianceMessage, startupCompliance, getAgeRange, getDiag, probeCompliance, type TapAccount } from '@/services/tapLogin';
 import { openLeaderboard, LEADERBOARD_IDS } from '@/services/tapLeaderboard';
 
 interface MainMenuProps {
@@ -63,6 +63,67 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartNew, onContinue }) =>
   // TapTap 登录状态
   const [tapAccount, setTapAccount] = useState<TapAccount | null>(null);
   const [tapLogging, setTapLogging] = useState(false);
+  // 准入状态：checking 检查中 / needLogin 未登录 / compliance 实名中 / ready 可玩 / limited 受限
+  const [authState, setAuthState] = useState<'checking' | 'needLogin' | 'compliance' | 'ready' | 'limited'>('checking');
+  const [authMsg, setAuthMsg] = useState('');
+
+  // 认证超时监控：合规模块不可用或 15 秒仍无回调 → 提示失败并停在准入页（不自动放行）
+  const [authDiag, setAuthDiag] = useState('');
+  const [diagLines, setDiagLines] = useState<string[]>([]);
+  const watchdogRef = useRef<number | null>(null);
+  const stopWatchdog = () => {
+    if (watchdogRef.current !== null) {
+      window.clearInterval(watchdogRef.current);
+      watchdogRef.current = null;
+    }
+  };
+  const startWatchdog = () => {
+    stopWatchdog();
+    let tries = 0;
+    watchdogRef.current = window.setInterval(async () => {
+      tries += 1;
+      const r = await getAgeRange();
+      // 认证中超过 ~4.5 秒仍无结果：把原生步骤日志显示出来，便于真机定位
+      if (tries === 3) setDiagLines(await getDiag());
+      // 连续两次仍显示模块未就绪 → 判定为认证服务不可用
+      if (!r.ready && tries >= 2) {
+        stopWatchdog();
+        setDiagLines(await getDiag());
+        setAuthDiag(`合规模块未就绪（回调码 ${r.lastCode || 0}）`);
+        setAuthMsg('实名认证服务不可用，请重试');
+        setAuthState('limited');
+        return;
+      }
+      // 15 秒仍无结果 → 超时，必须由玩家重试，不能直接进游戏
+      if (tries >= 10) {
+        stopWatchdog();
+        // 让原生跑一次探针，把 SDK 内部的真实失败原因写进诊断日志
+        await probeCompliance();
+        setAuthDiag(`等待认证超时（回调码 ${r.lastCode || 0}）`);
+        setAuthMsg('实名认证超时，请重新认证');
+        setAuthState('limited');
+        setTimeout(async () => setDiagLines(await getDiag()), 2500);
+      }
+    }, 1500);
+  };
+  useEffect(() => stopWatchdog, []);
+
+  // 发起认证并开始计时（openId 可省略：登录成功时原生侧已自动发起）
+  const beginCompliance = async (openId?: string) => {
+    setAuthMsg('');
+    setAuthDiag('');
+    setDiagLines([]);
+    setAuthState('compliance');
+    if (openId) {
+      const r = await startupCompliance(openId);
+      if (!r.success) {
+        setAuthMsg(r.error || '发起实名认证失败');
+        setAuthState('limited');
+        return;
+      }
+    }
+    startWatchdog();
+  };
 
   // 读取存档槽位
   const refreshSlots = () => {
@@ -71,12 +132,37 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartNew, onContinue }) =>
 
   useEffect(() => {
     refreshSlots();
-    // 尝试检查是否已登录
-    getCurrentAccount().then(status => {
-      if (status.hasAccount && status.account) {
+    const native = typeof window !== 'undefined' && !!(window as any).Capacitor?.isNativePlatform?.();
+    // 网页/开发环境不拦登录；APK 内强制「登录 + 实名」后才能进游戏
+    if (!native) {
+      setAuthState('ready');
+      return;
+    }
+    getCurrentAccount().then(async status => {
+      if (status.hasAccount && status.account?.openid) {
         setTapAccount(status.account);
+        await beginCompliance(status.account.openid);
+      } else {
+        setAuthState('needLogin');
       }
     });
+  }, []);
+
+  // 合规认证结果：通过才放行，受限时给出明确提示（实名窗口由 SDK 自行弹出）
+  useEffect(() => {
+    let off: (() => void) | undefined;
+    onComplianceResult(res => {
+      stopWatchdog();
+      if (res.allowed) {
+        setAuthMsg('');
+        setAuthDiag('');
+        setAuthState('ready');
+        return;
+      }
+      setAuthMsg(complianceMessage(res.code) || '当前账号暂不可进入游戏');
+      setAuthState('limited');
+    }).then(fn => { off = fn; });
+    return () => off?.();
   }, []);
 
   // TapTap 登录
@@ -86,16 +172,30 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartNew, onContinue }) =>
     setTapLogging(false);
     if (result.success && result.account) {
       setTapAccount(result.account);
+      // 原生侧登录成功后已自动发起实名/防沉迷认证，这里只切到「认证中」并开始计时（不重复 startup）
+      await beginCompliance();
     } else if (result.error) {
       alert('TapTap 登录失败: ' + result.error);
     }
   };
 
+  // 受限后重新发起认证（关闭实名窗口 / 网络异常时可重试）
+  const handleRetryCompliance = async () => {
+    if (!tapAccount?.openid) {
+      setAuthState('needLogin');
+      return;
+    }
+    await beginCompliance(tapAccount.openid);
+  };
+
   // TapTap 登出
   const handleTapLogout = async () => {
+    stopWatchdog();
     const result = await logout();
     if (result.success) {
       setTapAccount(null);
+      setAuthState('needLogin');
+      setAuthMsg('');
     }
   };
 
@@ -207,45 +307,110 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartNew, onContinue }) =>
             </div>
           )}
 
-          {/* 六个存档槽位：3列 × 2行 */}
-          <div className="grid grid-cols-3 gap-2 w-full max-w-2xl mb-3">
-            {slots.map((slot, i) => (
-              <SaveSlotCard
-                key={i}
-                index={i}
-                slot={slot}
-                onContinue={() => onContinue(i)}
-                onDelete={() => handleDeleteSlot(i)}
-                onCreate={() => handleEmptySlotClick(i)}
-              />
-            ))}
-          </div>
+          {/* 准入：APK 内必须登录 TapTap 并完成实名认证后才能选档进入 */}
+          {authState === 'ready' ? (
+            <>
+              {/* 六个存档槽位：3列 × 2行 */}
+              <div className="grid grid-cols-3 gap-2 w-full max-w-2xl mb-3">
+                {slots.map((slot, i) => (
+                  <SaveSlotCard
+                    key={i}
+                    index={i}
+                    slot={slot}
+                    onContinue={() => onContinue(i)}
+                    onDelete={() => handleDeleteSlot(i)}
+                    onCreate={() => handleEmptySlotClick(i)}
+                  />
+                ))}
+              </div>
 
-          {/* 底部：开辟新宗 + 离开 */}
-          <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
-              size="sm"
-              className="px-4"
-              onClick={() => {
-                // 找第一个空槽位
-                const emptyIdx = slots.findIndex(s => s === null);
-                handleEmptySlotClick(emptyIdx >= 0 ? emptyIdx : 0);
-              }}
-            >
-              <PlusCircle size={16} className="mr-1.5" />
-              开辟新宗
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="px-4 opacity-60 hover:opacity-100"
-              onClick={() => { if (confirm('确定要退出游戏吗？')) window.close(); }}
-            >
-              <LogOut size={16} className="mr-1.5" />
-              离开此界
-            </Button>
-          </div>
+              {/* 底部：开辟新宗 + 离开 */}
+              <div className="flex items-center gap-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="px-4"
+                  onClick={() => {
+                    const emptyIdx = slots.findIndex(s => s === null);
+                    handleEmptySlotClick(emptyIdx >= 0 ? emptyIdx : 0);
+                  }}
+                >
+                  <PlusCircle size={16} className="mr-1.5" />
+                  开辟新宗
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="px-4 opacity-60 hover:opacity-100"
+                  onClick={() => { if (confirm('确定要退出游戏吗？')) window.close(); }}
+                >
+                  <LogOut size={16} className="mr-1.5" />
+                  离开此界
+                </Button>
+              </div>
+            </>
+          ) : (
+            <div className="w-full max-w-xl mb-3 rounded-xl border border-[var(--gold-400)]/25 bg-black/55 px-5 py-5 text-center">
+              {authState === 'checking' && (
+                <p className="text-[13px] text-[var(--gold-200)]/80">正在检查 TapTap 登录状态…</p>
+              )}
+
+              {authState === 'needLogin' && (
+                <>
+                  <p className="text-[13.5px] font-display text-[var(--gold-200)]">需登录 TapTap 并完成实名认证后才能进入</p>
+                  <p className="mt-1.5 text-[11.5px] leading-relaxed text-[var(--ink-400)]">
+                    当前为联网实名版本：未登录无法开辟或读取存档
+                  </p>
+                  <Button
+                    variant="gold"
+                    size="sm"
+                    className="mt-3 px-5"
+                    disabled={tapLogging}
+                    onClick={handleTapLogin}
+                  >
+                    <LogIn size={14} className="mr-1.5" />
+                    {tapLogging ? '登录中…' : 'TapTap 登录'}
+                  </Button>
+                </>
+              )}
+
+              {authState === 'compliance' && (
+                <>
+                  <p className="text-[13.5px] font-display text-[var(--gold-200)]">正在进行实名 / 防沉迷认证</p>
+                  <p className="mt-1.5 text-[11.5px] leading-relaxed text-[var(--ink-400)]">
+                    请在弹窗中完成实名与年龄段授权，通过后自动进入
+                  </p>
+                </>
+              )}
+
+              {authState === 'limited' && (
+                <>
+                  <p className="text-[13.5px] font-display text-[var(--gold-200)]">当前账号暂不可进入游戏</p>
+                  <p className="mt-1.5 text-[11.5px] leading-relaxed text-[var(--ink-400)]">{authMsg}</p>
+                  {authDiag && (
+                    <p className="mt-1 text-[10px] text-[var(--ink-400)]/60">诊断：{authDiag}</p>
+                  )}
+                  <div className="mt-3 flex items-center justify-center gap-2">
+                    <Button variant="outline" size="sm" className="px-4" onClick={handleRetryCompliance}>
+                      重新认证
+                    </Button>
+                    <Button variant="ghost" size="sm" className="px-4" onClick={handleTapLogout}>
+                      切换账号
+                    </Button>
+                  </div>
+                </>
+              )}
+
+              {/* 认证卡住时显示原生关键步骤，便于真机排查 */}
+              {diagLines.length > 0 && (authState === 'compliance' || authState === 'limited') && (
+                <div className="mt-3 max-h-[130px] overflow-y-auto rounded border border-white/10 bg-black/40 px-2 py-1.5 text-left font-mono text-[9.5px] leading-[1.45] text-[var(--gold-300)]/45">
+                  {diagLines.map((line, i) => (
+                    <div key={i} className="truncate">{line}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           <p className="text-[var(--gold-300)]/40 text-xs mt-3 font-display tracking-[0.3em] pl-[0.3em]">
             天道酬勤 · 道法自然

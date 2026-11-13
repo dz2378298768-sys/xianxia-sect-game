@@ -34,6 +34,11 @@ public class SectApp extends Application {
     public static final String TAP_CLIENT_TOKEN = "npZkPaoj9xlpk1oil23SWAYq3IVIESZSvnVx9QFz";
     // 应用包名（与 AndroidManifest、TapTap 开发者中心一致）
     public static final String TAP_APP_PACKAGE = "com.xianxia.sectgame";
+    // 合规认证初始化参数（JSON 交给 TapTap SDK 的 OptionsAdapter 解析）
+    // showSwitchAccount=false：不显示切换账号入口（游戏内自行处理）
+    // useAgeRange=true：需要用户授权年龄段（TapTap 审核要求的合规开关）
+    private static final String COMPLIANCE_OPTIONS_JSON =
+        "{\"showSwitchAccount\":false,\"useAgeRange\":true}";
     // =====================================================================================
 
     // 聚合 SDK 真实包名前缀（从 AAR 反编译确认）
@@ -47,6 +52,7 @@ public class SectApp extends Application {
     @Override
     public void onCreate() {
         super.onCreate();
+        TapDiag.log("SectApp 启动");
 
         // 1. 初始化 Dirichlet 聚合 Ad SDK（反射方式，AAR 缺失时不影响应用启动）
         initDirichletSdk();
@@ -132,9 +138,35 @@ public class SectApp extends Application {
                 false
             );
 
-            // TapTapSdk.init(context, options)
-            sdkCls.getMethod("init", android.content.Context.class, optionsCls)
-                .invoke(null, this, options);
+            // TapTapSdk.init(context, options, 合规模块参数)
+            // SDK 内部只认 JSON 字符串（OptionsAdapter 逐字段解析 showSwitchAccount / useAgeRange），
+            // 可变参数重载也是把 TapTapComplianceOptions.toString() 的结果交给同一个入口。
+            // 这里直接传 JSON，绕开 kotlinx.serialization（Release 包被裁剪时会抛异常导致静默退回普通初始化）。
+            boolean complianceInited = false;
+            try {
+                sdkCls.getMethod("init", android.content.Context.class, optionsCls, String[].class)
+                    .invoke(null, this, options, new String[]{COMPLIANCE_OPTIONS_JSON});
+                complianceInited = true;
+                Log.i(TAG, "TapTap SDK 已完成合规初始化（useAgeRange=true）");
+                TapDiag.log("合规初始化成功");
+            } catch (NoSuchMethodException e) {
+                Log.w(TAG, "未找到 init(Context, options, String[]) 重载，合规功能不可用");
+                TapDiag.log("合规初始化失败：无 String[] init 重载");
+            } catch (Throwable t) {
+                Log.w(TAG, "合规参数初始化失败，回退到普通初始化: " + t.getMessage());
+                TapDiag.log("合规初始化失败：" + t);
+            }
+            if (!complianceInited) {
+                sdkCls.getMethod("init", android.content.Context.class, optionsCls)
+                    .invoke(null, this, options);
+            }
+
+            // 注册合规回调（实名结果 / 时段限制 / 年龄段）
+            boolean complianceReady = TapComplianceBridge.registerCallback(this);
+            TapDiag.log("合规回调注册=" + complianceReady);
+            if (complianceInited && complianceReady) {
+                TapComplianceBridge.markInitialized();
+            }
 
             tapUpdateSdkReady = true;
             Log.i(TAG, "TapTap SDK v4 核心+登录+更新已统一初始化（ClientId=" + TAP_CLIENT_ID + "）");

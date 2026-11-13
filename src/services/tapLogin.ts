@@ -90,3 +90,101 @@ export async function logout(): Promise<{ success: boolean; error?: string }> {
     return { success: false, error: e?.message || '登出异常' };
   }
 }
+
+// ===== 合规认证（实名 / 防沉迷 / 年龄段） =====================================
+
+export interface ComplianceResult {
+  code: number;
+  name: string;
+  allowed: boolean;
+  ageRange: number;
+}
+
+const COMPLIANCE_MESSAGE: Record<number, string> = {
+  1030: '当前时段不可游玩（未成年人保护）',
+  1050: '今日可玩时长已用完',
+  1100: '未达到本游戏的可玩年龄要求',
+  1200: '实名认证服务不可用，请检查网络后重试',
+};
+
+/** 合规回调的中文提示（不需要提示时返回空串） */
+export function complianceMessage(code: number): string {
+  return COMPLIANCE_MESSAGE[code] || '';
+}
+
+/** 获取年龄段下限：-1 未知 / 0 / 8 / 16 / 18 */
+export async function getAgeRange(): Promise<{ ageRange: number; ready: boolean; lastCode: number }> {
+  if (!isNativePlatform()) {
+    return { ageRange: -1, ready: false, lastCode: 0 };
+  }
+  try {
+    const Capacitor = (window as any).Capacitor;
+    return await Capacitor.Plugins.TapLogin.getAgeRange();
+  } catch (e: any) {
+    console.error('[TapLogin] getAgeRange 异常:', e);
+    return { ageRange: -1, ready: false, lastCode: 0 };
+  }
+}
+
+/** 重新发起合规认证（玩家关闭实名窗口后重试） */
+export async function startupCompliance(openId: string): Promise<{ success: boolean; error?: string }> {
+  if (!isNativePlatform() || !openId) {
+    return { success: false, error: '仅支持 Android 原生环境' };
+  }
+  try {
+    const Capacitor = (window as any).Capacitor;
+    return await Capacitor.Plugins.TapLogin.startupCompliance({ openId });
+  } catch (e: any) {
+    console.error('[TapLogin] startupCompliance 异常:', e);
+    return { success: false, error: e?.message || '发起认证失败' };
+  }
+}
+
+/** 退出合规认证（重置防沉迷状态） */
+export async function exitCompliance(): Promise<void> {
+  if (!isNativePlatform()) return;
+  try {
+    const Capacitor = (window as any).Capacitor;
+    await Capacitor.Plugins.TapLogin.exitCompliance();
+  } catch (e: any) {
+    console.error('[TapLogin] exitCompliance 异常:', e);
+  }
+}
+
+/** 订阅合规认证结果，返回取消订阅函数 */
+export async function onComplianceResult(
+  cb: (result: ComplianceResult) => void,
+): Promise<() => void> {
+  if (!isNativePlatform()) return () => {};
+  try {
+    const Capacitor = (window as any).Capacitor;
+    const handle = await Capacitor.Plugins.TapLogin.addListener('complianceResult', cb);
+    return () => handle?.remove?.();
+  } catch (e: any) {
+    console.error('[TapLogin] addListener 异常:', e);
+    return () => {};
+  }
+}
+
+/** 取原生关键步骤日志（登录 / 合规认证），用于准入页排查 */
+export async function getDiag(): Promise<string[]> {
+  if (!isNativePlatform()) return [];
+  try {
+    const Capacitor = (window as any).Capacitor;
+    const r = await Capacitor.Plugins.TapLogin.getDiag();
+    return (r?.lines || []) as string[];
+  } catch (e: any) {
+    return [];
+  }
+}
+
+/** 触发原生诊断探针（拉取实名配置 + 输出合规内部状态） */
+export async function probeCompliance(): Promise<void> {
+  if (!isNativePlatform()) return;
+  try {
+    const Capacitor = (window as any).Capacitor;
+    await Capacitor.Plugins.TapLogin.probeCompliance();
+  } catch (e: any) {
+    console.error('[TapLogin] probeCompliance 异常:', e);
+  }
+}
