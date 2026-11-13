@@ -19,6 +19,13 @@ export const TournamentFrequencyIntervals: Record<TournamentFrequency, number> =
   every10years: 10,
 };
 
+/** 自动举办月份：三种频率错开，避免同月连办数场 */
+export const TournamentFrequencyMonths: Record<TournamentFrequency, number> = {
+  yearly: 1,
+  every5years: 7,
+  every10years: 10,
+};
+
 // 大比分组维度：按境界 / 按身份 / 全员
 export type TournamentDivisionKind = 'realm' | 'status' | 'all';
 
@@ -91,14 +98,36 @@ export interface TournamentResult {
   date: { year: number; month: number };
   // 我方参赛弟子数
   ourParticipantCount: number;
-  // 我方冠军名（若夺冠）
+  // 我方参赛弟子 id（用于赛后修为/满意度结算）
+  ourParticipantIds: string[];
+  // 我方冠军 id / 名字（若夺冠）；id 用来避免重名发错奖励
+  ourChampionId: string | null;
   ourChampionName: string | null;
+  // 我方名次最高者（1~3 名），奖励发给他；未进三甲时为空
+  ourPodiumId: string | null;
+  ourPodiumName: string | null;
   // 我方最终名次（1-based，0 表示未入榜）
   ourRank: number;
-  // 冠军、亚军、季军名称
-  topThree: { name: string; sectName: string; isOurs: boolean }[];
+  // 冠军、亚军、季军；参赛人数不足 3 时可能少于三项
+  topThree: { name: string; sectName: string; isOurs: boolean; id?: string }[];
   // 关键对战记录（我方弟子的对战）
   matches: TournamentMatch[];
   // 我方获得的总奖励文本
+  rewardSummary: string[];
+  // 本届实际发放的奖赏（山门大比会从库存扣除；库存不足时小于配置值）
+  payout?: { spiritStones: number; pills: number; talismans: number; artifacts: number };
+}
+
+/** 历届大比记录（宗门级，用于榜单与回顾） */
+export interface TournamentHistoryEntry {
+  id: string;
+  date: { year: number; month: number };
+  scope: TournamentScope;
+  frequency: TournamentFrequency;
+  divisionName: string;
+  ourRank: number;
+  champion: string;
+  championSect: string;
+  ourChampionName: string | null;
   rewardSummary: string[];
 }

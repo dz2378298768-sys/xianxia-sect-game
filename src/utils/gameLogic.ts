@@ -1,6 +1,6 @@
 import type { Disciple, HiddenTalents, Realm, DiscipleStatus, PromotionRules, RealmStage, DeducingBook, DiscipleBackpackItem, Personality, BackgroundStory, DisciplePreference } from '@/types/disciple';
 import type { SectSchool } from '@/types/game';
-import { SCHOOL_TALENT_TREES, SectLevelOrder } from '@/types/game';
+import { SCHOOL_TALENT_TREES, SectLevelOrder, ReputationGrowthConfig } from '@/types/game';
 import type { CombatPowerBreakdown, SectCombatSummary } from '@/types/combat';
 import { RealmOrder, RealmStageOrder, DiscipleStatusNames, BreakthroughData, RealmNames, PersonalityNames, PersonalityDescriptions, PERSONALITY_CULTIVATION_MULT, PERSONALITY_SATISFACTION_MOD, PERSONALITY_DEFECTION_MULT, PERSONALITY_FRIEND_MULT, BackgroundStoryNames, BackgroundStoryDescriptions, BACKGROUND_EFFECTS, AMBITION_EFFECTS } from '@/types/disciple';
 import type { Ambition } from '@/types/disciple';
@@ -12,7 +12,7 @@ import { getRandomConstitution, CONSTITUTIONS } from '@/data/constitutions';
 import { generateId, generateDiscipleName, generateChildName, randomInt, randomFloat, clamp } from '@/utils/random';
 import { generateTalentDisplay, calculateLifespan, calculateCultivationSpeed, generateSpiritRoots, calculateSpiritRootBonus } from '@/utils/calculations';
 import { canLearnBook, generateRandomBook } from '@/utils/bookGenerator';
-import type { MonthlyReport, GameDate, Notification, SectHistoryEntry, SectHistoryType, BuildingEvent, ChoiceEvent, ChainEvent, PendingChainEvent, CalamityEvent, SectLevel } from '@/types/game';
+import type { MonthlyReport, GameDate, Notification, SectHistoryEntry, SectHistoryType, BuildingEvent, ChoiceEvent, ChainEvent, PendingChainEvent, CalamityEvent, SectLevel, Trial, SectActiveEffect } from '@/types/game';
 import { computeBuildingOutput, computeMaintenance, recomputeCultivationSpeed, computeMonthlyContribution, MAINTENANCE_MONTHLY_SCALE } from '@/domain/balance';
 import { ARTIFACT_CONFIGS } from '@/data/artifacts';
 import { TALISMAN_CONFIGS } from '@/data/talismans';
@@ -1117,8 +1117,58 @@ export function calculateBuildingOutput(building: Building, disciples: Disciple[
   );
 }
 
+/** 按临时效果倍率折算建筑产出（UI 展示用，与月末结算同一口径） */
+export function scaleBuildingOutput<T extends {
+  spiritStones: number; herbs: number; iron: number; paper: number; reputation: number;
+  pills: number; artifacts: number; talismans: number; beasts: number;
+}>(output: T, mul: number): T {
+  if (mul === 1) return output;
+  const scale = (n: number) => Math.round(n * mul);
+  return {
+    ...output,
+    spiritStones: scale(output.spiritStones),
+    herbs: scale(output.herbs),
+    iron: scale(output.iron),
+    paper: scale(output.paper),
+    reputation: scale(output.reputation),
+    pills: scale(output.pills),
+    artifacts: scale(output.artifacts),
+    talismans: scale(output.talismans),
+    beasts: scale(output.beasts),
+  };
+}
+
+/**
+ * 建筑变故 / 天灾的产出倍率：同类型相乘，并做上下限保护，
+ * 避免多个减产事件叠加成 0.1 倍把建筑直接打死。
+ */
+export function getBuildingEffectMultiplier(effects: SectActiveEffect[] | undefined, buildingType: string): number {
+  if (!effects || effects.length === 0) return 1;
+  let mul = 1;
+  for (const e of effects) {
+    if (e.buildingType && e.buildingType !== buildingType) continue;
+    mul *= e.outputMultiplier;
+  }
+  return Math.max(0.25, Math.min(3, mul));
+}
+
+/** 修炼加成：'all' 全宗 +20%，'inner' 仅内门及以上 +30%，同类相加 */
+export const EFFECT_CULTIVATION_BONUS_ALL = 20;
+export const EFFECT_CULTIVATION_BONUS_INNER = 30;
+
+export function getCultivationEffectBonus(effects: SectActiveEffect[] | undefined, status: DiscipleStatus): number {
+  if (!effects || effects.length === 0) return 0;
+  let bonus = 0;
+  for (const e of effects) {
+    if (e.cultivationScope === 'all') bonus += e.cultivationBonus;
+    else if (e.cultivationScope === 'inner'
+      && (status === 'inner' || status === 'core' || status === 'elder')) bonus += e.cultivationBonus;
+  }
+  return bonus;
+}
+
 // 各境界突破所需累计修为（2026-08-04 重新校准）
-// 按普通天赋设计节奏（仅基础修炼，无任何 buff/居所/功法/讲经堂/秘籍时）：
+// 按普通天赋设计节奏（仅基础修炼，无任何 buff/居所/功法/讲经堂/秘籍时）
 //   凡人 6 月、炼气 6 月/阶段、筑基 12 月/阶段、金丹 18 月/阶段、元婴 24 月/阶段
 // 50% 弟子在寿命耗尽前到不了化神：通过放大天赋差异（根骨/灵根非线性）+ buff 加法抑制叠加实现
 export const REALM_BREAKTHROUGH_REQUIRED: Record<string, number> = {
@@ -1148,6 +1198,39 @@ export function canAttemptBreakthrough(disciple: Disciple): boolean {
   return true;
 }
 
+/**
+ * 预估本次突破成功率（0-100），与 attemptBreakthrough 使用同一公式。
+ * 用于弟子详情展示，让玩家知道「还差多少 / 吃丹值不值」。
+ */
+export function getBreakthroughSuccessRate(
+  disciple: Disciple,
+  hasPill: boolean = false,
+  pillBonus: number = 0,
+): number {
+  const isRealmAdvance = disciple.realmStage === 'late';
+  // 跨境界突破取下一境界数据；同境界进阶取当前境界数据
+  const realmIndex = RealmOrder.indexOf(disciple.realm);
+  const targetRealm = isRealmAdvance ? RealmOrder[realmIndex + 1] : disciple.realm;
+  const breakthroughData = BreakthroughData[targetRealm as Realm] ?? BreakthroughData[disciple.realm];
+  if (!breakthroughData) return 0;
+
+  let successRate = breakthroughData.baseSuccessRate;
+  successRate += disciple.breakthroughAttempts * breakthroughData.failureBonus;
+  successRate += disciple.breakthroughBonus;
+
+  // 丹药仅在跨境界突破时生效
+  if (hasPill && isRealmAdvance) {
+    successRate += pillBonus > 0 ? pillBonus : breakthroughData.pillBonus;
+  }
+
+  successRate += (disciple.hiddenTalents.rootBone - 50) * 0.2;
+
+  const ambition = getAmbitionEffects(disciple.ambition);
+  if (ambition) successRate += ambition.breakthroughBonus;
+
+  return clamp(successRate, 5, 95);
+}
+
 export function attemptBreakthrough(disciple: Disciple, hasPill: boolean = false, pillBonus: number = 0): {
   success: boolean;
   newRealm: Realm;
@@ -1174,23 +1257,7 @@ export function attemptBreakthrough(disciple: Disciple, hasPill: boolean = false
 
   // 成功率：跨境界突破取下一境界数据；同境界进阶取当前境界数据（更温和）
   const breakthroughData = BreakthroughData[isRealmAdvance ? newRealm : disciple.realm];
-  let successRate = breakthroughData.baseSuccessRate;
-  successRate += disciple.breakthroughAttempts * breakthroughData.failureBonus;
-  successRate += disciple.breakthroughBonus;
-
-  // 丹药仅在跨境界突破时生效，使用丹药配置中的 breakthroughBonus
-  if (hasPill && isRealmAdvance) {
-    successRate += pillBonus > 0 ? pillBonus : breakthroughData.pillBonus;
-  }
-
-  const talentBonus = (disciple.hiddenTalents.rootBone - 50) * 0.2;
-  successRate += talentBonus;
-
-  // 志向加成：求道/长生等志向对突破更执着
-  const ambition = getAmbitionEffects(disciple.ambition);
-  if (ambition) successRate += ambition.breakthroughBonus;
-
-  successRate = clamp(successRate, 5, 95);
+  const successRate = getBreakthroughSuccessRate(disciple, hasPill, pillBonus);
 
   const roll = randomFloat(0, 100);
   const success = roll < successRate;
@@ -1696,41 +1763,43 @@ export function calculateDiscipleCombatPowerBreakdown(disciple: Disciple): Comba
   };
 }
 
+/** 每月自然声望增长（与 nextMonth 结算同一公式，上限 2/月） */
+export function calculateMonthlyReputationGrowth(disciples: Disciple[], totalCombatPower: number): number {
+  const discipleBonus = disciples.length * ReputationGrowthConfig.discipleWeight;
+  const combatBonus = totalCombatPower * ReputationGrowthConfig.combatWeight;
+  const growthMultiplier = Math.min(1 + discipleBonus + combatBonus, ReputationGrowthConfig.maxMultiplier);
+  return Math.floor(ReputationGrowthConfig.baseGrowth * growthMultiplier);
+}
+
+/**
+ * 试炼成功率预估（0-1），与月末结算使用同一公式：
+ * 弟子战力 / 建议战力 的比值越高，失败率越低；未知弟子时返回基础成功率。
+ */
+export function estimateTrialSuccessRate(trial: Trial, disciple: Disciple | null): number {
+  if (!disciple) return Math.max(0, 1 - trial.riskRate);
+  const powerRatio = calculateDiscipleCombatPower(disciple) / Math.max(1, trial.requiredPower);
+  const adjustedRisk = Math.max(0.02, trial.riskRate * (1 / Math.max(0.5, powerRatio)));
+  return 1 - adjustedRisk;
+}
+
 /** 计算宗门战力汇总 */
 export function computeSectCombatSummary(
   disciples: Disciple[],
   buildings: Building[],
+  schoolBonuses?: Record<string, number>,
 ): SectCombatSummary {
   // 弟子战力
   const disciplePowers = disciples.map(d => ({
     disciple: d,
     power: calculateDiscipleCombatPower(d),
   }));
-  const basePower = disciplePowers.reduce((s, x) => s + x.power, 0);
 
-  // 建筑加成
-  const bonuses: { name: string; multiplier: number; description: string }[] = [];
-  const mountainGate = buildings.find(b => b.type === 'mountain_gate' && b.status === 'active');
-  const isMountainGateFull = mountainGate && mountainGate.assignedDisciples.length >= mountainGate.discipleCapacity;
-  if (isMountainGateFull && mountainGate) {
-    const gateBonus = mountainGate.level * 0.05;
-    bonuses.push({
-      name: mountainGate.level >= 10 ? '护山大阵' : '山门满员',
-      multiplier: gateBonus,
-      description: `山门Lv.${mountainGate.level}，战力+${(gateBonus * 100).toFixed(0)}%`,
-    });
-  }
-  const skyscraperTower = buildings.find(b => b.type === 'skyscraper_tower' && b.status === 'active');
-  if (skyscraperTower) {
-    const levelBonus = skyscraperTower.level * 0.02;
-    bonuses.push({
-      name: '通天塔',
-      multiplier: levelBonus,
-      description: `通天塔Lv.${skyscraperTower.level}，战力+${(levelBonus * 100).toFixed(0)}%`,
-    });
-  }
-  const totalBonus = bonuses.reduce((s, b) => s + b.multiplier, 0);
-  const totalPower = Math.floor(basePower * (1 + totalBonus));
+  // 总战力与建筑/流派加成统一由 calculateSectCombatPower 计算，
+  // 保证「战力面板 / 总览 / 实际战斗判定」三处是同一个数
+  const powerResult = calculateSectCombatPower(disciples, buildings, schoolBonuses);
+  const basePower = powerResult.basePower;
+  const bonuses = powerResult.bonuses;
+  const totalPower = powerResult.totalPower;
 
   // 按身份分组
   const statusGroups = new Map<string, { count: number; power: number }>();
@@ -2220,6 +2289,8 @@ export function getMasterDiscipleCultivationBonus(disciple: Disciple, allDiscipl
 export function generateDiscipleRelationships(
   disciples: Disciple[],
   random: () => number = Math.random,
+  /** 每对弟子单次检定结缘概率（默认按月度节奏 3%） */
+  chancePerPair = 0.03,
 ): { type: 'friend' | 'dao_partner' | 'rival'; a: Disciple; b: Disciple }[] {
   const results: { type: 'friend' | 'dao_partner' | 'rival'; a: Disciple; b: Disciple }[] = [];
   // 未成年稚子不参与人际网络（避免幼童被结为道侣/宿敌），凡人亦不参与
@@ -2250,6 +2321,8 @@ export function generateDiscipleRelationships(
 export function generateBuildingEvents(
   buildings: Building[],
   random: () => number = Math.random,
+  /** 单栋建筑单次检定出事概率（默认按月度节奏 8%） */
+  chancePerBuilding = 0.08,
 ): BuildingEvent[] {
   const events: BuildingEvent[] = [];
   const BUILDING_EVENT_POOL: Record<string, BuildingEvent[]> = {
@@ -2423,7 +2496,7 @@ export function generateBuildingEvents(
     if (building.status !== 'active') continue;
     const pool = BUILDING_EVENT_POOL[building.type];
     if (!pool) continue;
-    if (random() > 0.08) continue;
+    if (random() > chancePerBuilding) continue;
     const event = pool[Math.floor(random() * pool.length)];
     events.push({ ...event, id: `${event.id}_${building.id}` });
   }
@@ -2436,14 +2509,17 @@ export function generateBuildingEvents(
 export function generateChoiceEvent(
   gameDate: GameDate, reputation: number, spiritStones: number,
   random: () => number = Math.random,
+  /** 单次检定出现分支抉择的概率（默认按月度节奏 35%） */
+  chance = 0.35,
 ): ChoiceEvent | null {
-  if (random() > 0.35) return null;
+  if (random() > chance) return null;
 
   // 季节事件（春季/夏季/秋季/冬季各有特色）
   const month = gameDate.month;
   const seasonalEvents: ChoiceEvent[] = [
     { id: 'spring_planting', title: '春耕大典',
       description: '春回大地，灵田即将播种。长老建议举办一场春耕大典，祈求今年灵草丰收。',
+      defaultIndex: 1,
       choices: [
         { label: '举办大典', description: '耗费灵石举办典礼，提振士气。',
           effects: { spiritStoneChange: -80, satisfactionChange: 5, notificationText: '春耕大典顺利举行，弟子们干劲十足，满意度+5。' } },
@@ -2452,6 +2528,7 @@ export function generateChoiceEvent(
       ] },
     { id: 'summer_tournament', title: '夏日论武',
       description: '盛夏酷暑，弟子们提议举办一场夏日论武大会，切磋技艺，活跃气氛。',
+      defaultIndex: 1,
       choices: [
         { label: '举办论武', description: '组织弟子比试，胜者有奖。',
           effects: { spiritStoneChange: -50, satisfactionChange: 6, notificationText: '夏日论武热闹非凡，胜者获得奖励，满意度+6。' } },
@@ -2460,6 +2537,7 @@ export function generateChoiceEvent(
       ] },
     { id: 'autumn_harvest', title: '秋收祭典',
       description: '金秋时节，灵草丰收在即。有弟子提议举办秋收祭典感谢天地。',
+      defaultIndex: 1,
       choices: [
         { label: '隆重祭典', description: '大办祭典，宴请周边宗门。',
           effects: { spiritStoneChange: -100, reputationChange: 15, satisfactionChange: 4, notificationText: '秋收祭典宾客满堂，宗门声望+15。' } },
@@ -2468,6 +2546,7 @@ export function generateChoiceEvent(
       ] },
     { id: 'winter_defense', title: '冬防部署',
       description: '寒冬将至，山门需要加固防御、储备物资，以应对可能出现的妖兽袭扰。',
+      defaultIndex: 1,
       choices: [
         { label: '全面加固', description: '投入灵石加固防御，储备物资。',
           effects: { spiritStoneChange: -120, satisfactionChange: 3, notificationText: '宗门防御加固完成，弟子们安心过冬。' } },
@@ -2487,6 +2566,7 @@ export function generateChoiceEvent(
     ...seasonPool,
     { id: 'treasure_fall', title: '天降异宝',
       description: '一道流星划过天际，落在宗门后山。弟子来报，疑似天外陨铁或某种异宝。你打算如何处理？',
+      defaultIndex: 0,
       choices: [
         { label: '据为己有', description: '将此宝收入宗门仓库，提升宗门底蕴。',
           effects: { spiritStoneChange: 200, karmaChange: -5, notificationText: '你将异宝收入宗门，宗门灵石+200，但正邪度-5。' } },
@@ -2495,6 +2575,7 @@ export function generateChoiceEvent(
       ] },
     { id: 'wandering_monk', title: '云游散修',
       description: '一名衣衫褴褛的散修前来投靠，自称曾是一方大能，但因仇家追杀流落至此。',
+      defaultIndex: 0,
       choices: [
         { label: '收留庇护', description: '广结善缘，收留这位散修。',
           effects: { reputationChange: 15, karmaChange: 5, notificationText: '你收留了散修，他感激不尽，宗门声望+15。' } },
@@ -2503,6 +2584,7 @@ export function generateChoiceEvent(
       ] },
     { id: 'demon_attack', title: '邪修滋事',
       description: '一群邪修在宗门附近滋事，劫掠过往凡人。弟子们请示是否出手干预。',
+      defaultIndex: 0,
       choices: [
         { label: '出手除魔', description: '派出弟子剿灭邪修，维护一方平安。',
           effects: { reputationChange: 25, karmaChange: 8, satisfactionChange: 3, notificationText: '你派出弟子剿灭邪修，百姓赞颂，声望+25。' } },
@@ -2511,6 +2593,7 @@ export function generateChoiceEvent(
       ] },
     { id: 'spirit_vein', title: '灵脉异动',
       description: '在矿洞深处发现一条新的灵脉分支，但开采需要大量灵石投入。',
+      defaultIndex: 1,
       choices: [
         { label: '全力开采', description: '投入灵石开辟新矿脉，长期收益可观。',
           effects: { spiritStoneChange: -200, reputationChange: 10, notificationText: '你投入200灵石开辟新矿脉，未来收益可期。' } },
@@ -2519,6 +2602,7 @@ export function generateChoiceEvent(
       ] },
     { id: 'disaster_aid', title: '灾民求助',
       description: '附近城镇遭遇妖灾，大量难民逃到山门前求助。弟子们等待你的决断。',
+      defaultIndex: 1,
       choices: [
         { label: '开仓赈济', description: '打开粮仓，收留难民。',
           effects: { spiritStoneChange: -100, reputationChange: 20, karmaChange: 8, satisfactionChange: 3, notificationText: '你收留难民，善名远播，声望+20。' } },
@@ -2527,6 +2611,7 @@ export function generateChoiceEvent(
       ] },
     { id: 'inner_competition', title: '弟子内卷',
       description: '内门弟子之间竞争日益激烈，有长老提议完善弟子排名制度，激励修炼。',
+      defaultIndex: 1,
       choices: [
         { label: '设立排名榜', description: '公开排名，奖励优秀弟子。',
           effects: { spiritStoneChange: -60, satisfactionChange: 4, notificationText: '排名榜设立后，弟子修炼热情高涨，满意度+4。' } },
@@ -2848,77 +2933,6 @@ export function processMasterInheritance(
   }
   updatedDisciples.push(apprentice);
   return { notifications, updatedDisciples };
-}
-
-/**
- * 每月涌现事件统一入口
- */
-export interface MonthlyProcessResult {
-  notifications: Notification[];
-  sectHistories: SectHistoryEntry[];
-  spiritStoneChange: number;
-  reputationChange: number;
-  karmaChange: number;
-  buildingEvents: BuildingEvent[];
-  choiceEvent: ChoiceEvent | null;
-  collapsed: boolean;
-  collapseReason: string;
-  updatedDisciples: Disciple[];
-}
-
-export function processMonthlyEmergentEvents(
-  disciples: Disciple[], buildings: Building[],
-  spiritStones: number, reputation: number, karma: number,
-  monthsConsecutiveNegative: number, gameDate: GameDate,
-  createNotification: (type: 'info' | 'success' | 'warning' | 'danger', title: string, content: string, date: GameDate) => Notification,
-  random: () => number = Math.random,
-  sectLevel: SectLevel = 'founding',
-): MonthlyProcessResult {
-  const notifications: Notification[] = [];
-  const sectHistories: SectHistoryEntry[] = [];
-  let spiritStoneChange = 0, reputationChange = 0, karmaChange = 0;
-  let updatedDisciples: Disciple[] = [];
-
-  // 1. 关系网生成
-  const newRelations = generateDiscipleRelationships(disciples, random);
-  for (const rel of newRelations) {
-    const a = rel.a; const b = rel.b;
-    if (rel.type === 'friend') {
-      a.friends.push(b.name); b.friends.push(a.name);
-      notifications.push(createNotification('info', '结交好友', `${a.name}与${b.name}结为好友。`, gameDate));
-    } else if (rel.type === 'dao_partner') {
-      a.daoPartner = b.name; b.daoPartner = a.name;
-      notifications.push(createNotification('success', '喜结道侣', `${a.name}与${b.name}结为道侣，双修可增益修为。`, gameDate));
-    } else if (rel.type === 'rival') {
-      a.rival = b.name; b.rival = a.name;
-      notifications.push(createNotification('warning', '结为宿敌', `${a.name}与${b.name}成为宿敌，需留意内部矛盾。`, gameDate));
-    }
-    updatedDisciples.push(a); updatedDisciples.push(b);
-  }
-
-  // 2. 建筑随机事件
-  const buildingEvents = generateBuildingEvents(buildings, random);
-  for (const event of buildingEvents) {
-    notifications.push(createNotification(
-      event.type === 'auspicious' ? 'success' : 'danger',
-      `【${event.title}】`, event.description, gameDate,
-    ));
-    sectHistories.push({ id: generateId(), date: gameDate, type: 'building_event', title: event.title, description: event.description });
-    if (event.effects.spiritStoneChange) spiritStoneChange += event.effects.spiritStoneChange;
-    if (event.effects.reputationChange) reputationChange += event.effects.reputationChange;
-    if (event.effects.satisfactionChange) {
-      const target = disciples[Math.floor(random() * disciples.length)];
-      if (target) { target.satisfaction = clamp(target.satisfaction + event.effects.satisfactionChange, 0, 100); updatedDisciples.push(target); }
-    }
-  }
-
-  // 3. 分支选择事件
-  const choiceEvent = generateChoiceEvent(gameDate, reputation, spiritStones, random);
-
-  // 4. 灭亡检查
-  const { collapsed, reason } = checkSectCollapse(spiritStones, disciples, reputation, monthsConsecutiveNegative, sectLevel);
-
-  return { notifications, sectHistories, spiritStoneChange, reputationChange, karmaChange, buildingEvents, choiceEvent, collapsed, collapseReason: reason, updatedDisciples };
 }
 
 /**

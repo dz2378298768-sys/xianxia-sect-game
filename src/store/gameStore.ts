@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { useUIStore } from '@/store/uiStore';
+import { WORLD_TICKS_PER_MONTH } from '@/store/clockStore';
 import type { Disciple, PromotionRules, Realm } from '@/types/disciple';
 import { DiscipleStatusNames, RealmNames, RealmOrder, getRealmDisplay } from '@/types/disciple';
 import type { Building, BuildingType, ProductionTarget } from '@/types/building';
@@ -26,9 +27,9 @@ import type { TaskStateView } from '@/types/task';
 import { canClaimTask, incCounter, selectMonthlyTaskIds } from '@/domain/taskEngine';
 import {
   SectLevelNames, SectLevelRequirementsMap, SectLevelOrder,
-  SectLevelDiscipleCap, SectLevelReputationCap, ReputationGrowthConfig,
+  SectLevelDiscipleCap, SectLevelReputationCap,
 } from '@/types/game';
-import type { Trial, TrialReward, ContributionLog, ContributionLogType, SectHistoryEntry, AutoTradeRule, ChoiceEvent, BuildingEvent, ExplorationEncounter, TrialType, ChainEvent, PendingChainEvent, SectSchool, CalamityEvent } from '@/types/game';
+import type { Trial, TrialReward, ContributionLog, ContributionLogType, SectHistoryEntry, AutoTradeRule, ChoiceEvent, BuildingEvent, ExplorationEncounter, TrialType, ChainEvent, PendingChainEvent, SectSchool, CalamityEvent, SectActiveEffect } from '@/types/game';
 import {
   createInitialDisciple, createInitialBuildings, getDefaultPromotionRules, autoAssignBuilding,
   autoAssignResidence, getResidenceUpgradeCost, getResidenceCapacityByLevel, getTrainingGroundCapacityByLevel, getCaveMansionUpgradeCost,
@@ -39,8 +40,9 @@ import {
   getMaintenanceCostByLevel, calculateLectureBonus, SKYSCRAPER_TOWER_COMBAT_POWER,
   TRAINING_GROUND_LEVEL_TABLE,
   processDiscipleDepartures, mergeDepartureInventories,
-  processMonthlyEmergentEvents, processMasterInheritance,
+  processMasterInheritance,
   processMonthlyLineage, ADULT_AGE, getAmbitionEffects,
+  checkSectCollapse, generateBuildingEvents, generateDiscipleRelationships, generateChoiceEvent,
 } from '@/utils/gameLogic';
 import {
   calculateBuildingMaintenance,
@@ -59,15 +61,21 @@ import {
   finalizeDeducingBook,
   calculateMonthlyDeductionProgress,
   getMaxDeduceTier,
+  calculateMonthlyReputationGrowth,
+  getBuildingEffectMultiplier,
+  getCultivationEffectBonus,
+  EFFECT_CULTIVATION_BONUS_ALL,
+  EFFECT_CULTIVATION_BONUS_INNER,
 } from '@/utils/gameLogic';
 import { randomInt, generateId } from '@/utils/random';
-import { recomputeCultivationSpeed, applySatisfactionPenalty, recomputeLifespan, computeMonthlyContribution, MAINTENANCE_MONTHLY_SCALE } from '@/domain/balance';
+import { recomputeCultivationSpeed, applySatisfactionPenalty, recomputeLifespan, computeMonthlyContribution, MAINTENANCE_MONTHLY_SCALE, computeDiscipleStipend } from '@/domain/balance';
 import { generateOtherSects, refreshSectRelations, generateTrials } from '@/utils/worldGenerator';
 import type { SiegeReportData } from '@/store/siegeReport';
-import type { TournamentConfig, TournamentResult, TournamentFrequency, FrequencyTournamentConfig } from '@/types/tournament';
+import type { TournamentConfig, TournamentResult, TournamentFrequency, FrequencyTournamentConfig, TournamentHistoryEntry } from '@/types/tournament';
 import { TournamentRewardTypeNames } from '@/types/tournament';
 import {
   runTournament, shouldTournamentTrigger, getDefaultTournamentConfig, generateInterSectRewards, rewardToText,
+  canManuallyHoldTournament, getDivisionName, discipleMatchesDivision,
 } from '@/utils/tournament';
 import {
   saveToSlot as saveToSlotUtil, loadFromSlot as loadFromSlotUtil,
@@ -87,6 +95,16 @@ import type { FallenDisciple } from '@/types/enshrinement';
 import { getEnshrinementBonus, canEnshrine } from '@/domain/enshrinement';
 import { generateChainEvents, processPendingChainEvents, generatePriceFluctuations, calculateExpansionCost, calculateDiscipleWelfareCost, checkCalamityTrigger, generateCalamity, getSchoolTalentBonuses } from '@/utils/gameLogic';
 import { SCHOOL_TALENT_TREES } from '@/types/game';
+
+// ===== 世界事件节拍：所有随机事件都按 5 日一次的节拍掷骰，散布在整月任意时刻 =====
+/** 单次节拍的异闻概率：6 次/月折算后 ≈ 24%/月，保留旧版月度手感 */
+const EVENT_TRIGGER_CHANCE = 0.045;
+/** 连续这么多次节拍未出异闻则保底（约 1.7 个游戏月） */
+const EVENT_PITY_MISSES = 10;
+/** 以下概率由月度期望（8% / 3% / 35%）按每月节拍数折算而来 */
+const BUILDING_EVENT_CHANCE_PER_TICK = 0.08 / WORLD_TICKS_PER_MONTH;
+const RELATION_CHANCE_PER_TICK = 0.03 / WORLD_TICKS_PER_MONTH;
+const CHOICE_EVENT_CHANCE_PER_TICK = 0.35 / WORLD_TICKS_PER_MONTH;
 
 interface GameState {
   year: number;
@@ -163,9 +181,11 @@ interface GameState {
   lastInterSectTournamentResults: Record<TournamentFrequency, TournamentResult | null>;
   lastSectTournamentYears: Record<TournamentFrequency, number>;
   lastInterSectTournamentYears: Record<TournamentFrequency, number>;
+  /** 历届大比记录（最新在前，最多 50 条） */
+  tournamentHistory: TournamentHistoryEntry[];
   spiritStoneHistory: { year: number; month: number; spiritStones: number; netIncome: number }[]; // 近24月灵石收支历史
   autoAppointElder: boolean; // 是否每月自动任命符合条件核心弟子为长老
-  // 涌现事件系统
+  // 涌现事件系统（均由世界事件节拍随时触发，不再绑定月结算）
   choiceEvent: ChoiceEvent | null;       // 当前待处理的分支选择事件
   pendingChainEvents: PendingChainEvent[]; // 待触发的连锁事件队列
   pendingEncounters: ExplorationEncounter[]; // 探索遭遇事件队列（支持多个探索同时触发）
@@ -185,6 +205,7 @@ interface GameState {
   sectFortune: number;                    // 宗门气运值（-100 ~ 100）
   activeCalamity: CalamityEvent | null;   // 当前活跃的天灾事件
   calamityWarnings: CalamityEvent[];      // 待触发的天灾预警
+  activeEffects: SectActiveEffect[];      // 建筑变故/天灾的临时产出与修炼效果（按月递减）
   // 大额支出
   expansionCount: number;                 // 宗门扩张次数
   lastCalamityYear: number;               // 上次天灾触发年份
@@ -204,6 +225,8 @@ interface GameState {
   setReportSetting: (kind: ReportKind, enabled: boolean) => void;
   // 随机事件
   checkEventTrigger: () => PendingEvent | null;
+  /** 世界事件节拍：每 5 个游戏日一次，让各类事件在月中任意时刻发生 */
+  tickWorldEvents: () => void;
   openEvent: (eventId: string) => void;
   closeEvent: () => void;
   resolveEvent: (eventId: string, choiceId: string, auto?: boolean) => { ok: boolean; reason?: string; resultText?: string };
@@ -602,7 +625,7 @@ const createInitialState = () => {
     },
     otherSects,
     trials: [],
-    autoTrialEnabled: false,
+    autoTrialEnabled: true,
     encourageDaoPartners: true,
     followedDiscipleIds: [],
     wishes: [],
@@ -613,8 +636,9 @@ const createInitialState = () => {
     lastInterSectTournamentResults: { yearly: null, every5years: null, every10years: null },
     lastSectTournamentYears: { yearly: 0, every5years: 0, every10years: 0 },
     lastInterSectTournamentYears: { yearly: 0, every5years: 0, every10years: 0 },
+    tournamentHistory: [],
     spiritStoneHistory: [],
-    autoAppointElder: false,
+    autoAppointElder: true,
     choiceEvent: null,
     pendingChainEvents: [],
     monthsConsecutiveNegative: 0,
@@ -622,7 +646,8 @@ const createInitialState = () => {
     unlockedExplorationRegions: ['outer'],
     explorationMapFragments: 0,
     hasCompleteMap: false,
-    autoExploreRegions: {},
+    // 自动探索默认全开：解锁的四个区域都交由系统派遣
+    autoExploreRegions: { outer: true, forest: true, ruins: true, secret: true },
     sectCollapsed: false,
     sectCollapseReason: '',
     priceMultipliers: {},
@@ -633,6 +658,7 @@ const createInitialState = () => {
     sectFortune: 0,
     activeCalamity: null,
     calamityWarnings: [],
+    activeEffects: [],
     // 大额支出
     expansionCount: 0,
     lastCalamityYear: 0,
@@ -657,13 +683,33 @@ function applyTournamentRewards(
   // 贡献变化明细：调用方据此写 contributionLogs（避免此函数依赖闭包）
   const contributionChanges: { discipleId: string; amount: number; balance: number; description: string }[] = [];
   const isSect = result.scope === 'sect';
+  // 实际发放的奖赏（山门大比从库存扣，库存不足时按实际扣减记录）
+  const payout = { spiritStones: 0, pills: 0, talismans: 0, artifacts: 0 };
+  // 冠军按 id 认人，只有旧存档缺 id 时才退回按名字匹配
+  const championDisciple = result.ourChampionId
+    ? newDisciples.find(d => d.id === result.ourChampionId)
+    : result.ourChampionName
+      ? newDisciples.find(d => d.name === result.ourChampionName)
+      : undefined;
+  // 奖赏发给本宗名次最高的弟子（冠/亚/季军都可能），旧存档缺字段时退回冠军
+  const prizeDisciple = result.ourPodiumId
+    ? newDisciples.find(d => d.id === result.ourPodiumId)
+    : result.ourPodiumName
+      ? newDisciples.find(d => d.name === result.ourPodiumName)
+      : championDisciple;
+
+  // 实物奖赏打进获奖弟子的行囊：山门大比扣的是宗门库存，必须真的给到人
+  const giveToPrize = (kind: 'pill' | 'artifact' | 'talisman', itemType: string, qty: number) => {
+    if (!prizeDisciple || qty <= 0) return;
+    const backpack = prizeDisciple.backpack ? [...prizeDisciple.backpack] : [];
+    const existing = backpack.find(i => i.kind === kind && i.itemType === itemType);
+    if (existing) existing.quantity += qty;
+    else backpack.push({ kind, itemType, quantity: qty });
+    prizeDisciple.backpack = backpack;
+  };
 
   if (result.ourRank > 0) {
     const earnedRewards = freqConfig.rewards.filter(r => r.rank === result.ourRank as 1 | 2 | 3);
-    // 找到本宗冠军弟子（若存在）
-    const championDisciple = result.ourChampionName
-      ? newDisciples.find(d => d.name === result.ourChampionName)
-      : undefined;
 
     // 构建奖励描述文本
     const rewardDescs: string[] = [];
@@ -674,12 +720,11 @@ function applyTournamentRewards(
       rewardDescs.push(desc);
     });
 
-    // 给冠军弟子记录大比历史
-    if (championDisciple) {
+    // 给获奖弟子记录大比历史
+    if (prizeDisciple) {
       const freqName = result.frequency === 'yearly' ? '年度' : result.frequency === 'every5years' ? '五年' : '十年';
-      const scopeName = result.scope === 'sect' ? '山门' : '宗门';
-      championDisciple.tournamentHistory = [
-        ...(championDisciple.tournamentHistory || []),
+      prizeDisciple.tournamentHistory = [
+        ...(prizeDisciple.tournamentHistory || []),
         {
           year: result.date.year,
           scope: result.scope,
@@ -694,8 +739,10 @@ function applyTournamentRewards(
       switch (reward.type) {
         case 'spiritStones':
           if (isSect) {
-            // 宗门内大比：灵石从宗门库存扣除，发给弟子
-            newSpiritStones = Math.max(0, newSpiritStones - reward.amount);
+            // 宗门内大比：灵石从宗门库存扣除，发给弟子（不足时只发得起的部分）
+            const actual = Math.max(0, Math.min(reward.amount, Math.floor(newSpiritStones)));
+            newSpiritStones -= actual;
+            payout.spiritStones += actual;
           } else {
             // 宗门间大比：灵石从外部获得
             newSpiritStones += reward.amount;
@@ -705,15 +752,15 @@ function applyTournamentRewards(
           newReputation += reward.amount;
           break;
         case 'contribution':
-          // 贡献点发放给冠军弟子，并记录变化
-          if (championDisciple) {
-            championDisciple.contributionPoints += reward.amount;
+          // 贡献点发放给本宗获奖弟子，并记录变化
+          if (prizeDisciple) {
+            prizeDisciple.contributionPoints += reward.amount;
             const freqName = result.frequency === 'yearly' ? '年度' : result.frequency === 'every5years' ? '五年' : '十年';
             const scopeName = result.scope === 'sect' ? '山门' : '宗门';
             contributionChanges.push({
-              discipleId: championDisciple.id,
+              discipleId: prizeDisciple.id,
               amount: reward.amount,
-              balance: championDisciple.contributionPoints,
+              balance: prizeDisciple.contributionPoints,
               description: `${scopeName}${freqName}大比第${result.ourRank}名奖励 +${reward.amount} 贡献`,
             });
           }
@@ -721,11 +768,13 @@ function applyTournamentRewards(
         case 'pill':
           if (reward.pillType) {
             if (isSect) {
-              // 宗门内大比：丹药从库存扣除，发给弟子（检查库存是否足够）
+              // 宗门内大比：丹药从库存扣除并交给获奖弟子，库存不足则只发实际有的
               const existing = newPillInventory.find(p => p.type === reward.pillType);
-              if (existing) {
-                const actualDeduct = Math.min(reward.amount, existing.quantity);
-                existing.quantity -= actualDeduct;
+              const actual = Math.min(reward.amount, existing?.quantity ?? 0);
+              if (existing && actual > 0) {
+                existing.quantity -= actual;
+                payout.pills += actual;
+                giveToPrize('pill', reward.pillType, actual);
               }
             } else {
               // 宗门间大比：丹药从外部获得
@@ -743,10 +792,12 @@ function applyTournamentRewards(
             const talType = reward.talismanType as import('@/types/talisman').TalismanType;
             const existing = newTalismanInventory.find(t => t.type === talType);
             if (isSect) {
-              // 宗门内大比：从库存扣除
-              if (existing) {
-                const actualDeduct = Math.min(reward.amount, existing.quantity);
-                existing.quantity -= actualDeduct;
+              // 宗门内大比：符箓从库存扣除并交给获奖弟子
+              const actual = Math.min(reward.amount, existing?.quantity ?? 0);
+              if (existing && actual > 0) {
+                existing.quantity -= actual;
+                payout.talismans += actual;
+                giveToPrize('talisman', talType, actual);
               }
             } else {
               // 宗门间大比：从外部获得
@@ -763,10 +814,12 @@ function applyTournamentRewards(
             const artType = reward.artifactType as import('@/types/artifact').ArtifactType;
             const existing = newArtifactInventory.find(a => a.type === artType);
             if (isSect) {
-              // 宗门内大比：从库存扣除
-              if (existing) {
-                const actualDeduct = Math.min(reward.amount, existing.quantity);
-                existing.quantity -= actualDeduct;
+              // 宗门内大比：法器从库存扣除并交给获奖弟子
+              const actual = Math.min(reward.amount, existing?.quantity ?? 0);
+              if (existing && actual > 0) {
+                existing.quantity -= actual;
+                payout.artifacts += actual;
+                giveToPrize('artifact', artType, actual);
               }
             } else {
               // 宗门间大比：从外部获得
@@ -780,17 +833,27 @@ function applyTournamentRewards(
           break;
       }
     });
-
-    // 大比战力经验奖励：冠军+10，亚军+5，季军+3
-    if (championDisciple) {
-      const expGain = result.ourRank === 1 ? 10 : result.ourRank === 2 ? 5 : 3;
-      const currentExp = championDisciple.combatExperience || 0;
-      const newExp = Math.min(100, currentExp + expGain);
-      championDisciple.combatExperience = newExp;
-    }
   }
 
-  return { newSpiritStones, newReputation, newPillInventory, newTalismanInventory, newArtifactInventory, newDisciples, contributionChanges };
+  // 参赛者普遍收益：所有参赛弟子涨满意度与少量修为/战力经验，冠军额外加成
+  const participantIds = new Set(result.ourParticipantIds ?? []);
+  if (participantIds.size > 0) {
+    const champExp = result.ourRank === 1 ? 10 : result.ourRank === 2 ? 5 : 3;
+    newDisciples = newDisciples.map(d => {
+      if (!participantIds.has(d.id)) return d;
+      const isChampion = d.id === championDisciple?.id;
+      const need = getStageBreakthroughRequired(d.realm, d.realmStage);
+      const progressGain = Math.max(1, Math.round(need * (isChampion ? 0.03 : 0.01)));
+      return {
+        ...d,
+        satisfaction: Math.min(100, d.satisfaction + (isChampion ? 8 : 3)),
+        realmProgress: Math.min(need, d.realmProgress + progressGain),
+        combatExperience: Math.min(100, (d.combatExperience || 0) + (isChampion ? champExp : 2)),
+      };
+    });
+  }
+
+  return { newSpiritStones, newReputation, newPillInventory, newTalismanInventory, newArtifactInventory, newDisciples, contributionChanges, payout };
 }
 
 /** 生产建筑初始解锁时自动设置默认生产目标 */
@@ -1145,6 +1208,8 @@ export const useGameStore = create<GameState>()(
         const counterDelta: Record<string, number> = {};
         let { year, month, spiritStones, reputation, herbInventory } = state;
         const { disciples, buildings, promotionRules, pillInventory, libraryBooks, libraryCosts } = state;
+        // 本月生效的临时效果（建筑变故 / 天灾）；月末统一递减，新生成的留到次月
+        const activeEffectsAtStart = state.activeEffects ?? [];
         
         let spiritStoneIncome: { source: string; amount: number }[] = [];
         const spiritStoneExpense: { source: string; amount: number }[] = [];
@@ -1217,12 +1282,9 @@ export const useGameStore = create<GameState>()(
         // 宗门流派/天赋树加成计算
         const schoolBonuses = getSchoolTalentBonuses(state.sectSchool, state.unlockedTalents);
         
-        // 声望自动增长（基于人数和战力）
+        // 声望自动增长（基于人数和战力），公式与概览面板共用
         const sectCombatPower = calculateSectCombatPower(disciples, buildings, schoolBonuses);
-        const discipleBonus = disciples.length * ReputationGrowthConfig.discipleWeight;
-        const combatBonus = sectCombatPower.totalPower * ReputationGrowthConfig.combatWeight;
-        const growthMultiplier = Math.min(1 + discipleBonus + combatBonus, ReputationGrowthConfig.maxMultiplier);
-        const reputationChange = Math.floor(ReputationGrowthConfig.baseGrowth * growthMultiplier);
+        const reputationChange = calculateMonthlyReputationGrowth(disciples, sectCombatPower.totalPower);
 
         // 建筑产出的声望累加器（讲经堂/藏经阁等）
         let buildingReputation = 0;
@@ -1232,6 +1294,8 @@ export const useGameStore = create<GameState>()(
 
           const assignedDisciples = disciples.filter(d => building.assignedDisciples.includes(d.id));
           const output = calculateBuildingOutput(building, assignedDisciples);
+          // 建筑变故 / 天灾的临时产出倍率（同类相乘，UI 展示同一份数值）
+          const effectMul = getBuildingEffectMultiplier(activeEffectsAtStart, building.type);
 
           // 宗门流派/天赋树产出加成（各类型独立计算）
           const ssMul = 1 + (schoolBonuses.spiritStoneOutputBonus || 0) / 100;
@@ -1240,25 +1304,27 @@ export const useGameStore = create<GameState>()(
           const talismanMul = 1 + (schoolBonuses.talismanOutputBonus || 0) / 100;
 
           if (output.spiritStones > 0) {
-            const mulAmount = Math.floor(output.spiritStones * ssMul);
+            const mulAmount = Math.floor(output.spiritStones * ssMul * effectMul);
             totalSpiritStoneIncome += mulAmount;
             spiritStoneIncome.push({ source: building.name, amount: mulAmount });
           }
           if (output.herbs > 0) {
-            totalHerbIncome += output.herbs;
-            accHerbs += output.herbs;
+            const amount = Math.floor(output.herbs * effectMul);
+            totalHerbIncome += amount;
+            accHerbs += amount;
           }
           // 材料产出累加（杂役堂）
-          if (output.iron > 0) accIron += output.iron;
-          if (output.paper > 0) accPaper += output.paper;
+          if (output.iron > 0) accIron += Math.floor(output.iron * effectMul);
+          if (output.paper > 0) accPaper += Math.floor(output.paper * effectMul);
           // 声望产出累加（讲经堂/藏经阁等）
-          if (output.reputation > 0) buildingReputation += output.reputation;
+          if (output.reputation > 0) buildingReputation += Math.floor(output.reputation * effectMul);
           // 通天塔：无工人也能产出声望（每级+1），作为结局建筑的进度反馈
           if (building.type === 'skyscraper_tower') buildingReputation += building.level;
 
           // 灵兽产出：按品阶权重随机抽取种类累加到库存
-          if (output.beasts && output.beasts > 0) {
-            for (let i = 0; i < output.beasts; i++) {
+          const beastCount = output.beasts > 0 ? Math.round(output.beasts * effectMul) : 0;
+          if (beastCount > 0) {
+            for (let i = 0; i < beastCount; i++) {
               const roll = Math.random() * 100;
               let type: BeastType;
               if (roll < 60) {
@@ -1297,6 +1363,12 @@ export const useGameStore = create<GameState>()(
           }));
           const prods = produceWorkBuilding(building, state, { herbs: accHerbs, iron: accIron, paper: accPaper }, accSpecialMaterials, projectedDisciples);
           for (const prod of prods) {
+            // 变故/天灾的产出倍率折算成品：整数部分直接给，小数部分按概率进位，
+            // 既不会凭空多产，也不会因一次减产把 1 件产出直接抹成 0（长期期望等于倍率）
+            const scaleByEffect = (qty: number) => {
+              const raw = qty * effectMul;
+              return Math.floor(raw) + (Math.random() < raw - Math.floor(raw) ? 1 : 0);
+            };
             // 贡献不足跳过
             if (prod.skippedReason) {
               const itemName = prod.pillType ? PILL_CONFIGS[prod.pillType]?.name
@@ -1321,22 +1393,28 @@ export const useGameStore = create<GameState>()(
             }
 
             if (prod.pillType) {
-              const actualQty = Math.max(1, Math.floor(prod.quantity * pillMul));
-              const existing = accPillInventory.find(p => p.type === prod.pillType);
-              if (existing) existing.quantity += actualQty;
-              else accPillInventory.push({ type: prod.pillType, quantity: actualQty });
+              const actualQty = scaleByEffect(Math.max(1, Math.floor(prod.quantity * pillMul)));
+              if (actualQty > 0) {
+                const existing = accPillInventory.find(p => p.type === prod.pillType);
+                if (existing) existing.quantity += actualQty;
+                else accPillInventory.push({ type: prod.pillType, quantity: actualQty });
+              }
               accHerbs -= prod.herbsConsumed;
             } else if (prod.artifactType) {
-              const actualQty = Math.max(1, Math.floor(prod.quantity * artifactMul));
-              const existing = accArtifactInventory.find(a => a.type === prod.artifactType);
-              if (existing) existing.quantity += actualQty;
-              else accArtifactInventory.push({ type: prod.artifactType, quantity: actualQty });
+              const actualQty = scaleByEffect(Math.max(1, Math.floor(prod.quantity * artifactMul)));
+              if (actualQty > 0) {
+                const existing = accArtifactInventory.find(a => a.type === prod.artifactType);
+                if (existing) existing.quantity += actualQty;
+                else accArtifactInventory.push({ type: prod.artifactType, quantity: actualQty });
+              }
               accIron -= prod.ironConsumed;
             } else if (prod.talismanType) {
-              const actualQty = Math.max(1, Math.floor(prod.quantity * talismanMul));
-              const existing = accTalismanInventory.find(t => t.type === prod.talismanType);
-              if (existing) existing.quantity += actualQty;
-              else accTalismanInventory.push({ type: prod.talismanType, quantity: actualQty });
+              const actualQty = scaleByEffect(Math.max(1, Math.floor(prod.quantity * talismanMul)));
+              if (actualQty > 0) {
+                const existing = accTalismanInventory.find(t => t.type === prod.talismanType);
+                if (existing) existing.quantity += actualQty;
+                else accTalismanInventory.push({ type: prod.talismanType, quantity: actualQty });
+              }
               accPaper -= prod.paperConsumed;
             }
             counterDelta.monthlyCraft = (counterDelta.monthlyCraft || 0) + prod.quantity;
@@ -1376,7 +1454,7 @@ export const useGameStore = create<GameState>()(
           }
         }
 
-        // 附庸宗门上贡：好感度≥30 的附庸才会主动上贡，每月给予玩家 10% 宗门收入灵石
+        // 附庸宗门上贡：好感度≥30 的附庸才会主动上贡，每月上贡 = 对方战力 × 5% × 好感系数
         const vassalSects = refreshedOtherSects.filter(s => s.diplomaticStatus === 'vassal');
         let tributeTotal = 0;
         const payingVassals: string[] = [];
@@ -1705,6 +1783,20 @@ export const useGameStore = create<GameState>()(
               description: `英灵祠庇佑，修炼加成 +${enshrinementBonus.cultivationPercent}%`,
               type: 'cultivation',
               value: enshrinementBonus.cultivationPercent,
+              duration: 1,
+              remainingMonths: 1,
+            });
+          }
+
+          // 建筑变故 / 天灾带来的临时修炼加成（'all' 全宗 / 'inner' 内门及以上）
+          const effectCultBonus = getCultivationEffectBonus(activeEffectsAtStart, disciple.status);
+          if (effectCultBonus > 0) {
+            bonusBuffs.push({
+              id: 'sect_effect_cultivation',
+              name: '宗门异象',
+              description: `宗门异象加持，修炼加成 +${effectCultBonus}%`,
+              type: 'cultivation',
+              value: effectCultBonus,
               duration: 1,
               remainingMonths: 1,
             });
@@ -2423,19 +2515,8 @@ export const useGameStore = create<GameState>()(
 
         // 弟子每月维护费：按身份等级消耗灵石（凡人0、杂役2、外门5、内门12、核心25、长老50）
         // 身份越高，月俸越高；杂役产出基础材料，外门及以上负责生产与修炼
-        const DISCIPLE_MAINTENANCE_COST: Record<string, number> = {
-          mortal: 0,
-          servant: 2,
-          outer: 5,
-          inner: 12,
-          core: 25,
-          elder: 50,
-        };
-        const discipleMaintenanceRaw = finalDisciples.reduce(
-          (sum, d) => sum + (DISCIPLE_MAINTENANCE_COST[d.status] || 0),
-          0,
-        );
-        const discipleMaintenance = Math.round(discipleMaintenanceRaw * MAINTENANCE_MONTHLY_SCALE);
+        // 统一由 balance 的 computeDiscipleStipend 计算，避免与面板展示两套口径
+        const discipleMaintenance = computeDiscipleStipend(finalDisciples);
         if (discipleMaintenance > 0) {
           spiritStoneExpense.push({ source: '弟子维护费', amount: discipleMaintenance });
           totalMaintenance += discipleMaintenance;
@@ -2468,15 +2549,15 @@ export const useGameStore = create<GameState>()(
         }
         newNotifications.push(...lineageResult.notifications);
 
-        // 宗门扩张加成：每扩张一次 +5% 全局产出
+        // 宗门扩张加成：每扩张一次 +5% 全局产出（附庸上贡不享受该加成）
         const expansionMultiplier = 1 + state.expansionCount * 0.05;
-        totalSpiritStoneIncome = Math.floor(totalSpiritStoneIncome * expansionMultiplier);
-        totalHerbIncome = Math.floor(totalHerbIncome * expansionMultiplier);
-        // 同步更新收入明细中的产出项（附庸上贡和宿敌相关不翻倍，仅建筑产出翻倍）
         spiritStoneIncome = spiritStoneIncome.map(entry => {
           if (entry.source === '附庸上贡') return entry;
           return { ...entry, amount: Math.floor(entry.amount * expansionMultiplier) };
         });
+        // 以明细求和作为总收入，保证月报「收入合计」与逐项明细完全一致
+        totalSpiritStoneIncome = spiritStoneIncome.reduce((sum, e) => sum + e.amount, 0);
+        totalHerbIncome = Math.floor(totalHerbIncome * expansionMultiplier);
 
         spiritStones += totalSpiritStoneIncome - totalMaintenance - rivalStoneLoss;
         reputation += reputationChange + buildingReputation + enshrinementBonus.reputationPerMonth + rivalRepGain - rivalRepLoss;
@@ -2564,7 +2645,8 @@ export const useGameStore = create<GameState>()(
           breakthroughEvents,
           promotionEvents,
           newDisciples,
-          reputationChange,
+          // 用实际声望差值（含藏经阁、供奉、宿敌、上限截断），而不是只算基础增长
+          reputation - state.reputation,
           depResult.departureList,
           reportEvents,
         );
@@ -2761,12 +2843,18 @@ export const useGameStore = create<GameState>()(
         let finalReputation = reputation;
         let finalPillInventory = [...accPillInventory];
         const tournamentNotifs: Notification[] = [];
+        const tournamentHistoryAdditions: TournamentHistoryEntry[] = [];
+        // 该分组是否有可参赛弟子（未成年不参赛）；没人就跳过，避免产生空大比记录
+        const hasEligible = (division: Parameters<typeof discipleMatchesDivision>[1]) =>
+          finalDisciples.some(d => d.age >= ADULT_AGE && discipleMatchesDivision(d, division));
 
-        if (month === 1) {
+        // 三种频率的自动举办月份不同（正月 / 七月 / 十月），避免同月连办数场
+        {
           // 山门大比（三个频率分别检查）
           for (const freq of FREQUENCIES) {
             const freqConfig = state.sectTournamentConfig[freq];
-            if (shouldTournamentTrigger(freq, freqConfig, year, month, sectYears[freq])) {
+            if (shouldTournamentTrigger(freq, freqConfig, year, month, sectYears[freq])
+              && hasEligible(freqConfig.division)) {
               const result = runTournament({
                 scope: 'sect',
                 frequency: freq,
@@ -2784,6 +2872,7 @@ export const useGameStore = create<GameState>()(
                 result,
                 freqConfig,
               );
+              const stoneDelta = rewards.newSpiritStones - finalSpiritStones;
               finalSpiritStones = rewards.newSpiritStones;
               finalReputation = rewards.newReputation;
               finalPillInventory = rewards.newPillInventory;
@@ -2798,6 +2887,17 @@ export const useGameStore = create<GameState>()(
                 });
               }
               const freqName = freq === 'yearly' ? '年度' : freq === 'every5years' ? '五年' : '十年';
+              result.payout = rewards.payout;
+              // 月报收支：内部大比是从宗门库存里发奖，属于支出
+              if (stoneDelta < 0) {
+                spiritStoneExpense.push({ source: `山门${freqName}大比奖赏`, amount: -stoneDelta });
+              }
+              tournamentHistoryAdditions.push({
+                id: generateId(), date: { year, month }, scope: 'sect', frequency: freq,
+                divisionName: getDivisionName(result.division), ourRank: result.ourRank,
+                champion: result.topThree[0]?.name ?? '无', championSect: result.topThree[0]?.sectName ?? '—',
+                ourChampionName: result.ourChampionName, rewardSummary: result.rewardSummary,
+              });
               tournamentNotifs.push(createNotification(
                 result.ourRank > 0 ? 'success' : 'info',
                 `山门${freqName}大比`,
@@ -2813,7 +2913,9 @@ export const useGameStore = create<GameState>()(
           // 宗门大比（三个频率分别检查）
           for (const freq of FREQUENCIES) {
             const freqConfig = state.interSectTournamentConfig[freq];
-            if (shouldTournamentTrigger(freq, freqConfig, year, month, interSectYears[freq])) {
+            if (shouldTournamentTrigger(freq, freqConfig, year, month, interSectYears[freq])
+              && hasEligible(freqConfig.division)
+              && refreshedOtherSects.length > 0) {
               // 宗门间大比：奖励固定随机生成，不由玩家配置
               const generatedRewards = generateInterSectRewards(freq, year);
               const interConfig = { ...freqConfig, rewards: generatedRewards };
@@ -2834,6 +2936,7 @@ export const useGameStore = create<GameState>()(
                 result,
                 interConfig,
               );
+              const stoneDelta = rewards.newSpiritStones - finalSpiritStones;
               finalSpiritStones = rewards.newSpiritStones;
               finalReputation = rewards.newReputation;
               finalPillInventory = rewards.newPillInventory;
@@ -2848,6 +2951,17 @@ export const useGameStore = create<GameState>()(
                 });
               }
               const freqName = freq === 'yearly' ? '年度' : freq === 'every5years' ? '五年' : '十年';
+              result.payout = rewards.payout;
+              // 月报收支：宗门大比的灵石奖励来自外部
+              if (stoneDelta > 0) {
+                spiritStoneIncome.push({ source: `宗门${freqName}大比奖励`, amount: stoneDelta });
+              }
+              tournamentHistoryAdditions.push({
+                id: generateId(), date: { year, month }, scope: 'inter-sect', frequency: freq,
+                divisionName: getDivisionName(result.division), ourRank: result.ourRank,
+                champion: result.topThree[0]?.name ?? '无', championSect: result.topThree[0]?.sectName ?? '—',
+                ourChampionName: result.ourChampionName, rewardSummary: result.rewardSummary,
+              });
               tournamentNotifs.push(createNotification(
                 result.ourRank > 0 ? 'success' : 'info',
                 `宗门${freqName}大比`,
@@ -3215,7 +3329,7 @@ export const useGameStore = create<GameState>()(
         );
         for (const ct of completedExplorations) {
           const regionId = ct.type.replace('explore_', '');
-          if (!state.autoExploreRegions[regionId]) continue;
+          if (state.autoExploreRegions[regionId] === false) continue;
           // 找空闲弟子（优先原弟子，需非试炼中、非突破中）
           let autoDisciple = finalDisciples.find(d =>
             d.id === ct.assignedDiscipleId && !d.onTrialId && !d.isBreakingThrough
@@ -3438,31 +3552,20 @@ export const useGameStore = create<GameState>()(
 
         // 记录本月灵石收支历史（保留最近24条）
         const netIncome = totalSpiritStoneIncome - totalMaintenance;
+        // 历史图记录「实际余额变化」：包含试炼奖励、外交、事件、破产罚没等一次性收支
+        const actualStoneDelta = finalSpiritStones - state.spiritStones;
         const newSpiritStoneHistory = [
           ...state.spiritStoneHistory,
-          { year, month, spiritStones: finalSpiritStones, netIncome },
+          { year, month, spiritStones: finalSpiritStones, netIncome: actualStoneDelta },
         ].slice(-24);
 
-        // ===== 涌现事件系统：关系网 + 建筑随机事件 + 分支选择 + 灭亡检查 =====
+        // ===== 月末判定：灭亡检查 =====
+        // 关系网 / 建筑变故 / 分支抉择已改由世界事件节拍随时触发（见 tickWorldEvents），
+        // 月末只保留依赖结算结果的灭亡判定
         const monthsNeg = netIncome < 0 ? state.monthsConsecutiveNegative + 1 : 0;
-
-        const emergentResult = processMonthlyEmergentEvents(
-          activeDisciples, currentBuildings, finalSpiritStones, finalReputation, state.karma,
-          monthsNeg, { year, month }, createNotification, Math.random, state.sectLevel,
+        const collapseResult = checkSectCollapse(
+          finalSpiritStones, activeDisciples, finalReputation, monthsNeg, state.sectLevel,
         );
-        // 合并涌现事件通知
-        newNotifications.push(...emergentResult.notifications);
-        pendingSectHistory.push(...emergentResult.sectHistories);
-        // 更新灵石/声望/正邪度
-        finalSpiritStones += emergentResult.spiritStoneChange;
-        finalReputation += emergentResult.reputationChange;
-        // 更新受影响的弟子
-        for (const updated of emergentResult.updatedDisciples) {
-          const idx = activeDisciples.findIndex(d => d.id === updated.id);
-          if (idx >= 0) activeDisciples[idx] = updated;
-        }
-        // 存入分支选择事件（待处理）
-        const pendingChoiceEvent = emergentResult.choiceEvent;
 
         // 处理连锁事件：检查到期的连锁事件
         const currentMonthTotal = year * 12 + month;
@@ -3517,6 +3620,59 @@ export const useGameStore = create<GameState>()(
         let newActiveCalamity = state.activeCalamity;
         let newCalamityWarnings = [...state.calamityWarnings];
         let newLastCalamityYear = state.lastCalamityYear;
+        // 天灾落地：一次性收支 + 满意度打击 + 弟子受伤 + 持续性产出减益
+        const newSectEffects: SectActiveEffect[] = [];
+        const landCalamity = (calamity: CalamityEvent) => {
+          newLastCalamityYear = year;
+          pendingSectHistory.push({
+            id: generateId(),
+            date: { year, month },
+            type: 'building_event' as SectHistoryEntry['type'],
+            title: calamity.title,
+            description: calamity.description,
+          });
+          if (calamity.effects.spiritStoneChange) finalSpiritStones += calamity.effects.spiritStoneChange;
+          if (calamity.effects.reputationChange) finalReputation += calamity.effects.reputationChange;
+          const satChange = calamity.effects.satisfactionChange ?? 0;
+          if (satChange !== 0) {
+            finalDisciples = finalDisciples.map(d => ({
+              ...d,
+              satisfaction: Math.max(0, Math.min(100, d.satisfaction + satChange)),
+            }));
+          }
+          // 弟子受伤：逐个按概率判定，伤者额外掉满意度（与试炼受伤同一口径）
+          const injuryChance = calamity.effects.discipleInjuryChance ?? 0;
+          if (injuryChance > 0 && finalDisciples.length > 0) {
+            let injured = 0;
+            finalDisciples = finalDisciples.map(d => {
+              if (Math.random() >= injuryChance) return d;
+              injured += 1;
+              return { ...d, satisfaction: Math.max(0, d.satisfaction - 15) };
+            });
+            if (injured > 0) {
+              newNotifications.push(createNotification(
+                'danger', '弟子受伤', `${calamity.title}中 ${injured} 名弟子受伤，需静养恢复。`, { year, month },
+              ));
+            }
+          }
+          // 持续产出减益：全宗所有建筑统一乘算
+          const outputMul = calamity.effects.outputMultiplier;
+          if (outputMul !== undefined && outputMul !== 1 && calamity.effects.durationMonths > 0) {
+            // 只有带持续效果的天灾才成为「当前天灾」，一次性天灾（雷暴/魔道入侵）即时结算后结束
+            newActiveCalamity = calamity;
+            newSectEffects.push({
+              id: generateId(),
+              sourceId: calamity.id,
+              title: calamity.title,
+              kind: 'calamity',
+              buildingType: null,
+              outputMultiplier: outputMul,
+              cultivationBonus: 0,
+              cultivationScope: null,
+              remainingMonths: calamity.effects.durationMonths,
+            });
+          }
+        };
         if (calamityTriggered && !state.activeCalamity) {
           const calamity = generateCalamity(newSectFortune, Math.random);
           if (calamity.warningMonths > 0) {
@@ -3527,15 +3683,11 @@ export const useGameStore = create<GameState>()(
             ));
           } else {
             // 直接触发天灾
-            newActiveCalamity = calamity;
-            newLastCalamityYear = year;
             newNotifications.push(createNotification(
               calamity.type === 'secret_realm_open' ? 'success' : 'danger',
               `【天灾】${calamity.title}`, calamity.description, { year, month },
             ));
-            // 应用效果
-            if (calamity.effects.spiritStoneChange) finalSpiritStones += calamity.effects.spiritStoneChange;
-            if (calamity.effects.reputationChange) finalReputation += calamity.effects.reputationChange;
+            landCalamity(calamity);
           }
         }
         // 处理待触发的天灾预警（按预警月数等待后触发）
@@ -3554,20 +3706,18 @@ export const useGameStore = create<GameState>()(
           newActiveCalamity = warning;
           newLastCalamityYear = year;
           resolvedWarnings.push(warning);
-          // 应用效果
-          if (warning.effects.spiritStoneChange) finalSpiritStones += warning.effects.spiritStoneChange;
-          if (warning.effects.reputationChange) finalReputation += warning.effects.reputationChange;
+          landCalamity(warning);
         }
         newCalamityWarnings = newCalamityWarnings.filter(w => !resolvedWarnings.includes(w));
 
-        // 灭亡检查（暂不处理，存到状态中让 UI 展示）
+        // 灭亡判定结果只存状态，由 UI 展示灭亡界面
         const collapseState = {
-          collapsed: emergentResult.collapsed,
-          collapseReason: emergentResult.collapseReason,
+          collapsed: collapseResult.collapsed,
+          collapseReason: collapseResult.reason,
         };
         // 濒临破产预警：已连续赤字 3 个月且负债达到上限一半时提示，给玩家半年调整期
         const debtLimit = getSectDebtLimit(state.sectLevel);
-        if (!emergentResult.collapsed && monthsNeg >= 3 && finalSpiritStones < -debtLimit * 0.5) {
+        if (!collapseResult.collapsed && monthsNeg >= 3 && finalSpiritStones < -debtLimit * 0.5) {
           newNotifications.push(createNotification(
             'danger',
             '灵石枯竭警告',
@@ -3639,6 +3789,26 @@ export const useGameStore = create<GameState>()(
         const nextClaimedTasks = { ...state.claimedTasks };
         for (const id of nextMonthlyTaskIds) delete nextClaimedTasks[id];
 
+        // ===== 临时效果月度递减 =====
+        // 本月结算前已存在的效果各扣 1 月；本月新生成的天灾效果保留到次月才扣
+        const decayedEffects = activeEffectsAtStart
+          .map(e => ({ ...e, remainingMonths: e.remainingMonths - 1 }))
+          .filter(e => e.remainingMonths > 0);
+        const expiredSourceIds = new Set(
+          activeEffectsAtStart.filter(e => e.remainingMonths <= 1).map(e => e.sourceId),
+        );
+        const nextActiveEffects = [...decayedEffects, ...newSectEffects];
+        // 天灾效果到期后必须解除天灾状态，否则新天灾永远不会再触发
+        const nextActiveCalamity = newActiveCalamity && expiredSourceIds.has(newActiveCalamity.id)
+          ? null
+          : newActiveCalamity;
+        if (!nextActiveCalamity && state.activeCalamity) {
+          newNotifications.push(createNotification(
+            'info', `【${state.activeCalamity.title}】已平息`,
+            '宗门气象恢复如常，各项产出回到常态。', { year, month },
+          ));
+        }
+
         set({
           year,
           month,
@@ -3676,11 +3846,11 @@ export const useGameStore = create<GameState>()(
           lastInterSectTournamentResults: interSectTournamentResults,
           lastSectTournamentYears: sectYears,
           lastInterSectTournamentYears: interSectYears,
+          tournamentHistory: [...tournamentHistoryAdditions, ...(state.tournamentHistory ?? [])].slice(0, 50),
           spiritStoneHistory: newSpiritStoneHistory,
           contributionLogs: mergedContributionLogs,
           sectHistory: [...pendingSectHistory, ...state.sectHistory].slice(0, 200),
-          // 涌现事件状态
-          choiceEvent: pendingChoiceEvent,
+          // 涌现事件状态（分支抉择由世界节拍随时弹入，此处不重置）
           pendingChainEvents: remainingChainEvents,
           pendingEncounters: pendingEncountersAcc,
           unlockedExplorationRegions: currentUnlocked,
@@ -3693,8 +3863,9 @@ export const useGameStore = create<GameState>()(
           priceMultipliers: newPriceMultipliers,
           // 气运状态
           sectFortune: newSectFortune,
-          activeCalamity: newActiveCalamity,
+          activeCalamity: nextActiveCalamity,
           calamityWarnings: newCalamityWarnings,
+          activeEffects: nextActiveEffects,
           lastCalamityYear: newLastCalamityYear,
           // 正邪度年度自然回归（每年向中立回归 1 点）
           karma: Math.max(-100, Math.min(100, state.karma + karmaYearlyRecover)),
@@ -3734,15 +3905,131 @@ export const useGameStore = create<GameState>()(
       },
 
       // ===== 随机事件 =====
+      /**
+       * 世界事件节拍（每 5 个游戏日一次）：把异闻、建筑变故、弟子结交、分支抉择
+       * 从月结算里解绑，改在月中随机时刻发生；经济影响即时生效，不必等到月末。
+       */
+      tickWorldEvents: () => {
+        const cur = get();
+        if (!cur.gameStarted || cur.showMainMenu || cur.reportView) return;
+        if (cur.sectCollapsed || cur.gameWon) return;
+        if (cur.pendingEncounters.length > 0) return;
+
+        // 1) 随机异闻：只进待处理队列，不打断时间
+        get().checkEventTrigger();
+
+        const now = get();
+        const date = { year: now.year, month: now.month };
+
+        // 2) 建筑变故 / 弟子结交：按节拍折算概率
+        const buildingEvents = generateBuildingEvents(now.buildings, Math.random, BUILDING_EVENT_CHANCE_PER_TICK);
+        const relations = generateDiscipleRelationships(now.disciples, Math.random, RELATION_CHANCE_PER_TICK);
+
+        // 3) 分支抉择：同一时间只允许一个待决，且不与异闻弹窗叠加
+        const choiceEvent = !now.choiceEvent && !now.activeEventId
+          ? generateChoiceEvent(date, now.reputation, now.spiritStones, Math.random, CHOICE_EVENT_CHANCE_PER_TICK)
+          : null;
+
+        if (buildingEvents.length === 0 && relations.length === 0 && !choiceEvent) return;
+
+        set(state => {
+          let spiritStones = state.spiritStones;
+          let reputation = state.reputation;
+          let disciples = state.disciples;
+          const notifications: Notification[] = [];
+          const histories: SectHistoryEntry[] = [];
+          const newEffects: SectActiveEffect[] = [];
+
+          // 建筑变故：灵石/声望即时结算，满意度随机落在一名弟子身上
+          for (const ev of buildingEvents) {
+            spiritStones += ev.effects.spiritStoneChange ?? 0;
+            reputation += ev.effects.reputationChange ?? 0;
+            notifications.push(createNotification(
+              ev.type === 'auspicious' ? 'success' : 'danger',
+              `【${ev.title}】`, ev.description, date,
+            ));
+            histories.push({ id: generateId(), date, type: 'building_event', title: ev.title, description: ev.description });
+            // 产出倍率 / 修炼加成：写入临时效果，按月递减并参与月末结算
+            if (ev.effects.outputMultiplier !== undefined || ev.effects.cultivationBonus) {
+              const scope = ev.effects.cultivationBonus === 'inner' ? 'inner'
+                : ev.effects.cultivationBonus === 'all' ? 'all' : null;
+              newEffects.push({
+                id: generateId(),
+                sourceId: ev.id,
+                title: ev.title,
+                kind: 'building',
+                buildingType: ev.buildingType || null,
+                outputMultiplier: ev.effects.outputMultiplier ?? 1,
+                cultivationBonus: scope === 'all' ? EFFECT_CULTIVATION_BONUS_ALL
+                  : scope === 'inner' ? EFFECT_CULTIVATION_BONUS_INNER : 0,
+                cultivationScope: scope,
+                remainingMonths: Math.max(1, ev.duration),
+              });
+            }
+            const sat = ev.effects.satisfactionChange ?? 0;
+            if (sat !== 0 && disciples.length > 0) {
+              const idx = Math.floor(Math.random() * disciples.length);
+              disciples = disciples.map((d, i) => (i === idx
+                ? { ...d, satisfaction: Math.max(0, Math.min(100, d.satisfaction + sat)) }
+                : d));
+            }
+          }
+
+          // 弟子结交：好友 / 道侣 / 宿敌写回双向关系
+          if (relations.length > 0) {
+            const relMap = new Map<string, { type: 'friend' | 'dao_partner' | 'rival'; other: string }[]>();
+            for (const rel of relations) {
+              const add = (id: string, other: string) => {
+                const list = relMap.get(id) ?? [];
+                list.push({ type: rel.type, other });
+                relMap.set(id, list);
+              };
+              add(rel.a.id, rel.b.name);
+              add(rel.b.id, rel.a.name);
+            }
+            disciples = disciples.map(d => {
+              const rels = relMap.get(d.id);
+              if (!rels) return d;
+              let next = d;
+              for (const r of rels) {
+                if (r.type === 'friend') next = { ...next, friends: [...next.friends, r.other] };
+                else if (r.type === 'dao_partner') next = { ...next, daoPartner: r.other };
+                else next = { ...next, rival: r.other };
+              }
+              return next;
+            });
+            for (const rel of relations) {
+              if (rel.type === 'friend') {
+                notifications.push(createNotification('info', '结交好友', `${rel.a.name}与${rel.b.name}结为好友。`, date));
+              } else if (rel.type === 'dao_partner') {
+                notifications.push(createNotification('success', '喜结道侣', `${rel.a.name}与${rel.b.name}结为道侣，双修可增益修为。`, date));
+              } else {
+                notifications.push(createNotification('warning', '结为宿敌', `${rel.a.name}与${rel.b.name}成为宿敌，需留意内部矛盾。`, date));
+              }
+            }
+          }
+
+          return {
+            spiritStones,
+            reputation,
+            disciples,
+            choiceEvent: choiceEvent ?? state.choiceEvent,
+            activeEffects: [...newEffects, ...state.activeEffects].slice(0, 20),
+            notifications: [...notifications, ...state.notifications].slice(0, 50),
+            sectHistory: [...histories, ...state.sectHistory].slice(0, 200),
+          };
+        });
+      },
+
       checkEventTrigger: () => {
         const state = get();
         if (!state.gameStarted || state.reportView || state.activeEventId) return null;
         if (state.choiceEvent || state.pendingEncounters.length > 0) return null;
         if (state.pendingEvents.length >= 3) return null;
 
-        // 每月一次检定：15% 概率触发；连续 4 次未中则保底触发
-        const pity = state.eventCheckMisses >= 4;
-        if (!pity && Math.random() > 0.15) {
+        // 每次节拍（5 日）检定一次：约 4.5% 触发；连续多次未中则保底
+        const pity = state.eventCheckMisses >= EVENT_PITY_MISSES;
+        if (!pity && Math.random() > EVENT_TRIGGER_CHANCE) {
           set({ eventCheckMisses: state.eventCheckMisses + 1 });
           return null;
         }
@@ -5287,8 +5574,12 @@ export const useGameStore = create<GameState>()(
       triggerSectTournament: (frequency) => {
         const state = get();
         const freqConfig = state.sectTournamentConfig[frequency];
-        // CD 检查：手动举办也受冷却限制
-        if (!shouldTournamentTrigger(frequency, freqConfig, state.year, state.month, state.lastSectTournamentYears[frequency])) {
+        // 手动举办不受月份限制，只服从冷却
+        if (!canManuallyHoldTournament(frequency, freqConfig, state.year, state.lastSectTournamentYears[frequency])) {
+          return null;
+        }
+        // 该分组没有可参赛弟子时不办，避免产生空战报
+        if (!state.disciples.some(d => d.age >= ADULT_AGE && discipleMatchesDivision(d, freqConfig.division))) {
           return null;
         }
         const result = runTournament({
@@ -5300,8 +5591,9 @@ export const useGameStore = create<GameState>()(
           date: { year: state.year, month: state.month },
         });
 
-        const { newSpiritStones, newReputation, newPillInventory, newTalismanInventory, newArtifactInventory, newDisciples, contributionChanges } =
+        const { newSpiritStones, newReputation, newPillInventory, newTalismanInventory, newArtifactInventory, newDisciples, contributionChanges, payout } =
           applyTournamentRewards(state, result, freqConfig);
+        result.payout = payout;
 
         // 构造贡献值流水记录
         const currentDate = { year: state.year, month: state.month };
@@ -5339,6 +5631,15 @@ export const useGameStore = create<GameState>()(
           disciples: newDisciples,
           notifications: [notif, ...state.notifications].slice(0, 50),
           contributionLogs: [...newLogs, ...state.contributionLogs].slice(0, 5000),
+          tournamentHistory: [
+            {
+              id: generateId(), date: currentDate, scope: 'sect' as const, frequency,
+              divisionName: getDivisionName(result.division), ourRank: result.ourRank,
+              champion: result.topThree[0]?.name ?? '无', championSect: result.topThree[0]?.sectName ?? '—',
+              ourChampionName: result.ourChampionName, rewardSummary: result.rewardSummary,
+            },
+            ...(state.tournamentHistory ?? []),
+          ].slice(0, 50),
         });
         return result;
       },
@@ -5346,10 +5647,12 @@ export const useGameStore = create<GameState>()(
       triggerInterSectTournament: (frequency) => {
         const state = get();
         const freqConfig = state.interSectTournamentConfig[frequency];
-        // CD 检查：手动举办也受冷却限制
-        if (!shouldTournamentTrigger(frequency, freqConfig, state.year, state.month, state.lastInterSectTournamentYears[frequency])) {
+        // 手动举办不受月份限制，只服从冷却
+        if (!canManuallyHoldTournament(frequency, freqConfig, state.year, state.lastInterSectTournamentYears[frequency])) {
           return null;
         }
+        // 没有其他宗门就没有对手，不能办宗门大比
+        if (state.otherSects.length === 0) return null;
         // 宗门间大比：奖励固定随机生成，不由玩家配置
         const generatedRewards = generateInterSectRewards(frequency, state.year);
         const interConfig = { ...freqConfig, rewards: generatedRewards };
@@ -5362,8 +5665,9 @@ export const useGameStore = create<GameState>()(
           date: { year: state.year, month: state.month },
         });
 
-        const { newSpiritStones, newReputation, newPillInventory, newTalismanInventory, newArtifactInventory, newDisciples, contributionChanges } =
+        const { newSpiritStones, newReputation, newPillInventory, newTalismanInventory, newArtifactInventory, newDisciples, contributionChanges, payout } =
           applyTournamentRewards(state, result, interConfig);
+        result.payout = payout;
 
         // 构造贡献值流水记录
         const currentDate = { year: state.year, month: state.month };
@@ -5401,6 +5705,15 @@ export const useGameStore = create<GameState>()(
           disciples: newDisciples,
           notifications: [notif, ...state.notifications].slice(0, 50),
           contributionLogs: [...newLogs, ...state.contributionLogs].slice(0, 5000),
+          tournamentHistory: [
+            {
+              id: generateId(), date: currentDate, scope: 'inter-sect' as const, frequency,
+              divisionName: getDivisionName(result.division), ourRank: result.ourRank,
+              champion: result.topThree[0]?.name ?? '无', championSect: result.topThree[0]?.sectName ?? '—',
+              ourChampionName: result.ourChampionName, rewardSummary: result.rewardSummary,
+            },
+            ...(state.tournamentHistory ?? []),
+          ].slice(0, 50),
         });
         return result;
       },
@@ -5719,7 +6032,8 @@ export const useGameStore = create<GameState>()(
 
       toggleAutoExplore: (regionId: string) => {
         const state = get();
-        const current = state.autoExploreRegions[regionId] ?? false;
+        // 缺省视为开启（自动探索默认全开），点击一次即关闭
+        const current = state.autoExploreRegions[regionId] ?? true;
         set({ autoExploreRegions: { ...state.autoExploreRegions, [regionId]: !current } });
       },
 
@@ -6936,10 +7250,21 @@ export const useGameStore = create<GameState>()(
     }),
     {
       name: 'sect-game-save',
-      version: 15,
+      version: 18,
       migrate: (persistedState: any, version) => {
         if (!persistedState) return persistedState;
         const state = persistedState as GameState;
+        // v18: 历届大比记录
+        if (!state.tournamentHistory) state.tournamentHistory = [];
+        // v17: 建筑变故/天灾的临时产出与修炼效果
+        if (!state.activeEffects) state.activeEffects = [];
+        // v16: 自动化开关默认全开（自动任命长老 / 自动试炼 / 各区域自动探索）
+        // 旧档里这些值都是历史默认值 false，这里统一按新默认打开，玩家仍可手动关闭
+        if (version < 16) {
+          state.autoAppointElder = true;
+          state.autoTrialEnabled = true;
+          state.autoExploreRegions = { outer: true, forest: true, ruins: true, secret: true };
+        }
         // v14: 英灵祠（寿终弟子记录）
         if (!state.fallenDisciples) state.fallenDisciples = [];
         // v13: 弟子心愿 + 弟子志向
@@ -7076,9 +7401,9 @@ export const useGameStore = create<GameState>()(
         if (!state.trials) {
           state.trials = [];
         }
-        // 补齐 autoTrialEnabled（旧存档没有此字段）
+        // 补齐 autoTrialEnabled（旧存档没有此字段，默认开启自动试炼）
         if (typeof state.autoTrialEnabled !== 'boolean') {
-          state.autoTrialEnabled = false;
+          state.autoTrialEnabled = true;
         }
         // 补齐 encourageDaoPartners（旧存档没有此字段，默认开启）
         if (typeof state.encourageDaoPartners !== 'boolean') {
@@ -7182,7 +7507,7 @@ export const useGameStore = create<GameState>()(
         }
         // v8: 新增灵石收支历史与自动任命长老开关
         if (!state.spiritStoneHistory) state.spiritStoneHistory = [];
-        if (state.autoAppointElder === undefined) state.autoAppointElder = false;
+        if (state.autoAppointElder === undefined) state.autoAppointElder = true;
         // v9: 生产目标从单数 productionTarget 迁移到复数 productionTargets（数组）
         // 旧存档的丹堂/炼器堂/符堂若有单目标，迁移到槽位 0
         if (state.buildings) {

@@ -64,8 +64,8 @@ export const TasksPanel: React.FC<Props> = ({ mobileMode }) => {
   const { setMobileSidePanel, setSelectedDiscipleId, setActivePanel } = useUIStore();
   const [activeTab, setActiveTab] = useState<TabKey>('main');
   const [expanded, setExpanded] = useState(false);
-  // 桌面端浮动任务栏可最小化，收起为右侧竖条，避免长期遮挡画面
-  const [minimized, setMinimized] = useState(false);
+  // 桌面端浮动任务栏默认收起为左侧竖条，避免长期遮挡山景
+  const [minimized, setMinimized] = useState(!mobileMode);
 
   const view: TaskStateView = {
     sectLevel,
@@ -92,11 +92,15 @@ export const TasksPanel: React.FC<Props> = ({ mobileMode }) => {
   );
 
   const tasks = useMemo(() => {
-    if (activeTab === 'monthly') {
-      return TASKS.filter(t => t.type === 'monthly' && monthlyTaskIds.includes(t.id));
-    }
-    return TASKS.filter(t => t.type === activeTab);
-  }, [activeTab, monthlyTaskIds]);
+    const base = activeTab === 'monthly'
+      ? TASKS.filter(t => t.type === 'monthly' && monthlyTaskIds.includes(t.id))
+      : TASKS.filter(t => t.type === activeTab);
+    // 已领取的任务不再列出；成就需要长期回看，已完成的仍然保留
+    if (activeTab === 'achievement') return base;
+    return base.filter(t => !getTaskProgress(t, view).claimed);
+    // view 由上述字段派生，字段变化时重新计算
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, monthlyTaskIds, sectLevel, reputation, spiritStones, disciples, buildings, otherSects, beastInventory, gameWon, taskCounters, monthlyTaskCounters, claimedTasks]);
 
   const visibleTasks = expanded ? tasks : tasks.slice(0, 6);
 
@@ -183,7 +187,9 @@ export const TasksPanel: React.FC<Props> = ({ mobileMode }) => {
               {renderRewards(task)}
             </div>
             <div className="flex items-center justify-end gap-2">
-              {progress.claimed ? null : claim.ok ? (
+              {progress.claimed ? (
+                <span className="text-[10px] text-[var(--jade-light)]">已领取</span>
+              ) : claim.ok ? (
                 <button
                   onClick={() => claimTaskReward(task.id)}
                   className="text-xs text-[var(--gold-200)] hover:text-[var(--gold-300)] transition-colors"
@@ -208,14 +214,14 @@ export const TasksPanel: React.FC<Props> = ({ mobileMode }) => {
     );
   };
 
-  // 最小化后只保留右侧竖条，点击展开
+  // 最小化后只保留左侧竖条，点击展开
   if (!mobileMode && minimized) {
     return (
       <button
         type="button"
         onClick={() => setMinimized(false)}
         title="展开任务栏"
-        className="absolute top-[76px] right-0 z-20 flex flex-col items-center gap-1 pl-1.5 pr-1 py-2.5 rounded-l-lg border border-r-0 border-[rgba(212,168,87,0.35)] bg-[rgba(18,22,26,0.92)] text-[var(--gold-200)] hover:text-[var(--gold-300)] btn-press"
+        className="absolute top-10 left-0 z-20 flex flex-col items-center gap-1 pr-1.5 pl-1 py-2.5 rounded-r-lg border border-l-0 border-[rgba(212,168,87,0.35)] bg-[rgba(18,22,26,0.92)] text-[var(--gold-200)] hover:text-[var(--gold-300)] btn-press"
       >
         <SectIcon name="chevronUp" size={13} strokeWidth={2} />
         <span className="text-[10px] font-display [writing-mode:vertical-rl] tracking-widest">任务</span>
@@ -230,12 +236,9 @@ export const TasksPanel: React.FC<Props> = ({ mobileMode }) => {
     );
   }
 
-  const followedHeight = mobileMode ? 0 : (hasFollowed ? Math.min(68 + followedDisciples.length * 24, 180) : 52);
-  const taskMaxHeight = mobileMode ? undefined : `calc(100vh - 280px - ${followedHeight}px)`;
-
   const containerClass = mobileMode
     ? 'w-full h-full flex flex-col'
-    : 'absolute top-[76px] right-3 w-80 max-h-[calc(100vh-200px)] scroll-panel-dark slide-in-right flex flex-col overflow-hidden';
+    : 'absolute top-10 left-2 w-80 max-h-[48vh] scroll-panel-dark slide-in-left flex flex-col overflow-hidden';
   const containerStyle = mobileMode ? {} : { zIndex: 20 };
 
   return (
@@ -281,7 +284,7 @@ export const TasksPanel: React.FC<Props> = ({ mobileMode }) => {
         </div>
       )}
 
-      <div className="p-3 overflow-y-auto flex-1 min-h-0" style={{ maxHeight: taskMaxHeight }}>
+      <div className="p-3 overflow-y-auto flex-1 min-h-0">
         {tasks.length === 0 ? (
           <div className="text-[10px] text-[var(--ink-400)] text-center py-2">暂无可显示的任务</div>
         ) : (

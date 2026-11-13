@@ -1,14 +1,17 @@
 import React, { useMemo } from 'react';
 import { useGameStore } from '@/store/gameStore';
 import { Card } from '@/components/ui/Card';
-import { computeSectCombatSummary } from '@/utils/gameLogic';
+import { computeSectCombatSummary, getSchoolTalentBonuses } from '@/utils/gameLogic';
 import { Sword, Shield, Star, Users, Building2, Trophy } from 'lucide-react';
 
 /** 宗门战力统计面板 */
 export const SectCombatPanel: React.FC = () => {
-  const { disciples, buildings } = useGameStore();
+  const { disciples, buildings, sectSchool, unlockedTalents } = useGameStore();
 
-  const summary = useMemo(() => computeSectCombatSummary(disciples, buildings), [disciples, buildings]);
+  const summary = useMemo(
+    () => computeSectCombatSummary(disciples, buildings, getSchoolTalentBonuses(sectSchool, unlockedTalents)),
+    [disciples, buildings, sectSchool, unlockedTalents],
+  );
 
   // 战力条颜色
   const barColors = [
@@ -20,7 +23,9 @@ export const SectCombatPanel: React.FC = () => {
     'linear-gradient(90deg, #ec4899, #f472b6)',
   ];
 
-  const maxPower = Math.max(...summary.byStatus.map(g => g.power), 1);
+  // 身份 / 境界两栏各自取最大值，避免某一栏的条超过 100%
+  const maxStatusPower = Math.max(...summary.byStatus.map(g => g.power), 1);
+  const maxRealmPower = Math.max(...summary.byRealm.map(g => g.power), 1);
 
   return (
     <div className="space-y-4">
@@ -70,7 +75,7 @@ export const SectCombatPanel: React.FC = () => {
         </div>
         <div className="space-y-2">
           {summary.byStatus.map((g, i) => {
-            const pct = (g.power / maxPower) * 100;
+            const pct = (g.power / maxStatusPower) * 100;
             return (
               <div key={g.status} className="flex items-center gap-2 text-xs">
                 <span className="w-12 shrink-0" style={{ color: 'var(--ink-300)' }}>{g.status}</span>
@@ -103,7 +108,7 @@ export const SectCombatPanel: React.FC = () => {
         </div>
         <div className="space-y-2">
           {summary.byRealm.map((g, i) => {
-            const pct = (g.power / maxPower) * 100;
+            const pct = (g.power / maxRealmPower) * 100;
             return (
               <div key={g.realm} className="flex items-center gap-2 text-xs">
                 <span className="w-14 shrink-0" style={{ color: 'var(--ink-300)' }}>{g.realm}</span>

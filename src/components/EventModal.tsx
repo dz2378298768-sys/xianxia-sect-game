@@ -6,8 +6,81 @@ import { GAME_EVENT_MAP } from '@/data/events';
 import {
   EventCategoryNames, EventRarityColors, EventRarityNames, getLevelMultiplier,
 } from '@/types/event';
-import type { EventChoice } from '@/types/event';
+import type { EventChoice, EventEffect } from '@/types/event';
 import { PillTypeNames } from '@/types/pill';
+import { ArtifactTypeNames } from '@/types/artifact';
+import { TalismanTypeNames } from '@/types/talisman';
+import { BeastTypeNames } from '@/types/beast';
+
+type EffectChip = { text: string; tone: 'good' | 'bad' | 'neutral' };
+
+const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
+
+/** 把事件效果翻译成可读词条：资源类按宗门等级系数缩放，与结算保持一致 */
+function formatEventEffects(effects: EventEffect[], mul: number): EffectChip[] {
+  const chips: EffectChip[] = [];
+  const addNum = (value: number, label: string, scaled = false) => {
+    const v = scaled ? Math.round(value * mul) : value;
+    chips.push({ text: `${label} ${signed(v)}`, tone: v > 0 ? 'good' : v < 0 ? 'bad' : 'neutral' });
+  };
+  for (const e of effects) {
+    if (e.spiritStones !== undefined) addNum(e.spiritStones, '灵石', true);
+    if (e.herbs !== undefined) addNum(e.herbs, '灵草', true);
+    if (e.iron !== undefined) addNum(e.iron, '玄铁', true);
+    if (e.paper !== undefined) addNum(e.paper, '灵纸', true);
+    if (e.contribution !== undefined) addNum(e.contribution, '弟子贡献', true);
+    if (e.reputation !== undefined) addNum(e.reputation, '声望');
+    if (e.karma !== undefined) addNum(e.karma, '正邪');
+    if (e.specialMaterial) {
+      const { name, amount } = e.specialMaterial;
+      chips.push({ text: `${name} ${signed(amount)}`, tone: amount > 0 ? 'good' : 'bad' });
+    }
+    if (e.satisfaction !== undefined) addNum(e.satisfaction, '该弟子满意度');
+    if (e.realmProgress !== undefined) addNum(e.realmProgress, '该弟子修为');
+    if (e.spiritRootQuality !== undefined) addNum(e.spiritRootQuality, '该弟子灵根纯度');
+    if (e.allSatisfaction !== undefined) addNum(e.allSatisfaction, '全体满意度');
+    if (e.allRealmProgress !== undefined) addNum(e.allRealmProgress, '全体修为');
+    if (e.allEldersSatisfaction !== undefined) addNum(e.allEldersSatisfaction, '长老满意度');
+    if (e.randomDisciplesSatisfaction) {
+      const { count, amount } = e.randomDisciplesSatisfaction;
+      chips.push({ text: `${count}名随机弟子满意度 ${signed(amount)}`, tone: amount > 0 ? 'good' : 'bad' });
+    }
+    if (e.favorability !== undefined) addNum(e.favorability, '随机宗门好感');
+    if (e.addPill) chips.push({ text: `${PillTypeNames[e.addPill.type] ?? '丹药'} ×${e.addPill.qty}`, tone: 'good' });
+    if (e.addArtifact) chips.push({ text: `${ArtifactTypeNames[e.addArtifact.type] ?? '法宝'} ×${e.addArtifact.qty}`, tone: 'good' });
+    if (e.addTalisman) chips.push({ text: `${TalismanTypeNames[e.addTalisman.type] ?? '符箓'} ×${e.addTalisman.qty}`, tone: 'good' });
+    if (e.addBeast) chips.push({ text: `${BeastTypeNames[e.addBeast.type] ?? '灵兽'} ×${e.addBeast.qty}`, tone: 'good' });
+    if (e.loseRandomPill) chips.push({ text: `随机失去 ${e.loseRandomPill} 枚丹药`, tone: 'bad' });
+    if (e.gainRandomPill) chips.push({ text: `随机获得 ${e.gainRandomPill} 枚丹药`, tone: 'good' });
+    if (e.unlockRecipe) chips.push({ text: '解锁新配方', tone: 'good' });
+    if (e.removeDisciple) chips.push({ text: '失去该弟子', tone: 'bad' });
+    if (e.addDisciple) chips.push({ text: `新增弟子（天赋 +${e.addDisciple.talentBonus}）`, tone: 'good' });
+    if (e.learnRandomTechnique) chips.push({ text: '习得随机功法', tone: 'good' });
+  }
+  return chips;
+}
+
+const EffectChips: React.FC<{ chips: EffectChip[] }> = ({ chips }) => {
+  if (chips.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-1 flex-1 min-w-0">
+      {chips.map((c, i) => (
+        <span
+          key={i}
+          className={`text-[10px] px-1.5 py-0.5 rounded border ${
+            c.tone === 'good'
+              ? 'text-green-400 border-green-500/25 bg-green-500/10'
+              : c.tone === 'bad'
+                ? 'text-red-400 border-red-500/25 bg-red-500/10'
+                : 'text-sect-jade/60 border-sect-jade/20 bg-black/20'
+          }`}
+        >
+          {c.text}
+        </span>
+      ))}
+    </div>
+  );
+};
 
 export const EventModal: React.FC = () => {
   const {
@@ -22,6 +95,7 @@ export const EventModal: React.FC = () => {
     setError(null);
   }, [activeEventId]);
 
+  // 异闻弹窗需要玩家做选择，期间由 Modal 统一暂停时间
   if (!activeEventId || reportView) return null;
   const config = GAME_EVENT_MAP[activeEventId];
   const pending = pendingEvents.find(p => p.eventId === activeEventId);
@@ -147,9 +221,24 @@ export const EventModal: React.FC = () => {
                   {choice.hint && (
                     <div className="text-[11px] text-sect-jade/50 mt-0.5">{choice.hint}</div>
                   )}
-                  {choice.gamble && (
-                    <div className="text-[11px] text-sect-jade/40 mt-0.5">
-                      成败难料 · 成功率约 {Math.round(choice.gamble.chance * 100)}%
+                  {choice.gamble ? (
+                    <div className="mt-1.5 space-y-1">
+                      <div className="flex items-start gap-1.5">
+                        <span className="text-[10px] text-green-400 shrink-0 mt-0.5 font-mono">
+                          成功 {Math.round(choice.gamble.chance * 100)}%
+                        </span>
+                        <EffectChips chips={formatEventEffects(choice.gamble.successEffects, mul)} />
+                      </div>
+                      <div className="flex items-start gap-1.5">
+                        <span className="text-[10px] text-red-400 shrink-0 mt-0.5 font-mono">
+                          失败 {Math.round((1 - choice.gamble.chance) * 100)}%
+                        </span>
+                        <EffectChips chips={formatEventEffects(choice.gamble.failureEffects, mul)} />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-1.5">
+                      <EffectChips chips={formatEventEffects(choice.effects, mul)} />
                     </div>
                   )}
                 </button>

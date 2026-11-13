@@ -2533,6 +2533,207 @@ button[class*="btn-"], [class*="Button"] {
 .home-hud-label { color: var(--ink-400); font-size: 10px; }
 .home-hud-value { color: var(--gold-100); font-weight: 600; font-size: 12px; }
 
+/* ===== 新手引导 ===== */
+.guide-step-badge {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  border: 1px solid rgba(212, 168, 87, 0.4);
+  background: rgba(212, 168, 87, 0.12);
+  color: var(--gold-200);
+  font-size: 10px;
+  line-height: 1.4;
+  letter-spacing: 0.5px;
+}
+
+.guide-step-dots { display: flex; align-items: center; gap: 5px; }
+
+.guide-step-dot {
+  width: 18px;
+  height: 4px;
+  border-radius: 9999px;
+  background: rgba(138, 160, 180, 0.25);
+  transition: background 0.2s ease, width 0.2s ease;
+}
+
+.guide-step-dot-active {
+  width: 26px;
+  background: linear-gradient(90deg, var(--gold-200), var(--gold-400));
+}
+
+/* 核心循环四环 */
+.guide-loop {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 6px;
+  border-radius: 6px;
+  border: 1px solid rgba(212, 168, 87, 0.25);
+  background: rgba(212, 168, 87, 0.06);
+}
+
+.guide-loop-node {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  color: var(--gold-300);
+  text-align: center;
+}
+
+.guide-loop-label { font-size: 11px; color: var(--gold-100); font-weight: 600; }
+.guide-loop-desc { font-size: 9.5px; color: var(--ink-400); }
+.guide-loop-arrow { flex-shrink: 0; font-size: 14px; color: rgba(212, 168, 87, 0.6); line-height: 1; }
+
+/* 数值条 */
+.guide-stat-row { display: flex; gap: 6px; }
+
+.guide-stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 4px 6px;
+  border-radius: 5px;
+  border: 1px solid rgba(212, 168, 87, 0.2);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.guide-stat-label { font-size: 9.5px; color: var(--ink-400); }
+
+.guide-stat-value {
+  font-family: 'LXGW WenKai', serif;
+  font-size: 15px;
+  line-height: 1.2;
+  color: var(--gold-200);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 说明卡 */
+.guide-card {
+  padding: 6px 8px;
+  border-radius: 5px;
+  border: 1px solid rgba(212, 168, 87, 0.18);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.guide-card-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 2px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--gold-200);
+}
+
+.guide-card-text { font-size: 10.5px; line-height: 1.5; color: var(--ink-300); }
+
+/* 月俸表 */
+.guide-stipend {
+  display: flex;
+  gap: 4px;
+  padding: 6px;
+  border-radius: 5px;
+  border: 1px solid rgba(212, 168, 87, 0.2);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.guide-stipend-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.guide-stipend-name { font-size: 10px; color: var(--ink-300); }
+.guide-stipend-value { font-size: 14px; line-height: 1.2; color: var(--gold-200); font-variant-numeric: tabular-nums; }
+.guide-stipend-unit { font-size: 8.5px; color: var(--ink-400); }
+
+/* 财路条目 */
+.guide-row { display: flex; gap: 6px; align-items: flex-start; }
+
+.guide-row-index {
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+  margin-top: 1px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: rgba(212, 168, 87, 0.18);
+  border: 1px solid rgba(212, 168, 87, 0.4);
+  color: var(--gold-200);
+  font-size: 9px;
+  line-height: 1;
+}
+
+.guide-row-title { font-size: 11.5px; font-weight: 600; color: var(--gold-100); }
+.guide-row-desc { font-size: 10.5px; line-height: 1.5; color: var(--ink-300); }
+
+/* 提示条 */
+.guide-tip {
+  padding: 6px 8px;
+  border-radius: 5px;
+  border-left: 2px solid rgba(107, 160, 142, 0.8);
+  background: rgba(74, 122, 107, 0.12);
+  font-size: 10.5px;
+  line-height: 1.55;
+  color: var(--ink-200);
+}
+
+.guide-tip-danger {
+  border-left-color: rgba(194, 58, 46, 0.85);
+  background: rgba(194, 58, 46, 0.12);
+}
+
+/* 开局三事按钮 */
+.guide-action {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: 6px;
+  border: 1px solid rgba(212, 168, 87, 0.28);
+  background: linear-gradient(135deg, rgba(212, 168, 87, 0.1), rgba(212, 168, 87, 0.03));
+  color: var(--gold-300);
+  text-align: left;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.12s ease;
+}
+
+.guide-action:active { transform: scale(0.985); }
+
+.guide-action:hover {
+  border-color: rgba(212, 168, 87, 0.55);
+  background: rgba(212, 168, 87, 0.14);
+}
+
+.guide-action-index {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, var(--gold-200), var(--gold-400));
+  color: #1a1208;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.guide-action-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.guide-action-title { font-size: 11.5px; color: var(--gold-100); }
+.guide-action-desc { font-size: 10px; line-height: 1.45; color: var(--ink-300); }
+
+
 /* ===== 建筑圆形缩略图（面板内） ===== */
 .building-thumb {
   position: relative;
@@ -2867,7 +3068,7 @@ button[class*="btn-"], [class*="Button"] {
 .event-feed {
   position: absolute;
   bottom: 84px;
-  left: 8px;
+  right: 8px;
   z-index: 45;
   width: clamp(240px, 38vw, 340px);
   max-height: 34vh;

@@ -27,6 +27,7 @@ export const MonthlyReportModal: React.FC = () => {
     pendingEvents, openEvent, eventHistory,
   } = useGameStore();
 
+  // 月/季/年报需要玩家阅读，期间由 Modal 统一暂停时间
   if (!monthlyReport || !reportView) return null;
 
   const periodic = reportView === 'quarterly'

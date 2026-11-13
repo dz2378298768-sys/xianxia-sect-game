@@ -2,12 +2,16 @@ import React from 'react';
 import { useGameStore } from '@/store/gameStore';
 import { useUIStore } from '@/store/uiStore';
 import { ScrollText } from 'lucide-react';
+import { useModalPause } from '@/hooks/useModalPause';
 
 /** 事件记录：完整回顾已处理的随机异闻（含选择与结果），供移动端翻阅 */
 export const EventHistoryModal: React.FC = () => {
   const eventHistory = useGameStore(s => s.eventHistory);
   const eventHistoryOpen = useUIStore(s => s.eventHistoryOpen);
   const setEventHistoryOpen = useUIStore(s => s.setEventHistoryOpen);
+
+  // 翻阅事件记录时暂停时间
+  useModalPause('event-history', eventHistoryOpen);
 
   if (!eventHistoryOpen) return null;
 

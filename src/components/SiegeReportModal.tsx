@@ -1,6 +1,7 @@
 import React from 'react';
 import { useUIStore } from '@/store/uiStore';
 import { Sword, Shield } from 'lucide-react';
+import { useModalPause } from '@/hooks/useModalPause';
 
 /**
  * 围攻战报：本宗被攻或击退来犯时由 gameStore 推入 uiStore.siegeReport。
@@ -9,6 +10,9 @@ import { Sword, Shield } from 'lucide-react';
 export const SiegeReportModal: React.FC = () => {
   const report = useUIStore(s => s.siegeReport);
   const setSiegeReport = useUIStore(s => s.setSiegeReport);
+
+  // 战报弹窗需要玩家阅读，期间暂停时间
+  useModalPause('siege-report', !!report);
 
   if (!report) return null;
 

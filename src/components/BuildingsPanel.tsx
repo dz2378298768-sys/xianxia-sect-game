@@ -15,7 +15,7 @@ import {
 import { Tooltip } from '@/components/ui/Tooltip';
 import { LibraryPanel } from '@/components/LibraryPanel';
 import { BuildingEconomyCard } from '@/components/BuildingEconomyCard';
-import { calculateBuildingMaintenance, calculateBuildingOutput, getResidenceUpgradeCost, getCaveMansionUpgradeCost, calculateDiscipleCombatPower, SKYSCRAPER_TOWER_COMBAT_POWER } from '@/utils/gameLogic';
+import { calculateBuildingMaintenance, calculateBuildingOutput, getResidenceUpgradeCost, getCaveMansionUpgradeCost, calculateDiscipleCombatPower, SKYSCRAPER_TOWER_COMBAT_POWER, getBuildingEffectMultiplier, scaleBuildingOutput } from '@/utils/gameLogic';
 import { RealmOrder, DiscipleStatusNames, getRealmDisplay } from '@/types/disciple';
 import { BuildingType, RESIDENCE_TYPES, RESIDENCE_TYPES_WITH_CAVE, isResidenceType, MAX_PRODUCTION_SLOTS, getAvailableSlots } from '@/types/building';
 import type { BuildingUpgradeCost } from '@/types/building';
@@ -368,7 +368,7 @@ export const BuildingsPanel: React.FC = () => {
     buyBeast, captureBeast, beastInventory,
     buyCaveMansion, challengeCaveMansion, challengeSkyscraperTower,
     assignDiscipleToBuilding,
-    fallenDisciples, enshrineDisciple, unenshrineDisciple,
+    fallenDisciples, enshrineDisciple, unenshrineDisciple, activeEffects,
   } = useGameStore();
   const { selectedBuildingId, setSelectedBuildingId, setActivePanel } = useUIStore();
   const [showBuildModal, setShowBuildModal] = useState(false);
@@ -523,8 +523,11 @@ export const BuildingsPanel: React.FC = () => {
   const assignedDisciples = selectedBuilding 
     ? disciples.filter(d => selectedBuilding.assignedDisciples.includes(d.id))
     : [];
+  const effectMultiplier = selectedBuilding
+    ? getBuildingEffectMultiplier(activeEffects, selectedBuilding.type)
+    : 1;
   const output = selectedBuilding
-    ? calculateBuildingOutput(selectedBuilding, assignedDisciples)
+    ? scaleBuildingOutput(calculateBuildingOutput(selectedBuilding, assignedDisciples), effectMultiplier)
     : {
         spiritStones: 0, herbs: 0, iron: 0, paper: 0, reputation: 0,
         pills: 0, artifacts: 0, talismans: 0, beasts: 0,
@@ -742,6 +745,7 @@ export const BuildingsPanel: React.FC = () => {
               output={output}
               maintenance={maintenance}
               upgradeCost={getUpgradeCost(selectedBuilding)}
+              effectMultiplier={effectMultiplier}
             />
 
             {selectedBuilding.type === 'spirit_beast_garden' && (

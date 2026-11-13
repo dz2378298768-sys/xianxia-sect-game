@@ -1,7 +1,7 @@
 import React from 'react';
 import { useUIStore } from '@/store/uiStore';
 import { useGameStore } from '@/store/gameStore';
-import { calculateSectCombatPower, calculateBuildingMaintenance, calculateBuildingOutput } from '@/utils/gameLogic';
+import { calculateSectCombatPower, calculateBuildingMaintenance, calculateBuildingOutput, getBuildingEffectMultiplier } from '@/utils/gameLogic';
 import {
   SectLevelNames, SectLevelDescriptions, SectLevelOrder,
   SectLevelRequirementsMap,
@@ -45,7 +45,7 @@ export const SectInfoDrawer: React.FC = () => {
 
   const {
     year, month, sectLevel, reputation, spiritStones, karma,
-    disciples, buildings,
+    disciples, buildings, activeEffects,
     canPromoteSect, promoteSect,
   } = useGameStore();
 
@@ -72,7 +72,7 @@ export const SectInfoDrawer: React.FC = () => {
   const totalOutput = buildings.reduce((sum, b) => {
     if (b.status !== 'active') return sum;
     const assigned = disciples.filter(d => b.assignedDisciples.includes(d.id));
-    return sum + calculateBuildingOutput(b, assigned).spiritStones;
+    return sum + Math.floor(calculateBuildingOutput(b, assigned).spiritStones * getBuildingEffectMultiplier(activeEffects, b.type));
   }, 0);
 
   const netIncome = totalOutput - totalMaintenance;

@@ -20,6 +20,8 @@ import { ArtifactTypeNames } from '@/types/artifact';
 import { TalismanTypeNames } from '@/types/talisman';
 import { BeastTypeNames } from '@/types/beast';
 import { PillTypeNames } from '@/types/pill';
+import type { PillType } from '@/types/pill';
+import { PILL_CONFIGS } from '@/data/pills';
 import {
   User, Heart, Sparkles, BookOpen, Calendar, Star,
   UserPlus, X, Building2, Sword, Shield,
@@ -27,7 +29,7 @@ import {
   History, ArrowDownUp, Backpack,
   Compass, Hammer, ScrollText, Users, Gift, Trophy, Package, Hand, Circle, ClipboardList,
 } from 'lucide-react';
-import { calculateDiscipleCombatPower, calculateDiscipleCombatPowerBreakdown, getStageBreakthroughRequired, calculateRecruitCost, getRecruitRefreshCost, ADULT_AGE } from '@/utils/gameLogic';
+import { calculateDiscipleCombatPower, calculateDiscipleCombatPowerBreakdown, getStageBreakthroughRequired, calculateRecruitCost, getRecruitRefreshCost, ADULT_AGE, getBreakthroughSuccessRate } from '@/utils/gameLogic';
 import { CombatPowerBreakdownView } from '@/components/CombatPowerBreakdown';
 import { CONSTITUTIONS, RARITY_COLORS, RARITY_NAMES } from '@/data/constitutions';
 import { SectIcon } from '@/components/icons/SectIcons';
@@ -262,7 +264,10 @@ function getEffectiveCultivationSpeed(disciple: any): { base: number; effective:
     const t = disciple.learnedTechnique;
     techniqueBonus = t.isLearned ? t.cultivationBonus : t.cultivationBonus * (t.progress / 100);
   }
-  const totalBonus = (buffSum + techniqueBonus) * rootBoneEff;
+  // 旧秘籍系统的修炼加成（与月度结算一致，也受根骨发挥比例约束）
+  const secretBonus = (disciple.learnedSecrets ?? [])
+    .reduce((sum: number, s: any) => sum + (s.cultivationBonus || 0), 0);
+  const totalBonus = (buffSum + techniqueBonus + secretBonus) * rootBoneEff;
   const clampedBonus = Math.max(-50, Math.min(250, totalBonus));
   const satMultiplier = applySatisfactionPenalty(base, disciple.satisfaction) / base;
   // 与月度修炼保持一致：志向提供额外修炼速度
@@ -272,6 +277,14 @@ function getEffectiveCultivationSpeed(disciple: any): { base: number; effective:
   const effective = base * satMultiplier * (1 + clampedBonus / 100) * ambitionMult;
   return { base, effective, totalBonus: clampedBonus, satMultiplier };
 }
+
+/** 跨境界突破时可用的对应丹药（与月末结算的消耗表一致） */
+const BREAKTHROUGH_PILL_MAP: Record<string, PillType> = {
+  foundation: 'foundation_pill',
+  golden: 'golden_pill',
+  nascent: 'nascent_pill',
+  spirit: 'spirit_pill',
+};
 
 export const DisciplesPanel: React.FC = () => {
   const {
@@ -710,6 +723,18 @@ export const DisciplesPanel: React.FC = () => {
           const breakthroughRequired = getStageBreakthroughRequired(selectedDisciple.realm, selectedDisciple.realmStage);
           const cultivationPct = Math.min(100, (selectedDisciple.realmProgress / breakthroughRequired) * 100);
           const canBreakthrough = selectedDisciple.realmProgress >= breakthroughRequired;
+          // 突破成功率预估：基础值 + 若持有对应突破丹时的加成值
+          const nextRealmForPill = RealmOrder[RealmOrder.indexOf(selectedDisciple.realm) + 1];
+          const breakthroughPill = selectedDisciple.realmStage === 'late'
+            ? BREAKTHROUGH_PILL_MAP[nextRealmForPill] ?? null
+            : null;
+          const heldPill = breakthroughPill
+            ? pillInventory.find(p => p.type === breakthroughPill && p.quantity > 0)
+            : undefined;
+          const breakthroughRate = getBreakthroughSuccessRate(selectedDisciple);
+          const breakthroughRateWithPill = heldPill
+            ? getBreakthroughSuccessRate(selectedDisciple, true, PILL_CONFIGS[heldPill.type]?.breakthroughBonus ?? 0)
+            : breakthroughRate;
           const satisfactionPct = Math.max(0, Math.min(100, selectedDisciple.satisfaction));
           const speedInfo = getEffectiveCultivationSpeed(selectedDisciple);
           const combatPower = calculateDiscipleCombatPower(selectedDisciple);
@@ -788,6 +813,16 @@ export const DisciplesPanel: React.FC = () => {
                         <span className="shrink-0 rounded-sm bg-sect-gold/20 px-1 text-[9px] leading-tight text-sect-gold">可突破</span>
                       ) : undefined}
                     />
+                    {/* 突破成功率：与结算同一公式，持丹时同时给出含丹药的期望值 */}
+                    <div className="flex items-center justify-between text-[10px] leading-tight px-0.5">
+                      <span className="text-sect-jade/50">突破成功率</span>
+                      <span className="text-sect-gold font-medium">
+                        {Math.round(breakthroughRate)}%
+                        {heldPill && breakthroughRateWithPill > breakthroughRate && (
+                          <span className="text-sect-jade/60 font-normal"> · 持丹 {Math.round(breakthroughRateWithPill)}%</span>
+                        )}
+                      </span>
+                    </div>
                     <DetailBar
                       compact
                       label="满意"
@@ -803,6 +838,16 @@ export const DisciplesPanel: React.FC = () => {
                                 <span className={cn('font-medium', getSatisfactionColor(selectedDisciple.satisfaction))}>
                                   {Math.floor(selectedDisciple.satisfaction)}%
                                 </span>
+                              </div>
+                              {/* 满意度换算：让玩家知道这条数值具体影响了什么 */}
+                              <div className="flex justify-between border-b border-sect-gold/20 pb-2">
+                                <span className="text-sect-jade/60">修炼速度乘数</span>
+                                <span className={cn('font-medium', speedInfo.satMultiplier >= 1 ? 'text-green-400' : 'text-orange-400')}>
+                                  ×{speedInfo.satMultiplier.toFixed(2)}
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-sect-jade/45 leading-tight">
+                                满意度每低 10 点，修炼速度 -20%，最低 ×0.50；低于 30% 连续 3 个月可能叛逃
                               </div>
                               <div className="space-y-1">
                                 {selectedDisciple.maxSatisfactionLossWork > 0 ? (

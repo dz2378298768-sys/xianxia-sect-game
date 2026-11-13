@@ -338,8 +338,7 @@ export interface BuildingEvent {
     satisfactionChange?: number; // 满意度变化
     spiritStoneChange?: number;  // 灵石变化
     reputationChange?: number;   // 声望变化
-    pillReward?: { type: string; quantity: number }[]; // 丹药奖励
-    cultivationBonus?: string; // 影响弟子
+    cultivationBonus?: 'inner' | 'all'; // 临时修炼加成范围：内门及以上 / 全宗
   };
   duration: number; // 持续月数
 }
@@ -350,6 +349,8 @@ export interface ChoiceEvent {
   title: string;
   description: string;
   choices: ChoiceEventOption[];
+  /** 默认选项下标：弹窗中会标注「默认」，玩家可一键采用；缺省为 0 */
+  defaultIndex?: number;
 }
 
 export interface ChoiceEventOption {
@@ -567,6 +568,27 @@ export interface CalamityEvent {
     /** 持续月数 */
     durationMonths: number;
   };
+}
+
+/**
+ * 临时宗门效果：建筑变故 / 天灾带来的产出与修炼增减。
+ * 创建时写入，月末结算后 remainingMonths - 1，归零即失效（天灾同时解除）。
+ */
+export interface SectActiveEffect {
+  id: string;
+  /** 来源事件 id（建筑事件 id / 天灾 id），用于天灾到期时同步解除 activeCalamity */
+  sourceId: string;
+  title: string;
+  kind: 'building' | 'calamity';
+  /** 受影响的建筑类型；null = 全宗所有建筑（天灾） */
+  buildingType: string | null;
+  /** 产出倍率：1.5 = 增产 50%，0.5 = 减产 50%，1 = 无影响 */
+  outputMultiplier: number;
+  /** 修炼速度加成百分比（0 = 无影响） */
+  cultivationBonus: number;
+  /** 修炼加成作用范围：all = 全宗弟子，inner = 内门及以上 */
+  cultivationScope: 'all' | 'inner' | null;
+  remainingMonths: number;
 }
 
 // 仓库物品自动交易规则（按 ShopItem.id 存储，键对应 shop.ts 的 SHOP_ITEMS[i].id：'pill:qi_gathering_pill' / 'beast:spirit_fox' / 'material:shou_yuan_hua' 等）

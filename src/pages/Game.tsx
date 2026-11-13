@@ -20,6 +20,7 @@ import { EventFeed } from '@/components/EventFeed';
 import { EventHistoryModal } from '@/components/EventHistoryModal';
 import { TasksPanel } from '@/components/TasksPanel';
 import { useDevice } from '@/hooks/useDevice';
+import { useModalPause } from '@/hooks/useModalPause';
 import { ReportBadge } from '@/components/ReportBadge';
 import { TimeControls } from '@/components/TimeControls';
 import { GameClock } from '@/components/GameClock';
@@ -240,7 +241,10 @@ const GameLayout: React.FC = () => {
         {/* 主界面速览（打开面板时隐藏） */}
         {activePanel === null && mobileSidePanel !== 'tasks' && <HomeHud />}
 
-        {/* 山门左下角：宗门事件 feed（打开面板时隐藏，避免遮挡） */}
+        {/* 桌面端：左侧任务与异闻浮动面板（位于速览胶囊下方） */}
+        {!isCompact && activePanel === null && <TasksPanel />}
+
+        {/* 山门右下角：宗门事件 feed（打开面板时隐藏，避免遮挡） */}
         {activePanel === null && mobileSidePanel !== 'tasks' && <EventFeed />}
         <ReportBadge />
 
@@ -295,9 +299,6 @@ const GameLayout: React.FC = () => {
       {/* 底部导航 */}
       <BottomNav />
 
-      {/* 桌面端：右上任务与异闻浮动面板 */}
-      {!isCompact && <TasksPanel />}
-
 
       {/* 模态框 */}
       {reportView && <MonthlyReportModal />}
@@ -322,6 +323,7 @@ const GameLayout: React.FC = () => {
 /** 宗门灭亡弹窗 */
 const SectCollapseModal: React.FC = () => {
   const { sectCollapsed, sectCollapseReason, sectName, newGame, returnToMenu } = useGameStore();
+  useModalPause('sect-collapse', sectCollapsed);
   if (!sectCollapsed) return null;
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 px-4">
@@ -347,6 +349,8 @@ const SectCollapseModal: React.FC = () => {
 /** 返回主菜单确认弹窗 */
 const ReturnToMenuConfirmModal: React.FC = () => {
   const { returnToMenuConfirm, setReturnToMenuConfirm, returnToMenu } = useGameStore();
+
+  useModalPause('return-to-menu', returnToMenuConfirm);
 
   if (!returnToMenuConfirm) return null;
 

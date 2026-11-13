@@ -1,6 +1,7 @@
 import React from 'react';
 import { useGameStore } from '@/store/gameStore';
 import { Compass, Shield, Swords, Skull, Award, Sparkles, Map } from 'lucide-react';
+import { useModalPause } from '@/hooks/useModalPause';
 
 const encounterIcons = [Swords, Shield, Award, Sparkles, Map];
 
@@ -14,6 +15,10 @@ export const ExplorationEncounterModal: React.FC = () => {
 
   // 展示队列中的第一个遭遇
   const encounter = pendingEncounters.length > 0 ? pendingEncounters[0] : null;
+
+  // 探索遭遇需要玩家决策，期间暂停时间
+  useModalPause('exploration-encounter', !!encounter);
+
   if (!encounter) return null;
 
   return (

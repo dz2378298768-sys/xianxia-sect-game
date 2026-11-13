@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -11,11 +11,15 @@ import type {
 } from '@/types/tournament';
 import {
   TournamentFrequencyNames, TournamentRewardTypeNames,
-  TournamentFrequencyIntervals,
+  TournamentFrequencyIntervals, TournamentFrequencyMonths,
 } from '@/types/tournament';
-import { getDivisionName, generateInterSectRewards, rewardToText } from '@/utils/tournament';
+import {
+  getDivisionName, generateInterSectRewards, rewardToText,
+  canManuallyHoldTournament, estimateOpponentRange, discipleMatchesDivision,
+} from '@/utils/tournament';
 import type { Realm, DiscipleStatus } from '@/types/disciple';
 import { RealmOrder, RealmNames, DiscipleStatusNames } from '@/types/disciple';
+import { ADULT_AGE, calculateDiscipleCombatPower } from '@/utils/gameLogic';
 import type { PillType } from '@/types/pill';
 import { PillTypeNames } from '@/types/pill';
 import type { TalismanType } from '@/types/talisman';
@@ -42,15 +46,27 @@ const RANK_COLORS: Record<1 | 2 | 3, string> = {
   3: 'text-orange-400',
 };
 
-// 下次触发年份
-function nextTriggerYear(frequency: TournamentFrequency, lastYear: number, currentYear: number): number {
+/** 下一次自动举办的年月：若今年的举办月已过，则顺延到下一年 */
+function nextTriggerLabel(
+  frequency: TournamentFrequency,
+  lastYear: number,
+  currentYear: number,
+  currentMonth: number,
+): string {
   const interval = TournamentFrequencyIntervals[frequency];
-  if (lastYear > 0) {
-    const next = lastYear + interval;
-    return next > currentYear ? next : currentYear;
-  }
-  return currentYear;
+  const month = TournamentFrequencyMonths[frequency];
+  let next = lastYear > 0 ? lastYear + interval : currentYear;
+  if (next < currentYear || (next === currentYear && currentMonth > month)) next = currentYear + 1;
+  return `第${next}年${month}月`;
 }
+
+/** 下拉选择器外壳，统一外观 */
+const SelectShell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <div className="relative">
+    {children}
+    <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-sect-gold/50 text-[8px] pointer-events-none">▼</span>
+  </div>
+);
 
 export const TournamentPanel: React.FC<TournamentPanelProps> = ({ scope }) => {
   const isSect = scope === 'sect';
@@ -65,430 +81,434 @@ export const TournamentPanel: React.FC<TournamentPanelProps> = ({ scope }) => {
   const config = isSect ? store.sectTournamentConfig : store.interSectTournamentConfig;
   const results = isSect ? store.lastSectTournamentResults : store.lastInterSectTournamentResults;
   const lastYears = isSect ? store.lastSectTournamentYears : store.lastInterSectTournamentYears;
-  const { disciples, otherSects, year, month } = store;
+  const {
+    disciples, otherSects, year, month, spiritStones,
+    pillInventory, talismanInventory, artifactInventory, tournamentHistory,
+  } = store;
 
-  const [rewardEditorsOpen, setRewardEditorsOpen] = useState<Record<TournamentFrequency, boolean>>({
-    yearly: false, every5years: false, every10years: false,
-  });
+  // 三个频率用标签页切换，避免六个配置块堆在一起滚不完
+  const [activeFreq, setActiveFreq] = useState<TournamentFrequency>('yearly');
+  const [editorOpen, setEditorOpen] = useState(false);
   // 手动举办后展示的弹窗结果
   const [popupResult, setPopupResult] = useState<TournamentResult | null>(null);
 
-  const toggleEditor = (f: TournamentFrequency) => setRewardEditorsOpen(prev => ({
-    ...prev, [f]: !prev[f],
-  }));
-
   const title = isSect ? '山门大比' : '宗门大比';
   const desc = isSect
-    ? '本宗弟子间的内部比武。年度、五年、十年大比可同时开启，各自独立配置分组与奖励。'
-    : '与天下其他宗门弟子同台竞技。三种频率可同时开启，各自独立配置分组与奖励。';
+    ? '本宗弟子间的内部比武，奖赏从宗门库存发放。三种频率各自独立配置分组与奖励。'
+    : '与天下其他宗门弟子同台竞技，对手实力随对方宗门强弱变化。三种频率各自独立配置分组与奖励。';
 
-  // 统计某分组下的参赛人数
-  const getParticipantCount = (division: TournamentDivision) => {
-    if (division.kind === 'all') return disciples.length;
-    if (division.kind === 'realm') return disciples.filter(d => d.realm === division.value).length;
-    return disciples.filter(d => d.status === division.value).length;
+  const freqConfig = config[activeFreq];
+  const lastResult = results[activeFreq];
+  const lastYear = lastYears[activeFreq];
+  const inCooldown = !canManuallyHoldTournament(activeFreq, freqConfig, year, lastYear);
+  // 没有其他宗门时，宗门大比没有对手可打
+  const noRivals = !isSect && otherSects.length === 0;
+  const canHold = freqConfig.enabled && !inCooldown && !noRivals;
+
+  // 可参赛弟子（未成年不参赛），按战力排序便于预告"我方最强"
+  const participants = useMemo(
+    () => disciples
+      .filter(d => d.age >= ADULT_AGE && discipleMatchesDivision(d, freqConfig.division))
+      .map(d => ({ id: d.id, name: d.name, realm: d.realm, power: calculateDiscipleCombatPower(d) }))
+      .sort((a, b) => b.power - a.power),
+    [disciples, freqConfig.division],
+  );
+  const participantCount = participants.length;
+  const ourBest = participants[0]?.power ?? 0;
+
+  // 敌方预估：按分组对应境界与在场宗门实力估算
+  // 「全员」分组按参赛人数最多的境界估算，避免被单个高境界弟子抬高预期
+  const opponentRange = useMemo(() => {
+    const div = freqConfig.division;
+    const statusRealm: Record<DiscipleStatus, Realm> = {
+      mortal: 'mortal', servant: 'mortal', outer: 'qi', inner: 'foundation', core: 'golden', elder: 'nascent',
+    };
+    const counts = new Map<Realm, number>();
+    participants.forEach(p => counts.set(p.realm, (counts.get(p.realm) ?? 0) + 1));
+    let dominantRealm: Realm = 'foundation';
+    let dominantCount = 0;
+    counts.forEach((n, realm) => { if (n > dominantCount) { dominantCount = n; dominantRealm = realm; } });
+    const realm: Realm = div.kind === 'realm'
+      ? div.value
+      : div.kind === 'status'
+        ? statusRealm[div.value]
+        : dominantRealm;
+    return estimateOpponentRange(realm, otherSects);
+  }, [freqConfig.division, otherSects, participants]);
+
+  const verdict = (() => {
+    if (!isSect && participantCount > 0) {
+      if (ourBest >= opponentRange[1]) return { text: '优势在我', tone: 'text-emerald-400' };
+      if (ourBest >= (opponentRange[0] + opponentRange[1]) / 2) return { text: '势均力敌', tone: 'text-yellow-400' };
+      if (ourBest >= opponentRange[0]) return { text: '处于劣势', tone: 'text-orange-400' };
+      return { text: '凶多吉少', tone: 'text-red-400' };
+    }
+    return null;
+  })();
+
+  // 山门大比：冠军奖赏的预计支出与库存缺口
+  const championRewards = freqConfig.rewards.filter(r => r.rank === 1);
+  const estStoneCost = isSect
+    ? championRewards.filter(r => r.type === 'spiritStones').reduce((n, r) => n + r.amount, 0)
+    : 0;
+  const shortage = (() => {
+    if (!isSect) return null;
+    if (estStoneCost > spiritStones) return `灵石不足（需 ${estStoneCost}，现有 ${Math.floor(spiritStones)}）`;
+    for (const r of championRewards) {
+      if (r.type === 'pill' && r.pillType) {
+        const stock = pillInventory.find(p => p.type === r.pillType)?.quantity ?? 0;
+        if (stock < r.amount) return `${PillTypeNames[r.pillType]}库存不足（需 ${r.amount}）`;
+      }
+      if (r.type === 'talisman' && r.talismanType) {
+        const stock = talismanInventory.find(t => t.type === r.talismanType)?.quantity ?? 0;
+        if (stock < r.amount) return `${TalismanTypeNames[r.talismanType as TalismanType] ?? '符箓'}库存不足（需 ${r.amount}）`;
+      }
+      if (r.type === 'artifact' && r.artifactType) {
+        const stock = artifactInventory.find(a => a.type === r.artifactType)?.quantity ?? 0;
+        if (stock < r.amount) return `${ArtifactTypeNames[r.artifactType as ArtifactType] ?? '法器'}库存不足（需 ${r.amount}）`;
+      }
+    }
+    return null;
+  })();
+
+  const history = (tournamentHistory ?? []).filter(h => h.scope === scope).slice(0, 6);
+
+  const handleToggleEnabled = () => updateFreqConfig(activeFreq, { enabled: !freqConfig.enabled });
+  const handleDivisionChange = (division: TournamentDivision) => updateFreqConfig(activeFreq, { division });
+
+  const handleRewardChange = (
+    index: number,
+    field: 'type' | 'amount' | 'pillType' | 'talismanType' | 'artifactType',
+    value: string | number,
+  ) => {
+    const newRewards = freqConfig.rewards.map((r, i) => {
+      if (i !== index) return r;
+      if (field === 'type') {
+        const type = value as TournamentRewardType;
+        return {
+          ...r,
+          type,
+          amount: Math.max(1, r.amount ?? 1),
+          pillType: type === 'pill' ? (r.pillType ?? 'foundation_pill') : undefined,
+          talismanType: type === 'talisman' ? (r.talismanType ?? 'fire_talisman') : undefined,
+          artifactType: type === 'artifact' ? (r.artifactType ?? 'flying_sword') : undefined,
+        } as TournamentReward;
+      }
+      if (field === 'amount') return { ...r, amount: Math.max(0, Number(value) || 0) } as TournamentReward;
+      if (field === 'pillType') return { ...r, pillType: value as PillType } as TournamentReward;
+      return { ...r, [field]: value } as TournamentReward;
+    });
+    updateFreqConfig(activeFreq, { rewards: newRewards });
+  };
+
+  const addReward = (rank: 1 | 2 | 3) => {
+    updateFreqConfig(activeFreq, {
+      rewards: [...freqConfig.rewards, { rank, type: 'contribution', amount: 50 }],
+    });
+  };
+
+  const removeReward = (index: number) => {
+    updateFreqConfig(activeFreq, { rewards: freqConfig.rewards.filter((_, i) => i !== index) });
   };
 
   return (
     <Card>
       {/* 标题 */}
-      <div className="flex items-center gap-2 mb-3">
+      <div className="flex items-center gap-2 mb-2">
         <SectIcon name="battle" size={20} strokeWidth={1.8} className="text-sect-gold" />
         <h2 className="font-display text-lg text-gold-gradient">{title}</h2>
       </div>
-      <p className="text-sect-jade/50 text-xs mb-5 leading-relaxed">{desc}</p>
+      <p className="text-sect-jade/50 text-xs mb-3 leading-relaxed">{desc}</p>
 
-      <div className="space-y-5">
+      {/* 频率标签页 */}
+      <div className="flex gap-1 mb-3">
         {FREQUENCIES.map(freq => {
-          const freqConfig = config[freq];
-          const lastResult = results[freq];
-          const lastYear = lastYears[freq];
-          const participantCount = getParticipantCount(freqConfig.division);
-          const editorOpen = rewardEditorsOpen[freq];
-          // CD 判断：与 shouldTournamentTrigger 逻辑一致
-          const interval = TournamentFrequencyIntervals[freq];
-          const inCooldown = freqConfig.enabled && lastYear > 0 && (year - lastYear < interval);
-
-          const handleToggleEnabled = () => {
-            updateFreqConfig(freq, { enabled: !freqConfig.enabled });
-          };
-
-          const handleDivisionChange = (division: TournamentDivision) => {
-            updateFreqConfig(freq, { division });
-          };
-
-          const handleRewardChange = (rew: TournamentReward, field: 'type' | 'amount' | 'pillType' | 'talismanType' | 'artifactType', value: string | number) => {
-            const newRewards = freqConfig.rewards.map(r => {
-              if (r !== rew) return r;
-              if (field === 'type') {
-                const type = value as TournamentRewardType;
-                return {
-                  ...r,
-                  type,
-                  amount: r.amount ?? 100,
-                  pillType: type === 'pill' ? (r.pillType ?? 'foundation_pill') : undefined,
-                  talismanType: type === 'talisman' ? (r.talismanType ?? 'fire_talisman') : undefined,
-                  artifactType: type === 'artifact' ? (r.artifactType ?? 'flying_sword') : undefined,
-                } as TournamentReward;
-              }
-              if (field === 'amount') {
-                return { ...r, amount: Number(value) || 0 } as TournamentReward;
-              }
-              if (field === 'pillType') {
-                return { ...r, pillType: value as PillType } as TournamentReward;
-              }
-              if (field === 'talismanType') {
-                return { ...r, talismanType: value as string } as TournamentReward;
-              }
-              // artifactType
-              return { ...r, artifactType: value as string } as TournamentReward;
-            });
-            updateFreqConfig(freq, { rewards: newRewards });
-          };
-
-          const addNewReward = (rank: 1 | 2 | 3, field: string, value: string | number) => {
-            const currentRewards = [...freqConfig.rewards];
-            if (field === 'type') {
-              const type = value as TournamentRewardType;
-              const newReward: TournamentReward = {
-                rank,
-                type,
-                amount: 100,
-              };
-              if (type === 'pill') newReward.pillType = 'foundation_pill';
-              if (type === 'talisman') newReward.talismanType = 'fire_talisman';
-              if (type === 'artifact') newReward.artifactType = 'flying_sword';
-              currentRewards.push(newReward);
-              updateFreqConfig(freq, { rewards: currentRewards });
-            }
-          };
-
+          const cfg = config[freq];
+          const active = freq === activeFreq;
           return (
-            <div
+            <button
               key={freq}
-              className={`p-3 rounded-lg border transition-all ${
-                freqConfig.enabled
-                  ? 'border-sect-gold/40 bg-sect-gold/5'
-                  : 'border-sect-jade/15 bg-sect-ink-light/20'
+              onClick={() => { setActiveFreq(freq); setEditorOpen(false); }}
+              className={`flex-1 px-1 py-1.5 rounded-md text-[11px] transition-all border ${
+                active
+                  ? 'bg-sect-gold/15 text-sect-gold border-sect-gold/40'
+                  : 'text-sect-jade/60 border-transparent hover:text-sect-jade hover:bg-sect-jade/10'
               }`}
             >
-              {/* 频率标题 + 开关 */}
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <SectIcon name="nextMonth" size={15} strokeWidth={1.8} className="text-sect-gold/80" />
-                  <span className="font-display text-sm text-sect-gold">
-                    {TournamentFrequencyNames[freq]}
-                  </span>
-                  <Badge variant={freqConfig.enabled ? 'gold' : 'default'} size="sm">
-                    {freqConfig.enabled ? '已开启' : '已关闭'}
-                  </Badge>
-                </div>
-                <Button variant="outline" size="sm" onClick={handleToggleEnabled}>
-                  {freqConfig.enabled ? '关闭' : '开启'}
-                </Button>
-              </div>
-
-              <div className="space-y-3">
-                {/* 比拼分组 */}
-                <div>
-                  <div className="text-[11px] text-sect-jade/60 mb-1.5 flex items-center gap-1.5">
-                    <SectIcon name="disciple" size={12} strokeWidth={1.8} className="text-sect-gold/70" />
-                    比拼分组
-                  </div>
-                  <div className="flex gap-1 flex-wrap">
-                    <button
-                      disabled={!freqConfig.enabled}
-                      onClick={() => handleDivisionChange(ALL_DIVISION)}
-                      className={`px-2 py-0.5 text-[11px] rounded transition-all ${
-                        freqConfig.division.kind === 'all'
-                          ? 'bg-sect-gold/20 text-sect-gold border border-sect-gold/40'
-                          : 'text-sect-jade/60 hover:text-sect-jade hover:bg-sect-jade/10 border border-transparent'
-                      } ${!freqConfig.enabled ? 'opacity-40 cursor-not-allowed' : ''}`}
-                    >
-                      全员
-                    </button>
-                    {REALM_DIVISIONS.map(d => (
-                      <button
-                        key={`realm-${d.value}`}
-                        disabled={!freqConfig.enabled}
-                        onClick={() => handleDivisionChange(d)}
-                        className={`px-2 py-0.5 text-[11px] rounded transition-all ${
-                          freqConfig.division.kind === 'realm' && freqConfig.division.value === d.value
-                            ? 'bg-sect-gold/20 text-sect-gold border border-sect-gold/40'
-                            : 'text-sect-jade/60 hover:text-sect-jade hover:bg-sect-jade/10 border border-transparent'
-                        } ${!freqConfig.enabled ? 'opacity-40 cursor-not-allowed' : ''}`}
-                      >
-                        {RealmNames[d.value]}
-                      </button>
-                    ))}
-                    {STATUS_DIVISIONS.map(d => (
-                      <button
-                        key={`status-${d.value}`}
-                        disabled={!freqConfig.enabled}
-                        onClick={() => handleDivisionChange(d)}
-                        className={`px-2 py-0.5 text-[11px] rounded transition-all ${
-                          freqConfig.division.kind === 'status' && freqConfig.division.value === d.value
-                            ? 'bg-sect-gold/20 text-sect-gold border border-sect-gold/40'
-                            : 'text-sect-jade/60 hover:text-sect-jade hover:bg-sect-jade/10 border border-transparent'
-                        } ${!freqConfig.enabled ? 'opacity-40 cursor-not-allowed' : ''}`}
-                      >
-                        {DiscipleStatusNames[d.value]}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="text-[10px] text-sect-jade/40 mt-0.5">
-                    「{getDivisionName(freqConfig.division)}」· 本宗可参赛 {participantCount} 人
-                    {!isSect && ` · 对手宗门 ${otherSects.length} 个`}
-                  </div>
-                </div>
-
-                {/* 奖励配置 */}
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <div className="text-[11px] text-sect-jade/60 flex items-center gap-1.5">
-                      <SectIcon name="trophy" size={12} strokeWidth={1.8} className="text-sect-gold/70" />
-                      获胜奖励
-                    </div>
-                    {isSect && (
-                      <button
-                        disabled={!freqConfig.enabled}
-                        onClick={() => toggleEditor(freq)}
-                        className={`text-[11px] text-sect-gold/80 hover:text-sect-gold ${!freqConfig.enabled ? 'opacity-40 cursor-not-allowed' : ''}`}
-                      >
-                        {editorOpen ? '收起' : '编辑'}
-                      </button>
-                    )}
-                  </div>
-
-                  {(() => {
-                    // 宗门间大比：展示固定随机奖励，不可编辑
-                    if (!isSect) {
-                      const generatedRewards = generateInterSectRewards(freq, year);
-                      return (
-                        <div className="space-y-1">
-                          {([1, 2, 3] as const).map(rank => {
-                            const rewardList = generatedRewards.filter(r => r.rank === rank);
-                            if (rewardList.length === 0) return null;
-                            return (
-                              <div key={rank} className="flex items-center gap-2 text-[11px] bg-sect-ink-light/20 rounded px-2 py-1">
-                                <span className={`${RANK_COLORS[rank]} font-medium w-10 shrink-0`}>
-                                  {RANK_LABELS[rank]}
-                                </span>
-                                <div className="flex flex-wrap gap-1">
-                                  {rewardList.map((r, ri) => (
-                                    <span key={ri} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-sect-gold/10 border border-sect-gold/20 text-sect-jade/80">
-                                      {r.type === 'pill' && <SectIcon name="cultivate" size={10} className="text-sect-pill" />}
-                                       {r.type === 'spiritStones' && <SectIcon name="gem" size={10} className="text-sect-gold" />}
-                                      {r.type === 'reputation' && <SectIcon name="world" size={10} className="text-blue-400" />}
-                                      {r.type === 'contribution' && <SectIcon name="disciple" size={10} className="text-green-400" />}
-                                      {r.type === 'talisman' && <SectIcon name="scroll" size={10} className="text-purple-400" />}
-                                      {r.type === 'artifact' && <SectIcon name="sword" size={10} className="text-orange-400" />}
-                                      {rewardToText(r)}
-                                    </span>
-                                  ))}
-                                </div>
-                              </div>
-                            );
-                          })}
-                          <div className="text-[10px] text-sect-jade/40 italic pl-2">
-                            ※ 每年奖励随年份自动变化
-                          </div>
-                        </div>
-                      );
-                    }
-
-                    // 宗门内大比：可编辑，但奖励从宗门库存扣除
-                    return !editorOpen ? (
-                      <div className="space-y-0.5">
-                        {([1, 2, 3] as const).map(rank => {
-                          const rewardList = freqConfig.rewards.filter(r => r.rank === rank);
-                          return (
-                            <div key={rank} className="flex items-start gap-2 text-[11px]">
-                              <span className={`${RANK_COLORS[rank]} font-medium w-10 shrink-0`}>{RANK_LABELS[rank]}</span>
-                              {rewardList.length > 0 ? (
-                                <span className="text-sect-jade/80 leading-relaxed">
-                                  {rewardList.map(r => (
-                                    r.type === 'pill'
-                                      ? `${PillTypeNames[r.pillType as PillType] ?? '丹药'} ×${r.amount}`
-                                      : r.type === 'talisman'
-                                        ? `${TalismanTypeNames[r.talismanType as TalismanType] ?? '符箓'} ×${r.amount}`
-                                        : r.type === 'artifact'
-                                          ? `${ArtifactTypeNames[r.artifactType as ArtifactType] ?? '法器'} ×${r.amount}`
-                                          : `${TournamentRewardTypeNames[r.type]} +${r.amount}`
-                                  )).join('、')}
-                                </span>
-                              ) : (
-                                <span className="text-sect-jade/40 italic">无奖励</span>
-                              )}
-                            </div>
-                          );
-                        })}
-                        <div className="text-[10px] text-amber-400/60 italic pl-2">
-                          ※ 奖励从宗门库存扣除
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="space-y-2 p-2.5 rounded-lg bg-sect-ink-light/30 border border-sect-gold/20 shadow-inner">
-                        <div className="text-[10px] text-amber-400/70 mb-1 flex items-center gap-1">
-                          <SectIcon name="gem" size={10} className="text-amber-400" />
-                          编辑奖励（奖励从宗门库存扣除）
-                        </div>
-                        {([1, 2, 3] as const).map(rank => {
-                          const list = freqConfig.rewards.filter(r => r.rank === rank);
-                          const slots = list.length === 0 ? [null] : list;
-                          return (
-                            <div key={rank} className="space-y-1">
-                              <div className={`${RANK_COLORS[rank]} text-[11px] font-medium flex items-center gap-1`}>
-                                <span className="w-1.5 h-1.5 rounded-full bg-current" />
-                                {RANK_LABELS[rank]}
-                              </div>
-                              {slots.map((_r, i) => {
-                                const reward = list[i];
-                                const key = `${rank}-${i}`;
-                                if (!reward && i === 0) {
-                                  return (
-                                    <div key={key} className="flex items-center gap-1.5 flex-wrap pl-3">
-                                      <div className="relative">
-                                        <select
-                                          value="contribution"
-                                          onChange={e => addNewReward(rank, 'type', e.target.value)}
-                                          className="appearance-none bg-sect-ink/80 text-sect-jade text-[10px] rounded-md px-2 py-1 pr-5 border border-sect-gold/30 focus:border-sect-gold/60 focus:ring-1 focus:ring-sect-gold/30 outline-none cursor-pointer"
-                                        >
-                                          {REWARD_TYPES.map(t => (
-                                            <option key={t} value={t}>{TournamentRewardTypeNames[t]}</option>
-                                          ))}
-                                        </select>
-                                        <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-sect-gold/50 text-[8px] pointer-events-none">▼</span>
-                                      </div>
-                                      <input
-                                        type="number"
-                                        min={0}
-                                        value={0}
-                                        onChange={e => addNewReward(rank, 'amount', e.target.value)}
-                                        placeholder="数量"
-                                        className="bg-sect-ink/80 text-sect-jade text-[10px] rounded-md px-2 py-1 border border-sect-gold/30 focus:border-sect-gold/60 focus:ring-1 focus:ring-sect-gold/30 outline-none w-14 text-center"
-                                      />
-                                      <button
-                                        onClick={() => addNewReward(rank, 'amount', '1')}
-                                        className="text-[10px] text-sect-gold/60 hover:text-sect-gold px-1"
-                                      >
-                                        + 添加
-                                      </button>
-                                    </div>
-                                  );
-                                }
-                                if (!reward) return null;
-                                return (
-                                  <div key={key} className="flex items-center gap-1.5 flex-wrap pl-3">
-                                    <div className="relative">
-                                      <select
-                                        value={reward.type}
-                                        onChange={e => handleRewardChange(reward, 'type', e.target.value)}
-                                        className="appearance-none bg-sect-ink/80 text-sect-jade text-[10px] rounded-md px-2 py-1 pr-5 border border-sect-gold/30 focus:border-sect-gold/60 focus:ring-1 focus:ring-sect-gold/30 outline-none cursor-pointer"
-                                      >
-                                        {REWARD_TYPES.map(t => (
-                                          <option key={t} value={t}>{TournamentRewardTypeNames[t]}</option>
-                                        ))}
-                                      </select>
-                                      <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-sect-gold/50 text-[8px] pointer-events-none">▼</span>
-                                    </div>
-                                    {reward.type === 'pill' && (
-                                      <div className="relative">
-                                        <select
-                                          value={reward.pillType ?? 'foundation_pill'}
-                                          onChange={e => handleRewardChange(reward, 'pillType', e.target.value)}
-                                          className="appearance-none bg-sect-ink/80 text-sect-jade text-[10px] rounded-md px-2 py-1 pr-5 border border-sect-gold/30 focus:border-sect-gold/60 focus:ring-1 focus:ring-sect-gold/30 outline-none cursor-pointer"
-                                        >
-                                          {PILL_OPTIONS.map(p => (
-                                            <option key={p} value={p}>{PillTypeNames[p]}</option>
-                                          ))}
-                                        </select>
-                                        <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-sect-gold/50 text-[8px] pointer-events-none">▼</span>
-                                      </div>
-                                    )}
-                                    {reward.type === 'talisman' && (
-                                      <div className="relative">
-                                        <select
-                                          value={reward.talismanType ?? 'fire_talisman'}
-                                          onChange={e => handleRewardChange(reward, 'talismanType', e.target.value)}
-                                          className="appearance-none bg-sect-ink/80 text-sect-jade text-[10px] rounded-md px-2 py-1 pr-5 border border-sect-gold/30 focus:border-sect-gold/60 focus:ring-1 focus:ring-sect-gold/30 outline-none cursor-pointer"
-                                        >
-                                          {TALISMAN_OPTIONS.map(t => (
-                                            <option key={t} value={t}>{TalismanTypeNames[t]}</option>
-                                          ))}
-                                        </select>
-                                        <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-sect-gold/50 text-[8px] pointer-events-none">▼</span>
-                                      </div>
-                                    )}
-                                    {reward.type === 'artifact' && (
-                                      <div className="relative">
-                                        <select
-                                          value={reward.artifactType ?? 'flying_sword'}
-                                          onChange={e => handleRewardChange(reward, 'artifactType', e.target.value)}
-                                          className="appearance-none bg-sect-ink/80 text-sect-jade text-[10px] rounded-md px-2 py-1 pr-5 border border-sect-gold/30 focus:border-sect-gold/60 focus:ring-1 focus:ring-sect-gold/30 outline-none cursor-pointer"
-                                        >
-                                          {ARTIFACT_OPTIONS.map(a => (
-                                            <option key={a} value={a}>{ArtifactTypeNames[a]}</option>
-                                          ))}
-                                        </select>
-                                        <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-sect-gold/50 text-[8px] pointer-events-none">▼</span>
-                                      </div>
-                                    )}
-                                    <input
-                                      type="number"
-                                      min={0}
-                                      value={reward.amount}
-                                      onChange={e => handleRewardChange(reward, 'amount', e.target.value)}
-                                      className="bg-sect-ink/80 text-sect-jade text-[10px] rounded-md px-2 py-1 border border-sect-gold/30 focus:border-sect-gold/60 focus:ring-1 focus:ring-sect-gold/30 outline-none w-14 text-center"
-                                    />
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })()}
-                </div>
-
-                {/* 底部：时间信息 + 立即举办 */}
-                <div className="flex items-center justify-between pt-2 border-t border-sect-gold/10">
-                  <div className="text-[10px] text-sect-jade/40 leading-tight">
-                    <div>{lastYear > 0 ? `上次：第${lastYear}年` : '尚未举办过'}</div>
-                    {freqConfig.enabled && (
-                      <div>
-                        {inCooldown
-                          ? `冷却中：第${nextTriggerYear(freq, lastYear, year)}年正月可再次举办`
-                          : `下次自动：第${nextTriggerYear(freq, lastYear, year)}年正月`}
-                      </div>
-                    )}
-                  </div>
-                  <Button
-                    variant="gold"
-                    size="sm"
-                    onClick={() => {
-                      const result = trigger(freq);
-                      if (result) {
-                        setPopupResult(result);
-                      }
-                    }}
-                    disabled={participantCount === 0 || !freqConfig.enabled || inCooldown}
-                  >
-                    <SectIcon name="sword" size={12} strokeWidth={2} />
-                    <span className="ml-1">{inCooldown ? '冷却中' : '立即举办'}</span>
-                  </Button>
-                </div>
-
-                {/* 该频率上次结果 */}
-                {lastResult && (
-                  <TournamentResultView result={lastResult} />
-                )}
-              </div>
-            </div>
+              <span className="inline-flex items-center gap-1">
+                {TournamentFrequencyNames[freq].replace('每', '').replace('一比', '')}
+                <span className={`w-1.5 h-1.5 rounded-full ${cfg.enabled ? 'bg-emerald-400' : 'bg-sect-jade/25'}`} />
+              </span>
+            </button>
           );
         })}
       </div>
+
+      <div className={`p-3 rounded-lg border transition-all ${
+        freqConfig.enabled
+          ? 'border-sect-gold/40 bg-sect-gold/5'
+          : 'border-sect-jade/15 bg-sect-ink-light/20'
+      }`}>
+        {/* 频率标题 + 开关 */}
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <span className="font-display text-sm text-sect-gold">{TournamentFrequencyNames[activeFreq]}</span>
+            <Badge variant={freqConfig.enabled ? 'gold' : 'default'} size="sm">
+              {freqConfig.enabled ? '已开启' : '已关闭'}
+            </Badge>
+          </div>
+          <Button variant="outline" size="sm" onClick={handleToggleEnabled}>
+            {freqConfig.enabled ? '关闭' : '开启'}
+          </Button>
+        </div>
+
+        {/* 分组 */}
+        <div className="mb-2">
+          <div className="text-[11px] text-sect-jade/60 mb-1.5 flex items-center gap-1.5">
+            <SectIcon name="disciple" size={12} strokeWidth={1.8} className="text-sect-gold/70" />
+            比拼分组
+          </div>
+          <div className="flex gap-1 flex-wrap">
+            <button
+              disabled={!freqConfig.enabled}
+              onClick={() => handleDivisionChange(ALL_DIVISION)}
+              className={`px-2 py-0.5 text-[11px] rounded transition-all ${
+                freqConfig.division.kind === 'all'
+                  ? 'bg-sect-gold/20 text-sect-gold border border-sect-gold/40'
+                  : 'text-sect-jade/60 hover:text-sect-jade hover:bg-sect-jade/10 border border-transparent'
+              } ${!freqConfig.enabled ? 'opacity-40 cursor-not-allowed' : ''}`}
+            >
+              全员
+            </button>
+            {REALM_DIVISIONS.map(d => (
+              <button
+                key={`realm-${d.value}`}
+                disabled={!freqConfig.enabled}
+                onClick={() => handleDivisionChange(d)}
+                className={`px-2 py-0.5 text-[11px] rounded transition-all ${
+                  freqConfig.division.kind === 'realm' && freqConfig.division.value === d.value
+                    ? 'bg-sect-gold/20 text-sect-gold border border-sect-gold/40'
+                    : 'text-sect-jade/60 hover:text-sect-jade hover:bg-sect-jade/10 border border-transparent'
+                } ${!freqConfig.enabled ? 'opacity-40 cursor-not-allowed' : ''}`}
+              >
+                {RealmNames[d.value]}
+              </button>
+            ))}
+            {STATUS_DIVISIONS.map(d => (
+              <button
+                key={`status-${d.value}`}
+                disabled={!freqConfig.enabled}
+                onClick={() => handleDivisionChange(d)}
+                className={`px-2 py-0.5 text-[11px] rounded transition-all ${
+                  freqConfig.division.kind === 'status' && freqConfig.division.value === d.value
+                    ? 'bg-sect-gold/20 text-sect-gold border border-sect-gold/40'
+                    : 'text-sect-jade/60 hover:text-sect-jade hover:bg-sect-jade/10 border border-transparent'
+                } ${!freqConfig.enabled ? 'opacity-40 cursor-not-allowed' : ''}`}
+              >
+                {DiscipleStatusNames[d.value]}
+              </button>
+            ))}
+          </div>
+          <div className="text-[10px] text-sect-jade/40 mt-1">
+            「{getDivisionName(freqConfig.division)}」· 可参赛 {participantCount} 人
+            {participantCount > 0 && ` · 最强 ${ourBest.toLocaleString()}`}
+          </div>
+        </div>
+
+        {/* 战况预告 */}
+        {freqConfig.enabled && participantCount > 0 && (
+          <div className="mb-2 px-2 py-1.5 rounded bg-sect-ink-light/30 border border-sect-gold/15 text-[10px] leading-relaxed">
+            {isSect ? (
+              <span className="text-sect-jade/70">
+                冠军奖赏：{championRewards.length > 0
+                  ? championRewards.map(r => rewardToText(r)).join('、')
+                  : '无'}
+                {estStoneCost > 0 && <span className="text-amber-400/80">（预计支出 {estStoneCost} 灵石）</span>}
+                {shortage && <span className="text-red-400"> · {shortage}</span>}
+              </span>
+            ) : (
+              <span className="text-sect-jade/70">
+                对手约 {opponentRange[0].toLocaleString()} ~ {opponentRange[1].toLocaleString()} 战力
+                {verdict && <span className={`ml-1 ${verdict.tone}`}>· {verdict.text}</span>}
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* 奖励配置 */}
+        <div className="mb-2">
+          <div className="flex items-center justify-between mb-1.5">
+            <div className="text-[11px] text-sect-jade/60 flex items-center gap-1.5">
+              <SectIcon name="trophy" size={12} strokeWidth={1.8} className="text-sect-gold/70" />
+              {isSect ? '获胜奖励（可从库存增删）' : '本届奖励（每年自动生成）'}
+            </div>
+            {isSect && (
+              <button
+                disabled={!freqConfig.enabled}
+                onClick={() => setEditorOpen(o => !o)}
+                className={`text-[11px] text-sect-gold/80 hover:text-sect-gold ${!freqConfig.enabled ? 'opacity-40 cursor-not-allowed' : ''}`}
+              >
+                {editorOpen ? '收起编辑' : '编辑'}
+              </button>
+            )}
+          </div>
+
+          {(() => {
+            const rewards = isSect ? freqConfig.rewards : generateInterSectRewards(activeFreq, year);
+            return (
+              <div className="space-y-1">
+                {([1, 2, 3] as const).map(rank => {
+                  const rows = rewards
+                    .map((r, i) => ({ r, i }))
+                    .filter(x => x.r.rank === rank);
+                  return (
+                    <div key={rank} className="flex items-start gap-2 text-[11px]">
+                      <span className={`${RANK_COLORS[rank]} font-medium w-10 shrink-0`}>{RANK_LABELS[rank]}</span>
+                      <div className="flex-1 min-w-0 space-y-1">
+                        {rows.length === 0 && <span className="text-sect-jade/40 italic">无奖励</span>}
+                        {rows.map(({ r, i }) => (
+                          editorOpen && isSect ? (
+                            <div key={i} className="flex items-center gap-1.5 flex-wrap">
+                              <SelectShell>
+                                <select
+                                  value={r.type}
+                                  onChange={e => handleRewardChange(i, 'type', e.target.value)}
+                                  className="appearance-none bg-sect-ink/80 text-sect-jade text-[10px] rounded-md px-2 py-1 pr-5 border border-sect-gold/30 outline-none cursor-pointer"
+                                >
+                                  {REWARD_TYPES.map(t => (
+                                    <option key={t} value={t}>{TournamentRewardTypeNames[t]}</option>
+                                  ))}
+                                </select>
+                              </SelectShell>
+                              {r.type === 'pill' && (
+                                <SelectShell>
+                                  <select
+                                    value={r.pillType ?? 'foundation_pill'}
+                                    onChange={e => handleRewardChange(i, 'pillType', e.target.value)}
+                                    className="appearance-none bg-sect-ink/80 text-sect-jade text-[10px] rounded-md px-2 py-1 pr-5 border border-sect-gold/30 outline-none cursor-pointer"
+                                  >
+                                    {PILL_OPTIONS.map(p => <option key={p} value={p}>{PillTypeNames[p]}</option>)}
+                                  </select>
+                                </SelectShell>
+                              )}
+                              {r.type === 'talisman' && (
+                                <SelectShell>
+                                  <select
+                                    value={r.talismanType ?? 'fire_talisman'}
+                                    onChange={e => handleRewardChange(i, 'talismanType', e.target.value)}
+                                    className="appearance-none bg-sect-ink/80 text-sect-jade text-[10px] rounded-md px-2 py-1 pr-5 border border-sect-gold/30 outline-none cursor-pointer"
+                                  >
+                                    {TALISMAN_OPTIONS.map(t => <option key={t} value={t}>{TalismanTypeNames[t]}</option>)}
+                                  </select>
+                                </SelectShell>
+                              )}
+                              {r.type === 'artifact' && (
+                                <SelectShell>
+                                  <select
+                                    value={r.artifactType ?? 'flying_sword'}
+                                    onChange={e => handleRewardChange(i, 'artifactType', e.target.value)}
+                                    className="appearance-none bg-sect-ink/80 text-sect-jade text-[10px] rounded-md px-2 py-1 pr-5 border border-sect-gold/30 outline-none cursor-pointer"
+                                  >
+                                    {ARTIFACT_OPTIONS.map(a => <option key={a} value={a}>{ArtifactTypeNames[a]}</option>)}
+                                  </select>
+                                </SelectShell>
+                              )}
+                              <input
+                                type="number"
+                                min={0}
+                                value={r.amount}
+                                onChange={e => handleRewardChange(i, 'amount', e.target.value)}
+                                className="bg-sect-ink/80 text-sect-jade text-[10px] rounded-md px-2 py-1 border border-sect-gold/30 outline-none w-14 text-center"
+                              />
+                              <button
+                                onClick={() => removeReward(i)}
+                                className="text-[10px] text-red-400/80 hover:text-red-300 px-1"
+                                title="删除该奖励"
+                              >
+                                删除
+                              </button>
+                            </div>
+                          ) : (
+                            <span key={i} className="text-sect-jade/80">{rewardToText(r)}</span>
+                          )
+                        ))}
+                        {editorOpen && isSect && (
+                          <button
+                            onClick={() => addReward(rank)}
+                            className="text-[10px] text-sect-gold/70 hover:text-sect-gold px-1"
+                          >
+                            ＋ 添加奖励
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+                <div className="text-[10px] text-amber-400/60 italic pl-12">
+                  {isSect ? '※ 按实际名次发奖，实物奖赏会交给获奖弟子' : '※ 每年奖励随年份自动变化'}
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+
+        {/* 底部：时间信息 + 立即举办 */}
+        <div className="flex items-center justify-between pt-2 border-t border-sect-gold/10">
+          <div className="text-[10px] text-sect-jade/40 leading-tight">
+            <div>{lastYear > 0 ? `上次：第${lastYear}年` : '尚未举办过'}</div>
+            {freqConfig.enabled && (
+              <div>
+                自动：{nextTriggerLabel(activeFreq, lastYear, year, month)}
+                {month === TournamentFrequencyMonths[activeFreq] && !inCooldown && '（就是本月）'}
+              </div>
+            )}
+            {participantCount === 0 && <div className="text-amber-400/70">该分组暂无可参赛弟子</div>}
+            {noRivals && <div className="text-amber-400/70">天下暂无其他宗门</div>}
+          </div>
+          <Button
+            variant="gold"
+            size="sm"
+            onClick={() => {
+              const result = trigger(activeFreq);
+              if (result) setPopupResult(result);
+            }}
+            disabled={!canHold || participantCount === 0}
+          >
+            <SectIcon name="sword" size={12} strokeWidth={2} />
+            <span className="ml-1">
+              {!freqConfig.enabled ? '已关闭' : noRivals ? '无对手' : inCooldown ? '冷却中' : '立即举办'}
+            </span>
+          </Button>
+        </div>
+
+        {/* 该频率上次结果 */}
+        {lastResult && <TournamentResultView result={lastResult} />}
+      </div>
+
+      {/* 历届榜单 */}
+      {history.length > 0 && (
+        <div className="mt-4">
+          <div className="text-[11px] text-sect-gold/80 mb-1.5 flex items-center gap-1.5">
+            <SectIcon name="trophy" size={12} strokeWidth={1.8} />
+            历届榜单
+          </div>
+          <div className="space-y-1">
+            {history.map(h => (
+              <div key={h.id} className="flex items-center gap-2 text-[10px] px-2 py-1 rounded bg-sect-ink-light/20">
+                <span className="text-sect-jade/40 shrink-0 tabular-nums">{h.date.year}年{h.date.month}月</span>
+                <span className="text-sect-jade/60 shrink-0">{h.divisionName}</span>
+                <span className="flex-1 min-w-0 truncate text-sect-jade/80">
+                  冠军 {h.champion}（{h.championSect}）
+                  {h.ourChampionName && <span className="text-sect-gold/80"> · 本宗夺冠</span>}
+                </span>
+                <span className={`shrink-0 ${h.ourRank > 0 ? 'text-sect-gold/80' : 'text-sect-jade/40'}`}>
+                  {h.ourRank > 0 ? `第${h.ourRank}名` : '未入三甲'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* 手动举办后展示本届大比细节弹窗 */}
       <Modal
@@ -523,9 +543,10 @@ const TournamentResultView: React.FC<{ result: TournamentResult; current?: boole
       <div className="flex items-center gap-3 mb-1.5 text-[11px]">
         <span className="text-sect-jade/60">本宗成绩：</span>
         <span className={`font-display font-bold ${rankColor}`}>{rankText}</span>
-        {result.ourChampionName && (
-          <span className="text-sect-jade/70 truncate">· {result.ourChampionName}</span>
+        {result.ourRank > 0 && (result.ourPodiumName || result.ourChampionName) && (
+          <span className="text-sect-jade/70 truncate">· {result.ourPodiumName ?? result.ourChampionName}</span>
         )}
+        <span className="text-[10px] text-sect-jade/40 ml-auto">参赛 {result.ourParticipantCount} 人</span>
       </div>
 
       {/* 三甲 */}
@@ -547,6 +568,17 @@ const TournamentResultView: React.FC<{ result: TournamentResult; current?: boole
       {result.rewardSummary.length > 0 && (
         <div className="text-[10px] text-green-400 mb-1.5">
           奖励：{result.rewardSummary.join('、')}
+        </div>
+      )}
+      {result.payout && (result.payout.spiritStones > 0 || result.payout.pills > 0 || result.payout.talismans > 0 || result.payout.artifacts > 0) && (
+        <div className="text-[10px] text-amber-400/80 mb-1.5">
+          实际发放：
+          {[
+            result.payout.spiritStones > 0 ? `灵石 ${result.payout.spiritStones}` : '',
+            result.payout.pills > 0 ? `丹药 ${result.payout.pills}` : '',
+            result.payout.talismans > 0 ? `符箓 ${result.payout.talismans}` : '',
+            result.payout.artifacts > 0 ? `法器 ${result.payout.artifacts}` : '',
+          ].filter(Boolean).join('、')}
         </div>
       )}
 

@@ -11,7 +11,7 @@ import {
 } from '@/types/game';
 import type { OtherSect, SectAlignment, SectRelation, DiplomaticStatus, Trial, TrialDifficulty } from '@/types/game';
 import type { Disciple } from '@/types/disciple';
-import { calculateDiscipleCombatPower, calculateSectCombatPower } from '@/utils/gameLogic';
+import { calculateDiscipleCombatPower, calculateSectCombatPower, estimateTrialSuccessRate } from '@/utils/gameLogic';
 import { getRealmDisplay, DiscipleStatusNames } from '@/types/disciple';
 import { EXPLORATION_REGIONS } from '@/data/exploration';
 import { Compass, Lock, Map } from 'lucide-react';
@@ -82,6 +82,15 @@ const WorldSectCard: React.FC<{ sect: OtherSect; ourCombatPower: number }> = ({ 
   const powerRatio = ourCombatPower / Math.max(1, sect.combatPower);
   const powerLabel = powerRatio >= 1.3 ? '可压制' : powerRatio >= 1.0 ? '势均力敌' : powerRatio >= 0.5 ? '弱于对方' : '远弱于对方';
   const powerColor = powerRatio >= 1.3 ? 'text-[var(--jade-light)]' : powerRatio >= 1.0 ? 'text-[var(--gold-300)]' : 'text-red-400';
+
+  // 行动预估：与 subjugateSect / giftSpiritStonesToSect 的结算公式保持一致
+  const winRate = Math.min(0.95, 0.5 + (powerRatio - 1) * 0.3);
+  const defeatLoss = Math.floor(sect.combatPower * 0.05);
+  const giftNum = Number(giftAmount) || 0;
+  const giftGain = Math.min(20, Math.floor(giftNum / 50) * 5);
+  const giftAfter = Math.max(0, Math.min(100, fav + giftGain));
+  // 讨伐成功后好感 -20，因此上贡按战败后的好感估算
+  const tributePerMonth = Math.floor(sect.combatPower * 0.05 * (Math.max(0, fav - 20) / 100));
 
   return (
     <div className="world-sect-card">
@@ -208,7 +217,35 @@ const WorldSectCard: React.FC<{ sect: OtherSect; ourCombatPower: number }> = ({ 
                 赠送
               </button>
             </div>
-            <div className="text-[9px] text-[var(--ink-500)] mt-0.5">每50灵石+5好感，上限+20</div>
+            <div className="text-[9px] text-[var(--ink-500)] mt-0.5">
+              每50灵石+5好感，上限+20
+              {giftNum > 0 && `（本次预计 +${giftGain} → ${giftAfter}）`}
+            </div>
+          </div>
+
+          {/* 行动预估：把胜率与收支提前摊开，方便决策 */}
+          <div className="text-[9px] leading-relaxed rounded bg-black/25 px-2 py-1.5 border border-[var(--gold-300)]/10">
+            <div className="flex justify-between">
+              <span className="text-[var(--ink-400)]">讨伐胜率</span>
+              <span className={powerRatio >= 1.3 ? 'text-[var(--jade-light)]' : 'text-orange-400'}>
+                {Math.round(winRate * 100)}%
+                {powerRatio < 1.3 && <span className="text-[var(--ink-500)]">（战力需≥130%）</span>}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-[var(--ink-400)]">胜 / 败</span>
+              <span className="text-[var(--ink-300)]">+100灵石+10声望 / -{defeatLoss}灵石-5声望</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-[var(--ink-400)]">附庸后上贡</span>
+              <span className="text-[var(--gold-300)]">约 {tributePerMonth} 灵石/月（好感≥30时）</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-[var(--ink-400)]">同盟条件</span>
+              <span className={fav >= 70 && powerRatio >= 0.5 ? 'text-[var(--jade-light)]' : 'text-[var(--ink-500)]'}>
+                好感≥70 且 战力≥50%
+              </span>
+            </div>
           </div>
 
           {/* 侮辱 */}
@@ -409,6 +446,19 @@ const TrialCard: React.FC<{ trial: Trial }> = ({ trial }) => {
         </div>
       </div>
 
+      {/* 成功率预估：与结算同一公式；进行中按实际派遣弟子，可派遣时按建议战力 */}
+      <div className="flex justify-between text-[9px] text-[var(--ink-400)] mb-2">
+        <span>
+          成功率{' '}
+          <span className="text-[var(--jade-light)] font-medium">
+            {Math.round(estimateTrialSuccessRate(trial, assignedDisciple ?? null) * 100)}%
+          </span>
+        </span>
+        <span>
+          失败后受伤 <span className="text-orange-400">{Math.round(trial.injuryRate * 100)}%</span>
+        </span>
+      </div>
+
       {/* 奖励预览 */}
       <div className="text-[9px] text-[var(--ink-400)] mb-2">
         <span className="text-[var(--gold-300)]">奖励：</span>{trial.rewards.description}
@@ -477,8 +527,13 @@ const TrialCard: React.FC<{ trial: Trial }> = ({ trial }) => {
                       {getRealmDisplay(d)} · {DiscipleStatusNames[d.status]}
                     </div>
                   </div>
-                  <div className={`text-[10px] font-bold ${powerOk ? 'text-[var(--jade-light)]' : 'text-orange-400'}`}>
-                    {power}
+                  <div className="text-right shrink-0">
+                    <div className={`text-[10px] font-bold ${powerOk ? 'text-[var(--jade-light)]' : 'text-orange-400'}`}>
+                      {power}
+                    </div>
+                    <div className="text-[8.5px] text-[var(--ink-400)]">
+                      成功率 {Math.round(estimateTrialSuccessRate(trial, d) * 100)}%
+                    </div>
                   </div>
                 </button>
               );
@@ -600,6 +655,8 @@ const ExplorationSection: React.FC<ExplorationSectionProps> = ({
         {regions.map(region => {
           const isUnlocked = unlockedRegions.includes(region.id);
           const isActive = activeExplorations.some(t => t.type === region.trialType);
+          // 自动探索默认开启，只有显式关闭过才显示为关
+          const autoOn = autoExploreRegions[region.id] !== false;
           return (
             <Card key={region.id} className={`p-4 ${!isUnlocked ? 'opacity-50' : ''}`}>
               <div className="flex items-start justify-between mb-3">
@@ -625,18 +682,18 @@ const ExplorationSection: React.FC<ExplorationSectionProps> = ({
                   <button
                     onClick={() => toggleAutoExplore(region.id)}
                     className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] border transition-all ${
-                      autoExploreRegions[region.id]
+                      autoOn
                         ? 'bg-[rgba(74,122,107,0.2)] border-[var(--jade-light)]/50 text-[var(--jade-light)]'
                         : 'border-[var(--ink-400)]/30 text-[var(--ink-300)] hover:border-[var(--jade-light)]/30'
                     }`}
-                    title={autoExploreRegions[region.id] ? '自动探索已开启' : '点击开启自动探索'}
+                    title={autoOn ? '自动探索已开启' : '点击开启自动探索'}
                   >
-                    <span className={autoExploreRegions[region.id] ? '' : 'opacity-40'}>自动</span>
+                    <span className={autoOn ? '' : 'opacity-40'}>自动</span>
                     <span className={`inline-block w-6 h-3 rounded-full relative transition-all ${
-                      autoExploreRegions[region.id] ? 'bg-[var(--jade-light)]/60' : 'bg-[var(--ink-400)]/30'
+                      autoOn ? 'bg-[var(--jade-light)]/60' : 'bg-[var(--ink-400)]/30'
                     }`}>
                       <span className={`absolute top-0.5 w-2 h-2 rounded-full bg-white transition-all ${
-                        autoExploreRegions[region.id] ? 'left-3.5' : 'left-0.5'
+                        autoOn ? 'left-3.5' : 'left-0.5'
                       }`} />
                     </span>
                   </button>

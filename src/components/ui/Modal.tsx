@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useId } from 'react';
 import { cn } from '@/lib/utils';
 import { X } from 'lucide-react';
+import { useModalPause } from '@/hooks/useModalPause';
 
 interface ModalProps {
   isOpen: boolean;
@@ -19,6 +20,10 @@ export const Modal: React.FC<ModalProps> = ({
   size = 'md',
   className,
 }) => {
+  // 所有模态弹窗在打开期间统一暂停游戏时间
+  const modalId = useId();
+  useModalPause(modalId, isOpen);
+
   if (!isOpen) return null;
   
   const sizeClasses = {

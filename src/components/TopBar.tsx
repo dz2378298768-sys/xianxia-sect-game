@@ -5,10 +5,11 @@ import { useUIStore } from '@/store/uiStore';
 import { SectIcon } from '@/components/icons/SectIcons';
 import { getSlots, SAVE_SLOT_COUNT, type SaveSlotMeta } from '@/utils/saveSlots';
 import { isMusicEnabled, isSfxEnabled, setMusicEnabled, setSfxEnabled } from '@/utils/audio';
+import { useModalPause } from '@/hooks/useModalPause';
 
 export const TopBar: React.FC = () => {
   const { sectName, sectLevel, reputation, spiritStones, karma, disciples, buildings, herbInventory, ironInventory, paperInventory, setReturnToMenuConfirm, newGame, saveToSlot, redeemCodeUsed, useRedeemCode, grantAdReward, adRewardTotal, pendingEvents, openEvent } = useGameStore();
-  const { sectInfoOpen, toggleSectInfo } = useUIStore();
+  const { sectInfoOpen, toggleSectInfo, setShowOpeningGuide } = useUIStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const [showSavePicker, setShowSavePicker] = useState(false);
   const [slots, setSlots] = useState<(SaveSlotMeta | null)[]>(new Array(SAVE_SLOT_COUNT).fill(null));
@@ -22,6 +23,11 @@ export const TopBar: React.FC = () => {
 
   const refreshSlots = () => setSlots(getSlots());
   useEffect(() => { refreshSlots(); }, [showSavePicker]);
+
+  // 存档/兑换码/设置等全屏弹窗打开时暂停时间
+  useModalPause('topbar-save', showSavePicker);
+  useModalPause('topbar-redeem', showRedeemCode);
+  useModalPause('topbar-settings', showSettings);
 
   const handleSave = (slotIndex: number) => {
     saveToSlot(slotIndex);
@@ -107,6 +113,9 @@ export const TopBar: React.FC = () => {
                 </button>
                 <button className="text-[11.5px] text-left px-2 py-2 rounded hover:bg-sect-ink-light/50 text-sect-jade" onClick={() => { setMenuOpen(false); grantAdReward(); }} disabled={adRewardTotal <= 0}>
                   广告奖励({adRewardTotal})
+                </button>
+                <button className="text-[11.5px] text-left px-2 py-2 rounded hover:bg-sect-ink-light/50 text-sect-jade" onClick={() => { setMenuOpen(false); setShowOpeningGuide(true); }}>
+                  引路篇（新手引导）
                 </button>
                 <button className="text-[11.5px] text-left px-2 py-2 rounded hover:bg-sect-ink-light/50 text-sect-jade" onClick={() => { setMenuOpen(false); setShowSettings(true); }}>
                   设置

@@ -26,6 +26,8 @@ interface BuildingEconomyCardProps {
   output: EconomyOutputView;
   maintenance: number;
   upgradeCost: { spiritStones: number; reputation?: number } | null;
+  /** 建筑变故/天灾的临时产出倍率（1 = 不受影响），用于解释展示数值为何被折算 */
+  effectMultiplier?: number;
 }
 
 type Tone = 'red' | 'green' | 'orange' | 'blue';
@@ -87,7 +89,7 @@ function Section({ title, tone, rows }: { title: string; tone: Tone; rows: strin
  * 固定四块：建筑消耗 / 建筑产出 / 弟子消耗 / 弟子获得
  * 所有数值均从当前建筑等级、配置与运行时产出推导，避免各堂口各写一套。
  */
-export function BuildingEconomyCard({ building, output, maintenance, upgradeCost }: BuildingEconomyCardProps) {
+export function BuildingEconomyCard({ building, output, maintenance, upgradeCost, effectMultiplier = 1 }: BuildingEconomyCardProps) {
   const level = building.level;
   const isActive = building.status === 'active';
   const bonus = BUILDING_CONTRIBUTION_BONUS[building.type] ?? 0;
@@ -164,13 +166,17 @@ export function BuildingEconomyCard({ building, output, maintenance, upgradeCost
   } else {
     outputRows.push('建筑关闭，本月无产出');
   }
+  if (isActive && effectMultiplier !== 1) {
+    outputRows.unshift(`宗门变故：本月产出 ×${effectMultiplier}`);
+  }
   if (outputRows.length === 0) outputRows.push('无资源产出');
 
   // ===== 弟子消耗 =====
   const discipleCostRows: string[] = [];
   switch (building.type) {
     case 'lecture_hall':
-      discipleCostRows.push(`听讲 -${Math.abs(bonus)} 贡献/月`);
+      // 讲经堂只扣固定的听讲费，弟子本身仍按身份获得贡献（净额通常为正）
+      discipleCostRows.push(`听讲 -${Math.abs(bonus)} 贡献/月（身份贡献另计）`);
       break;
     case 'training_ground':
       discipleCostRows.push(`演武 -${training.cost} 贡献/月`);

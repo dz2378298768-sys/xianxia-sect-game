@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { useGameStore } from './gameStore';
 import { GAME_EVENT_MAP } from '@/data/events';
-import { MONTH_DURATION_MS, EVENT_CHECK_INTERVAL_MS } from './clockStore';
+import { MONTH_DURATION_MS, DAY_DURATION_MS, WORLD_TICK_INTERVAL_MS, WORLD_TICKS_PER_MONTH } from './clockStore';
 
 /** 确定性伪随机，避免长跑测试抖动 */
 function makeRng(seed: number) {
@@ -54,8 +54,10 @@ describe('长跑回归：36 个月', () => {
         if (!useGameStore.getState().sellShopItem('material:灵草').success) break;
       }
 
-      // 模拟实时的月度事件检定
-      useGameStore.getState().checkEventTrigger();
+      // 模拟实时的世界事件节拍（一月 6 次）
+      for (let tick = 0; tick < WORLD_TICKS_PER_MONTH; tick++) {
+        useGameStore.getState().tickWorldEvents();
+      }
       const after = useGameStore.getState();
 
       const abs = after.year * 12 + after.month;
@@ -103,7 +105,10 @@ describe('长跑回归：36 个月', () => {
 });
 
 describe('事件节奏参数', () => {
-  it('事件检定间隔等于 1 个游戏月，保证每月约 45% 触发率', () => {
-    expect(EVENT_CHECK_INTERVAL_MS).toBe(MONTH_DURATION_MS);
+  it('世界事件节拍每 5 日一次，一月共 6 次，事件散布在整月', () => {
+    expect(WORLD_TICK_INTERVAL_MS).toBe(DAY_DURATION_MS * 5);
+    expect(WORLD_TICKS_PER_MONTH).toBe(6);
+    // 节拍必须能整除月长，否则月内节拍数会漂移
+    expect(MONTH_DURATION_MS % WORLD_TICK_INTERVAL_MS).toBe(0);
   });
 });

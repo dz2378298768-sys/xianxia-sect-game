@@ -1,6 +1,7 @@
 import React from 'react';
 import { useGameStore } from '@/store/gameStore';
 import { Swords, Scale, UserCheck, UserX } from 'lucide-react';
+import { useModalPause } from '@/hooks/useModalPause';
 
 const choiceIcons = [Swords, Scale, UserCheck, UserX];
 
@@ -13,12 +14,19 @@ export const ChoiceEventModal: React.FC = () => {
   const reportView = useGameStore(s => s.reportView);
   const resolveChoiceEvent = useGameStore(s => s.resolveChoiceEvent);
 
+  // 分支选择需要玩家决策，期间暂停时间
+  useModalPause('choice-event', !!choiceEvent && !reportView);
+
   // 报告弹窗优先展示，分支事件等报告关闭后再出现，避免同时弹出
   if (!choiceEvent || reportView) return null;
 
   const handleChoice = (index: number) => {
     resolveChoiceEvent(index);
   };
+
+  // 默认选项：配置里标记的下标，缺省取第一项；弹窗里打「默认」标记并支持一键采用
+  const defaultIndex = Math.min(choiceEvent.defaultIndex ?? 0, choiceEvent.choices.length - 1);
+  const defaultChoice = choiceEvent.choices[defaultIndex];
 
   return (
     <div
@@ -70,6 +78,12 @@ export const ChoiceEventModal: React.FC = () => {
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium" style={{ color: 'var(--gold-200)' }}>
                       {choice.label}
+                      {i === defaultIndex && (
+                        <span className="ml-1.5 align-middle text-[9px] px-1 py-0.5 rounded"
+                          style={{ border: '1px solid rgba(212,168,87,0.45)', color: 'rgba(232,199,122,0.9)' }}>
+                          默认
+                        </span>
+                      )}
                     </div>
                     <div className="text-[10px] mt-0.5" style={{ color: 'var(--ink-300)' }}>
                       {choice.description}
@@ -97,6 +111,16 @@ export const ChoiceEventModal: React.FC = () => {
             );
           })}
         </div>
+
+        {/* 一键采用默认选项：只做决定不做纠结时的高频入口 */}
+        <button
+          type="button"
+          onClick={() => handleChoice(defaultIndex)}
+          className="w-full text-[10.5px] py-1.5 rounded transition-colors"
+          style={{ border: '1px dashed rgba(212,168,87,0.35)', color: 'var(--ink-300)' }}
+        >
+          按默认选项处理（{defaultChoice.label}）
+        </button>
       </div>
     </div>
   );

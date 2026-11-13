@@ -214,6 +214,25 @@ export function computeMaintenance(type: string, level: number): number {
   return Math.round(raw * MAINTENANCE_MONTHLY_SCALE);
 }
 
+/**
+ * 弟子月俸基准（灵石/月，按身份）。
+ * 与建筑维护同一套月度折算：汇总全宗后乘 1/3 再取整，因此单人展示值为近似。
+ */
+export const DISCIPLE_STIPEND_BASE: Record<DiscipleStatus, number> = {
+  mortal: 0,
+  servant: 2,
+  outer: 5,
+  inner: 12,
+  core: 25,
+  elder: 50,
+};
+
+/** 全宗弟子月俸（与月末结算同一口径：先汇总，再乘月度折算系数，最后取整） */
+export function computeDiscipleStipend(disciples: Disciple[]): number {
+  const raw = disciples.reduce((sum, d) => sum + (DISCIPLE_STIPEND_BASE[d.status] || 0), 0);
+  return Math.round(raw * MAINTENANCE_MONTHLY_SCALE);
+}
+
 // 各境界基础修炼速度（修为/月）—— 按普通天赋（根骨50/三灵根60品质/凡人体质）设计：
 //   凡人 6 月/阶段，炼气 6 月/阶段，筑基 12 月/阶段，金丹 18 月/阶段，元婴 24 月/阶段
 // 索引对应 RealmOrder: 0=mortal, 1=qi, 2=foundation, 3=golden, 4=nascent, 5=spirit

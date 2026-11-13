@@ -26,7 +26,7 @@ export const ReportBadge: React.FC = () => {
     .find(kind => unreadReports[kind] && items.some(i => i.kind === kind && i.available));
 
   return (
-    <div className="absolute right-2 z-[19] flex flex-col items-end gap-1" style={{ bottom: 84 }}>
+    <div className="absolute left-2 z-[19] flex flex-col items-start gap-1" style={{ bottom: 84 }}>
       {pendingEvents.length > 0 && (
         <button
           onClick={() => openEvent(pendingEvents[0].eventId)}

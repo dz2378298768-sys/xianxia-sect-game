@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { autoAssignBuilding, autoAssignManagers, autoLearnTechniqueOnBreakthrough, generateBuildingEvents, processDiscipleDepartures, calculateSectCombatPower, getResidenceCultivationBonus, MAINTENANCE_COST_TABLE } from './gameLogic';
+import { autoAssignBuilding, autoAssignManagers, autoLearnTechniqueOnBreakthrough, generateBuildingEvents, processDiscipleDepartures, calculateSectCombatPower, getResidenceCultivationBonus, MAINTENANCE_COST_TABLE, getBuildingEffectMultiplier, getCultivationEffectBonus, scaleBuildingOutput, EFFECT_CULTIVATION_BONUS_ALL, EFFECT_CULTIVATION_BONUS_INNER } from './gameLogic';
+import type { SectActiveEffect } from '@/types/game';
 import { BUILDING_CONFIGS } from '@/data/buildings';
 import type { Building, BuildingType } from '@/types/building';
 import type { BookConfig, BookTier, BookType } from '@/data/buildings';
@@ -593,5 +594,61 @@ describe('BUILDING_CONFIGS — 升级费用无“首次免费”档位', () => {
     if (config.maxLevel <= 10) {
       expect(config.upgradeCosts).toHaveLength(config.maxLevel - 1);
     }
+  });
+});
+
+// 建筑变故 / 天灾的临时效果（产出倍率、修炼加成、展示折算）
+describe('临时宗门效果', () => {
+  const makeEffect = (over: Partial<SectActiveEffect> = {}): SectActiveEffect => ({
+    id: 'e1', sourceId: 'src', title: '测试变故', kind: 'building',
+    buildingType: 'pill_hall', outputMultiplier: 1, cultivationBonus: 0,
+    cultivationScope: null, remainingMonths: 1, ...over,
+  });
+
+  it('无生效效果时产出倍率为 1', () => {
+    expect(getBuildingEffectMultiplier(undefined, 'pill_hall')).toBe(1);
+    expect(getBuildingEffectMultiplier([], 'pill_hall')).toBe(1);
+  });
+
+  it('只作用于对应建筑类型，其他建筑不受影响', () => {
+    const effects = [makeEffect({ outputMultiplier: 2 })];
+    expect(getBuildingEffectMultiplier(effects, 'pill_hall')).toBe(2);
+    expect(getBuildingEffectMultiplier(effects, 'servant_hall')).toBe(1);
+  });
+
+  it('天灾（buildingType=null）影响所有建筑，多效果相乘并有下限', () => {
+    const effects = [
+      makeEffect({ id: 'e1', outputMultiplier: 0.5, buildingType: null }),
+      makeEffect({ id: 'e2', outputMultiplier: 0.5, buildingType: null }),
+    ];
+    // 0.25 为下限，避免连续减产把建筑产出压到接近 0
+    expect(getBuildingEffectMultiplier(effects, 'pill_hall')).toBe(0.25);
+    expect(getBuildingEffectMultiplier(effects, 'forge_hall')).toBe(0.25);
+  });
+
+  it('修炼加成：全宗 vs 内门及以上', () => {
+    const all = [makeEffect({ cultivationScope: 'all', cultivationBonus: EFFECT_CULTIVATION_BONUS_ALL })];
+    expect(getCultivationEffectBonus(all, 'servant')).toBe(EFFECT_CULTIVATION_BONUS_ALL);
+    expect(getCultivationEffectBonus(all, 'elder')).toBe(EFFECT_CULTIVATION_BONUS_ALL);
+
+    const inner = [makeEffect({ cultivationScope: 'inner', cultivationBonus: EFFECT_CULTIVATION_BONUS_INNER })];
+    expect(getCultivationEffectBonus(inner, 'servant')).toBe(0);
+    expect(getCultivationEffectBonus(inner, 'outer')).toBe(0);
+    expect(getCultivationEffectBonus(inner, 'inner')).toBe(EFFECT_CULTIVATION_BONUS_INNER);
+  });
+
+  it('展示折算与结算同口径：产出各字段按倍率取整', () => {
+    const output = {
+      spiritStones: 10, herbs: 3, iron: 5, paper: 5, reputation: 2,
+      pills: 0, artifacts: 0, talismans: 0, beasts: 1,
+      breakdown: { managerBonus: 0 },
+    };
+    const scaled = scaleBuildingOutput(output, 1.5);
+    expect(scaled.spiritStones).toBe(15);
+    expect(scaled.herbs).toBe(5); // 4.5 → 5
+    expect(scaled.reputation).toBe(3);
+    expect(scaled.beasts).toBe(2); // 1.5 → 2
+    // 倍率为 1 时原样返回，不影响既有展示
+    expect(scaleBuildingOutput(output, 1)).toBe(output);
   });
 });

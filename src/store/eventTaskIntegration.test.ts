@@ -27,7 +27,7 @@ describe('随机事件与任务 · store 集成', () => {
   beforeEach(resetGame);
 
   it('保底触发事件并进入待处理队列（不主动弹窗）', () => {
-    useGameStore.setState({ eventCheckMisses: 4 });
+    useGameStore.setState({ eventCheckMisses: 10 });
     const pending = useGameStore.getState().checkEventTrigger();
     expect(pending).not.toBeNull();
     expect(useGameStore.getState().activeEventId).toBeNull();
@@ -35,7 +35,7 @@ describe('随机事件与任务 · store 集成', () => {
   });
 
   it('结算事件：写入历史、冷却与事件计数', () => {
-    useGameStore.setState({ eventCheckMisses: 4 });
+    useGameStore.setState({ eventCheckMisses: 10 });
     const pending = useGameStore.getState().checkEventTrigger()!;
     const config = GAME_EVENT_MAP[pending.eventId];
     const res = useGameStore.getState().resolveEvent(pending.eventId, config.choices[0].id);

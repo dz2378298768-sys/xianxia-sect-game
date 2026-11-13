@@ -5,6 +5,7 @@ import { SHOP_CATEGORIES, getShopItemsByCategory } from '@/data/shop';
 import type { ShopCategory, ShopItem } from '@/types/shop';
 import { SectIcon } from '@/components/icons/SectIcons';
 import { Button } from '@/components/ui/Button';
+import { useModalPause } from '@/hooks/useModalPause';
 
 export const ShopPanel: React.FC = () => {
   const showShop = useUIStore(s => s.showShop);
@@ -25,6 +26,9 @@ export const ShopPanel: React.FC = () => {
   const [toast, setToast] = useState<string | null>(null);
 
   const items = useMemo(() => getShopItemsByCategory(activeCategory), [activeCategory]);
+
+  // 商店需要玩家选购，期间暂停时间
+  useModalPause('shop', showShop);
 
   if (!showShop) return null;
 

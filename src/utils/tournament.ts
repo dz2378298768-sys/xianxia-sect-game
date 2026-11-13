@@ -1,12 +1,12 @@
 import type { Disciple } from '@/types/disciple';
 import type { Realm, DiscipleStatus } from '@/types/disciple';
 import { RealmOrder, RealmNames, DiscipleStatusNames } from '@/types/disciple';
-import type { OtherSect } from '@/types/game';
+import type { OtherSect, SectLevel } from '@/types/game';
 import type {
   FrequencyTournamentConfig, TournamentConfig, TournamentDivision, TournamentOpponent,
   TournamentMatch, TournamentResult, TournamentReward, TournamentFrequency,
 } from '@/types/tournament';
-import { TournamentRewardTypeNames, TournamentFrequencyIntervals } from '@/types/tournament';
+import { TournamentRewardTypeNames, TournamentFrequencyIntervals, TournamentFrequencyMonths } from '@/types/tournament';
 import type { PillType } from '@/types/pill';
 import { PillTypeNames } from '@/types/pill';
 import type { TalismanType } from '@/types/talisman';
@@ -56,43 +56,75 @@ function realmCombatRange(realm: Realm): [number, number] {
   return ranges[idx] ?? [50, 200];
 }
 
+// 对手宗门的实力系数：宗门越强，派出的弟子越强
+const SECT_LEVEL_POWER_MUL: Record<SectLevel, number> = {
+  founding: 0.7,
+  known: 0.9,
+  famous: 1.05,
+  dominant: 1.2,
+  eternal: 1.35,
+};
+
+export function sectPowerMultiplier(sect: OtherSect): number {
+  const base = SECT_LEVEL_POWER_MUL[sect.level] ?? 1;
+  // 敌对宗门下手更重，盟友留手；让外交关系在赛场上也有意义
+  const relationMul = sect.relation === 'hostile' ? 1.1 : sect.relation === 'ally' ? 0.92 : 1;
+  return base * relationMul;
+}
+
+/** 供 UI 预告：该分组下对手的战力区间（按在场宗门的最弱/最强实力估算） */
+export function estimateOpponentRange(realm: Realm, sects: OtherSect[]): [number, number] {
+  const [min, max] = realmCombatRange(realm);
+  if (sects.length === 0) return [min, max];
+  const muls = sects.map(sectPowerMultiplier);
+  return [Math.round(min * Math.min(...muls)), Math.round(max * Math.max(...muls))];
+}
+
 // 生成其他宗门的对手弟子
 function generateOpponents(
   sects: OtherSect[],
   division: TournamentDivision,
   count: number,
+  ourRealms: Realm[],
 ): TournamentOpponent[] {
+  if (sects.length === 0) return [];
   const opponents: TournamentOpponent[] = [];
-  // 确定对手境界
-  let realm: Realm;
-  if (division.kind === 'realm') {
-    realm = division.value;
-  } else if (division.kind === 'status') {
-    // 按身份粗略映射到境界
-    const statusRealmMap: Record<DiscipleStatus, Realm> = {
-      mortal: 'mortal',
-      servant: 'mortal',
-      outer: 'qi',
-      inner: 'foundation',
-      core: 'golden',
-      elder: 'nascent',
-    };
-    realm = statusRealmMap[division.value];
-  } else {
-    realm = 'foundation';
-  }
+  const statusRealmMap: Record<DiscipleStatus, Realm> = {
+    mortal: 'mortal',
+    servant: 'mortal',
+    outer: 'qi',
+    inner: 'foundation',
+    core: 'golden',
+    elder: 'nascent',
+  };
 
   for (let i = 0; i < count; i++) {
     const sect = pickRandom(sects);
+    // 确定对手境界：按分组；「全员」按我方参赛者的境界分布随机，避免全场固定筑基期
+    let realm: Realm;
+    if (division.kind === 'realm') realm = division.value;
+    else if (division.kind === 'status') realm = statusRealmMap[division.value];
+    else realm = ourRealms.length > 0 ? pickRandom(ourRealms) : 'foundation';
+
     const [min, max] = realmCombatRange(realm);
     opponents.push({
       name: generateOpponentName(),
       sectName: sect.name,
       realm,
-      combatPower: randomInt(min, max),
+      combatPower: Math.round(randomInt(min, max) * sectPowerMultiplier(sect)),
     });
   }
   return opponents;
+}
+
+// 抽签：随机洗牌，避免"最强对第二强"提前上演决赛
+function shuffle<T>(list: T[]): T[] {
+  const arr = [...list];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
 }
 
 // 单场对战：战力为主，含随机波动
@@ -140,6 +172,7 @@ export function runTournament(params: RunTournamentParams): TournamentResult {
     .map(d => ({
       id: d.id,
       name: d.name,
+      realm: d.realm,
       power: calculateDiscipleCombatPower(d),
     }))
     .sort((a, b) => b.power - a.power);
@@ -149,7 +182,7 @@ export function runTournament(params: RunTournamentParams): TournamentResult {
   if (scope === 'inter-sect') {
     // 对手数量 = 我方参赛数 × 1.5，最少 4
     const oppCount = Math.max(4, Math.ceil(ourParticipants.length * 1.5));
-    opponents = generateOpponents(otherSects, division, oppCount);
+    opponents = generateOpponents(otherSects, division, oppCount, ourParticipants.map(p => p.realm));
   }
 
   // 合并所有参赛者（内部大比时仅我方）
@@ -161,62 +194,100 @@ export function runTournament(params: RunTournamentParams): TournamentResult {
     name: o.name, sectName: o.sectName, power: o.combatPower, isOurs: false,
   }));
 
-  // 按战力排序后进行"淘汰赛"模拟：用战力+随机性两两对战
-  // 为保证名次合理性，采用基于战力的概率晋级
-  let bracket = [...allFighters].sort((a, b) => b.power - a.power);
   const matches: TournamentMatch[] = [];
-  let round = 1;
+  const recordMatch = (a: Fighter, b: Fighter, winner: Fighter, round: number) => {
+    if (!a.isOurs && !b.isOurs) return;
+    const ours = a.isOurs ? a : b;
+    const opp = a.isOurs ? b : a;
+    matches.push({
+      ourName: ours.name,
+      opponentName: opp.name,
+      opponentSectName: opp.sectName,
+      ourPower: ours.power,
+      opponentPower: opp.power,
+      ourWin: ours === winner,
+      round,
+    });
+  };
 
-  // 模拟淘汰直到决出前3
-  while (bracket.length > 3) {
+  // 单场淘汰：抽签后相邻配对，奇数人时末位轮空；一路打到决赛
+  let bracket = shuffle(allFighters);
+  let round = 1;
+  let champion: Fighter | null = null;
+  let runnerUp: Fighter | null = null;
+  // 半决赛（四强进二强那一轮）的败者，用于决出季军
+  let semifinalLosers: Fighter[] = [];
+  // 决赛败者上面单独记；若人数不足 2 则没有名次可排
+  if (bracket.length === 1) {
+    champion = bracket[0];
+  }
+
+  while (bracket.length > 1) {
     const nextRound: Fighter[] = [];
-    for (let i = 0; i < bracket.length - 1; i += 2) {
+    const losers: Fighter[] = [];
+    for (let i = 0; i + 1 < bracket.length; i += 2) {
       const a = bracket[i];
       const b = bracket[i + 1];
       const aWin = runMatch(a.power, b.power);
       const winner = aWin ? a : b;
       const loser = aWin ? b : a;
       nextRound.push(winner);
-
-      // 记录涉及我方弟子的对战
-      if (a.isOurs || b.isOurs) {
-        const ours = a.isOurs ? a : b;
-        const opp = a.isOurs ? b : a;
-        matches.push({
-          ourName: ours.name,
-          opponentName: opp.name,
-          opponentSectName: opp.sectName,
-          ourPower: ours.power,
-          opponentPower: opp.power,
-          ourWin: ours === winner,
-          round,
-        });
-      }
+      losers.push(loser);
+      recordMatch(a, b, winner, round);
     }
     // 奇数个：最后一位轮空
     if (bracket.length % 2 === 1) {
       nextRound.push(bracket[bracket.length - 1]);
     }
+
+    if (nextRound.length === 1) {
+      // 本轮即决赛
+      champion = nextRound[0];
+      runnerUp = losers[0] ?? null;
+      break;
+    }
+    if (nextRound.length === 2) {
+      semifinalLosers = losers;
+    }
     bracket = nextRound;
     round++;
   }
 
-  // 最终 bracket 为前3名（按本模拟结果）
-  const topThreeFighters = bracket.slice(0, 3);
-  const topThree = topThreeFighters.map((f, idx) => ({
+  // 季军：两名半决赛败者加赛一场；只有一名时直接定为季军
+  let third: Fighter | null = null;
+  const bronzeCandidates = semifinalLosers.filter(f => f !== champion && f !== runnerUp);
+  if (bronzeCandidates.length >= 2) {
+    const [a, b] = bronzeCandidates;
+    const aWin = runMatch(a.power, b.power);
+    const winner = aWin ? a : b;
+    third = winner;
+    recordMatch(a, b, winner, round);
+  } else if (bronzeCandidates.length === 1) {
+    third = bronzeCandidates[0];
+  }
+
+  const podium = [champion, runnerUp, third].filter((f): f is Fighter => f !== null);
+  const topThree = podium.map(f => ({
     name: f.name,
     sectName: f.sectName,
     isOurs: f.isOurs,
+    id: f.ourId,
   }));
 
-  // 我方名次
+  // 我方名次与冠军身份
   let ourRank = 0;
+  let ourChampionId: string | null = null;
   let ourChampionName: string | null = null;
-  for (let i = 0; i < topThreeFighters.length; i++) {
-    if (topThreeFighters[i].isOurs) {
-      ourRank = i + 1;
-      if (i === 0) ourChampionName = topThreeFighters[i].name;
-      break;
+  let ourPodiumId: string | null = null;
+  let ourPodiumName: string | null = null;
+  const ourIndex = podium.findIndex(f => f.isOurs);
+  if (ourIndex >= 0) {
+    ourRank = ourIndex + 1;
+    ourPodiumId = podium[ourIndex].ourId ?? null;
+    ourPodiumName = podium[ourIndex].name;
+    if (ourIndex === 0) {
+      ourChampionId = ourPodiumId;
+      ourChampionName = ourPodiumName;
     }
   }
 
@@ -233,15 +304,19 @@ export function runTournament(params: RunTournamentParams): TournamentResult {
     division,
     date,
     ourParticipantCount: ourParticipants.length,
+    ourParticipantIds: ourParticipants.map(p => p.id),
+    ourChampionId,
     ourChampionName,
+    ourPodiumId,
+    ourPodiumName,
     ourRank,
     topThree,
-    matches: matches.slice(-6), // 仅保留最近6场关键对战
+    matches: matches.slice(-8), // 仅保留最近 8 场关键对战
     rewardSummary,
   };
 }
 
-// 判断是否到本次大比时间（指定频率配置版本）
+// 判断是否到本次大比时间（指定频率配置版本）：各频率在自己的月份自动举办
 export function shouldTournamentTrigger(
   frequency: TournamentFrequency,
   freqConfig: FrequencyTournamentConfig,
@@ -250,11 +325,22 @@ export function shouldTournamentTrigger(
   lastTriggerYear: number,
 ): boolean {
   if (!freqConfig.enabled) return false;
-  // 仅在每年1月触发
-  if (month !== 1) return false;
+  if (month !== TournamentFrequencyMonths[frequency]) return false;
   const interval = TournamentFrequencyIntervals[frequency];
   if (lastTriggerYear <= 0) return true; // 从未举办过
   return year - lastTriggerYear >= interval;
+}
+
+// 玩家手动举办：不受月份限制，只服从冷却（自动举办仍按各自月份）
+export function canManuallyHoldTournament(
+  frequency: TournamentFrequency,
+  freqConfig: FrequencyTournamentConfig,
+  year: number,
+  lastTriggerYear: number,
+): boolean {
+  if (!freqConfig.enabled) return false;
+  if (lastTriggerYear <= 0) return true;
+  return year - lastTriggerYear >= TournamentFrequencyIntervals[frequency];
 }
 
 // 单个频率默认配置

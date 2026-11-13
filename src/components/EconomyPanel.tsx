@@ -6,7 +6,8 @@ import {
   TrendingUp, TrendingDown, Gem,
   AlertTriangle, Wallet, PiggyBank
 } from 'lucide-react';
-import { calculateBuildingMaintenance, calculateBuildingOutput } from '@/utils/gameLogic';
+import { calculateBuildingMaintenance, calculateBuildingOutput, getSchoolTalentBonuses, getBuildingEffectMultiplier } from '@/utils/gameLogic';
+import { computeDiscipleStipend } from '@/domain/balance';
 import { SectIcon } from '@/components/icons/SectIcons';
 import { useDevice } from '@/hooks/useDevice';
 
@@ -15,12 +16,17 @@ export const EconomyPanel: React.FC = () => {
   const {
     spiritStones, buildings, disciples,
     herbInventory, ironInventory, paperInventory, spiritStoneHistory,
+    sectSchool, unlockedTalents, expansionCount, otherSects, activeEffects,
   } = useGameStore();
 
   const activeBuildings = buildings.filter(b => b.status === 'active');
 
-  let totalSpiritStoneIncome = 0;
-  let totalMaintenance = 0;
+  // 与月末结算同一口径：建筑产出先乘流派加成，再乘宗门扩张加成
+  const schoolBonuses = getSchoolTalentBonuses(sectSchool, unlockedTalents);
+  const ssMul = 1 + (schoolBonuses.spiritStoneOutputBonus || 0) / 100;
+  const expansionMul = 1 + expansionCount * 0.05;
+
+  let buildingIncome = 0;
   let totalHerbIncome = 0;
   let totalIronIncome = 0;
   let totalPaperIncome = 0;
@@ -32,35 +38,62 @@ export const EconomyPanel: React.FC = () => {
     const assignedDisciples = disciples.filter(d => building.assignedDisciples.includes(d.id));
     const output = calculateBuildingOutput(building, assignedDisciples);
     const maintenance = calculateBuildingMaintenance(building);
+    // 与月末结算同一口径：变故/天灾的临时产出倍率
+    const effectMul = getBuildingEffectMultiplier(activeEffects, building.type);
 
     if (output.spiritStones > 0) {
+      const amount = Math.floor(output.spiritStones * ssMul * effectMul);
       incomeDetails.push({
         name: building.name,
-        spiritStones: output.spiritStones,
+        spiritStones: amount,
       });
-      totalSpiritStoneIncome += output.spiritStones;
+      buildingIncome += amount;
     }
 
     if (output.herbs > 0) {
-      totalHerbIncome += output.herbs;
+      totalHerbIncome += Math.floor(output.herbs * effectMul);
     }
     if (output.iron > 0) {
-      totalIronIncome += output.iron;
+      totalIronIncome += Math.floor(output.iron * effectMul);
     }
     if (output.paper > 0) {
-      totalPaperIncome += output.paper;
+      totalPaperIncome += Math.floor(output.paper * effectMul);
     }
 
-    totalMaintenance += maintenance;
     expenseDetails.push({ name: `${building.name}维护`, amount: maintenance });
   });
-  
-  const servantCount = disciples.filter(d => d.status === 'servant').length;
-  const servantStipend = servantCount * 1;
-  if (servantStipend > 0) {
-    totalMaintenance += servantStipend;
-    expenseDetails.push({ name: '杂役零花钱', amount: servantStipend });
+
+  // 宗门扩张：每扩张一次全局产出 +5%（结算中对建筑产出总额统一放大）
+  const expansionBonus = Math.floor(buildingIncome * expansionMul) - buildingIncome;
+  if (expansionBonus > 0) {
+    incomeDetails.push({ name: `宗门扩张加成（+${expansionCount * 5}%）`, spiritStones: expansionBonus });
   }
+
+  // 附庸上贡：好感≥30 的附庸按「战力×5%×好感%」上贡
+  const tribute = otherSects
+    .filter(s => s.diplomaticStatus === 'vassal' && (s.favorability ?? 50) >= 30)
+    .reduce((sum, s) => sum + Math.floor(s.combatPower * 0.05 * ((s.favorability ?? 50) / 100)), 0);
+  if (tribute > 0) {
+    incomeDetails.push({ name: '附庸上贡', spiritStones: tribute });
+  }
+
+  const totalSpiritStoneIncome = buildingIncome + expansionBonus + tribute;
+  const totalHerbIncomeFinal = Math.floor(totalHerbIncome * expansionMul);
+
+  // 支出：建筑维护 + 弟子月俸 + 交易维护
+  const buildingMaintenance = expenseDetails.reduce((sum, e) => sum + e.amount, 0);
+  const discipleStipend = computeDiscipleStipend(disciples);
+  if (discipleStipend > 0) {
+    expenseDetails.push({ name: '弟子月俸', amount: discipleStipend });
+  }
+  const tradeMaintenance = otherSects.filter(s => s.tradeActive).length * 10;
+  if (tradeMaintenance > 0) {
+    expenseDetails.push({ name: '交易维护费', amount: tradeMaintenance });
+  }
+
+  const totalMaintenance = buildingMaintenance + discipleStipend + tradeMaintenance;
+
+  const servantCount = disciples.filter(d => d.status === 'servant').length;
   
   const netIncome = totalSpiritStoneIncome - totalMaintenance;
   
@@ -100,6 +133,28 @@ export const EconomyPanel: React.FC = () => {
         </Card>
       )}
       
+      {activeEffects.length > 0 && (
+        <Card className="border-amber-500/30 bg-amber-500/5">
+          <div className="flex items-start gap-3 text-amber-300">
+            <AlertTriangle size={20} />
+            <div className="min-w-0">
+              <div className="font-display text-sm">宗门异象 · 影响本月产出</div>
+              <div className="mt-1 space-y-1">
+                {activeEffects.map(e => (
+                  <div key={e.id} className="text-xs text-sect-jade/75">
+                    {e.title}：
+                    {e.outputMultiplier !== 1 && `产出 ×${e.outputMultiplier}`}
+                    {e.outputMultiplier !== 1 && e.cultivationBonus > 0 && '、'}
+                    {e.cultivationBonus > 0 && `${e.cultivationScope === 'inner' ? '内门及以上' : '全宗'}修炼 +${e.cultivationBonus}%`}
+                    <span className="text-amber-400/70 ml-1">（剩 {e.remainingMonths} 月）</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card className="p-4">
           <div className="flex items-center gap-3">
@@ -121,7 +176,7 @@ export const EconomyPanel: React.FC = () => {
               <TrendingUp className="text-green-400" size={24} />
             </div>
             <div>
-              <div className="text-sect-jade/60 text-xs">本月收入</div>
+              <div className="text-sect-jade/60 text-xs">预计月收入</div>
               <div className="font-display text-xl text-green-400">
                 +{totalSpiritStoneIncome}
               </div>
@@ -135,7 +190,7 @@ export const EconomyPanel: React.FC = () => {
               <TrendingDown className="text-red-400" size={24} />
             </div>
             <div>
-              <div className="text-sect-jade/60 text-xs">本月支出</div>
+              <div className="text-sect-jade/60 text-xs">预计月支出</div>
               <div className="font-display text-xl text-red-400">
                 -{totalMaintenance}
               </div>
@@ -212,7 +267,7 @@ export const EconomyPanel: React.FC = () => {
       </Card>
 
       {/* 近12月净收益折线图（单独一张，避免与余额数值差太大被压缩） */}
-      <Card title="近12月净收益">
+      <Card title="近12月灵石净变化">
         {(() => {
           const data = spiritStoneHistory.slice(-12);
           if (data.length < 2) {
@@ -222,6 +277,11 @@ export const EconomyPanel: React.FC = () => {
               </div>
             );
           }
+          // 直接取每月实际余额差，包含试炼、事件、外交等一次性收支
+          const netOf = (i: number) => {
+            const prev = i > 0 ? data[i - 1].spiritStones : data[i].spiritStones - data[i].netIncome;
+            return Math.round(data[i].spiritStones - prev);
+          };
           const H = isMobile ? (isPortrait ? 280 : 200) : 240;
           const fs = isMobile || isCompact ? 14 : 12;
           const fsX = isMobile || isCompact ? 13 : 11;
@@ -235,14 +295,14 @@ export const EconomyPanel: React.FC = () => {
           const innerW = W - padL - padR;
           const innerH = H - padT - padB;
 
-          const allVals = data.map(d => d.netIncome);
+          const allVals = data.map((_, i) => netOf(i));
           let minV = Math.min(...allVals, 0);
           let maxV = Math.max(...allVals, 1);
           if (maxV === minV) maxV = minV + 1;
           const yOf = (v: number) => padT + innerH - ((v - minV) / (maxV - minV)) * innerH;
           const xOf = (i: number) => padL + (data.length === 1 ? 0 : (i / (data.length - 1)) * innerW);
 
-          const path = data.map((d, i) => `${i === 0 ? 'M' : 'L'}${xOf(i).toFixed(1)},${yOf(d.netIncome).toFixed(1)}`).join(' ');
+          const path = data.map((_, i) => `${i === 0 ? 'M' : 'L'}${xOf(i).toFixed(1)},${yOf(netOf(i)).toFixed(1)}`).join(' ');
           const ticks = [0, 1, 2, 3, 4].map(k => minV + (k / 4) * (maxV - minV));
           const zeroY = yOf(0);
 
@@ -266,14 +326,14 @@ export const EconomyPanel: React.FC = () => {
                   </text>
                 ))}
                 <path d={path} fill="none" stroke="#34d399" strokeWidth={strokeW} strokeLinejoin="round" strokeLinecap="round" />
-                {data.map((d, i) => (
-                  <circle key={i} cx={xOf(i)} cy={yOf(d.netIncome)} r={dotR} fill={d.netIncome >= 0 ? '#34d399' : '#f87171'} />
+                {data.map((_, i) => (
+                  <circle key={i} cx={xOf(i)} cy={yOf(netOf(i))} r={dotR} fill={netOf(i) >= 0 ? '#34d399' : '#f87171'} />
                 ))}
               </svg>
               <div className="flex items-center justify-center gap-6 mt-2 text-xs text-sect-jade/70" style={{ fontSize: isMobile ? 13 : 12 }}>
                 <span className="flex items-center gap-2">
                   <span style={{ display: 'inline-block', width: 20, height: 4, background: '#34d399' }} />
-                  月净收益
+                  当月灵石净变化（含一次性收支）
                 </span>
               </div>
             </div>
@@ -329,7 +389,7 @@ export const EconomyPanel: React.FC = () => {
             </div>
             <div className="text-sect-jade/60 text-xs">灵草</div>
             <div className="font-display text-sect-herb-light">{herbInventory} 株</div>
-            <div className="text-xs text-green-400 mt-1">+{totalHerbIncome}/月</div>
+            <div className="text-xs text-green-400 mt-1">+{totalHerbIncomeFinal}/月</div>
           </div>
           <div className="text-center p-3 rounded-lg bg-sect-ink-light/30">
             <div className="mb-1 flex justify-center" style={{ color: 'var(--ink-200, #c8c8d0)' }}>
@@ -353,7 +413,7 @@ export const EconomyPanel: React.FC = () => {
             </div>
             <div className="text-sect-jade/60 text-xs">杂役弟子</div>
             <div className="font-display text-sect-jade">{servantCount} 人</div>
-            <div className="text-xs text-red-400 mt-1">-{servantStipend}/月</div>
+            <div className="text-xs text-[var(--ink-500)] mt-1">月俸已计入支出</div>
           </div>
           <div className="text-center p-3 rounded-lg bg-sect-ink-light/30">
             <div className="text-sect-spirit mb-1 flex justify-center">

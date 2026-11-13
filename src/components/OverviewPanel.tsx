@@ -1,14 +1,14 @@
 import React from 'react';
 import { useGameStore } from '@/store/gameStore';
-import { calculateSectCombatPower, calculateDiscipleCombatPower, calculateBuildingMaintenance, calculateBuildingOutput, calculateDiscipleWelfareCost } from '@/utils/gameLogic';
+import { calculateSectCombatPower, calculateDiscipleCombatPower, calculateBuildingMaintenance, calculateBuildingOutput, calculateDiscipleWelfareCost, getSchoolTalentBonuses, calculateMonthlyReputationGrowth, getBuildingEffectMultiplier } from '@/utils/gameLogic';
 import {
-  SectLevelNames, SectLevelDescriptions, SectLevelOrder,
+  SectLevelNames, SectLevelDescriptions, SectLevelOrder, SectLevelReputationCap,
   SectLevelRequirementsMap, SectSchoolNames, SectSchoolDescriptions,
   SCHOOL_TALENT_TREES, CalamityTypeNames,
 } from '@/types/game';
 import type { SectHistoryEntry, SectSchool } from '@/types/game';
 import { BuildingTypeNames } from '@/types/building';
-import { MAINTENANCE_MONTHLY_SCALE } from '@/domain/balance';
+import { computeDiscipleStipend } from '@/domain/balance';
 
 const HISTORY_TYPE_STYLES: Record<SectHistoryEntry['type'], { icon: string; color: string }> = {
   building_upgrade: { icon: '▲', color: 'text-blue-400' },
@@ -28,17 +28,25 @@ export const OverviewPanel: React.FC = () => {
     canPromoteSect, promoteSect,
     sectHistory,
     sectSchool, unlockedTalents, selectSchool, unlockTalent,
-    sectFortune, activeCalamity, calamityWarnings,
+    sectFortune, activeCalamity, calamityWarnings, activeEffects,
     priceMultipliers,
     expansionCount, expandSect, distributeWelfare, welfareLastUsed,
+    otherSects,
   } = useGameStore();
 
   const { canPromote, nextLevel, reasons } = canPromoteSect();
   const currentLevelIndex = SectLevelOrder.indexOf(sectLevel);
   const nextLevelReq = nextLevel ? SectLevelRequirementsMap[nextLevel] : null;
 
-  const sectCombatPowerResult = calculateSectCombatPower(disciples, buildings);
+  // 与月末结算同一口径：流派战力加成 + 阵堂/山门/通天塔
+  const schoolBonuses = getSchoolTalentBonuses(sectSchool, unlockedTalents);
+  const sectCombatPowerResult = calculateSectCombatPower(disciples, buildings, schoolBonuses);
   const sectCombatPower = sectCombatPowerResult.totalPower;
+  // 声望：当前等级上限、每月自然增长（与月末结算同一公式）、距下一阶段差额
+  const reputationCap = SectLevelReputationCap[sectLevel];
+  const repGrowth = calculateMonthlyReputationGrowth(disciples, sectCombatPower);
+  const repGap = nextLevelReq ? Math.max(0, nextLevelReq.reputation - reputation) : 0;
+  const repAtCap = reputation >= reputationCap;
   const activeBuildings = buildings.filter(b => b.status === 'active').length;
 
   const servantCount = disciples.filter(d => d.status === 'servant').length;
@@ -47,31 +55,40 @@ export const OverviewPanel: React.FC = () => {
   const coreCount = disciples.filter(d => d.status === 'core').length;
   const elderCount = disciples.filter(d => d.status === 'elder').length;
 
-  const DISCIPLE_MAINTENANCE_COST: Record<string, number> = {
-    servant: 1,
-    outer: 2,
-    inner: 4,
-    core: 6,
-    elder: 10,
-  };
-  const discipleMaintenanceRaw = disciples.reduce(
-    (sum, d) => sum + (DISCIPLE_MAINTENANCE_COST[d.status] || 0),
-    0,
-  );
-  const discipleMaintenance = Math.round(discipleMaintenanceRaw * MAINTENANCE_MONTHLY_SCALE);
+  // 弟子月俸：与结算一致（汇总后按 1/3 折算取整）
+  const discipleMaintenance = computeDiscipleStipend(disciples);
+
+  // 交易中的宗门每月扣 10 灵石维护费
+  const tradeMaintenance = otherSects.filter(s => s.tradeActive).length * 10;
 
   const totalMaintenance = buildings.reduce((sum, b) => {
     if (b.status !== 'active') return sum;
     return sum + calculateBuildingMaintenance(b);
-  }, 0) + discipleMaintenance;
+  }, 0) + discipleMaintenance + tradeMaintenance;
 
-  const totalOutput = buildings.reduce((sum, b) => {
+  // 建筑灵石产出 × 流派加成，再乘宗门扩张加成（每扩张一次 +5%）
+  const ssMul = 1 + (schoolBonuses.spiritStoneOutputBonus || 0) / 100;
+  const expansionMul = 1 + expansionCount * 0.05;
+  const buildingIncome = buildings.reduce((sum, b) => {
     if (b.status !== 'active') return sum;
     const assigned = disciples.filter(d => b.assignedDisciples.includes(d.id));
-    return sum + calculateBuildingOutput(b, assigned).spiritStones;
+    const effectMul = getBuildingEffectMultiplier(activeEffects, b.type);
+    return sum + Math.floor(calculateBuildingOutput(b, assigned).spiritStones * ssMul * effectMul);
   }, 0);
 
+  // 附庸上贡：好感≥30 的附庸按「战力×5%×好感%」上贡（与结算一致）
+  const tribute = otherSects
+    .filter(s => s.diplomaticStatus === 'vassal' && (s.favorability ?? 50) >= 30)
+    .reduce((sum, s) => sum + Math.floor(s.combatPower * 0.05 * ((s.favorability ?? 50) / 100)), 0);
+
+  const totalOutput = Math.floor(buildingIncome * expansionMul) + tribute;
+
   const netIncome = totalOutput - totalMaintenance;
+
+  // 当前天灾的持续效果剩余月数（到期后自动解除天灾状态）
+  const calamityRemaining = activeCalamity
+    ? activeEffects.find(e => e.sourceId === activeCalamity.id)?.remainingMonths ?? 0
+    : 0;
 
   const RequirementBar: React.FC<{
     label: string;
@@ -136,6 +153,17 @@ export const OverviewPanel: React.FC = () => {
                 required={nextLevelReq.reputation}
                 color="bg-amber-500/70"
               />
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-[var(--ink-400)] -mt-1 pl-1">
+                <span>自然增长 <span className="text-green-400 font-mono">+{repGrowth}/月</span></span>
+                <span>本级上限 <span className="text-amber-400 font-mono">{reputationCap}</span></span>
+                {repAtCap ? (
+                  <span className="text-red-400">已达上限，需晋升才能继续增长</span>
+                ) : repGap > 0 ? (
+                  <span>距下一阶段还需 <span className="text-amber-400 font-mono">{repGap}</span></span>
+                ) : (
+                  <span className="text-green-400">下一阶段声望已达标</span>
+                )}
+              </div>
               <RequirementBar
                 label="灵石"
                 current={spiritStones}
@@ -242,6 +270,9 @@ export const OverviewPanel: React.FC = () => {
         ) : (
           <div className="scroll-panel-dark p-4 text-center text-sm text-[var(--gold-300)]">
             已达宗门最高等级
+            <div className="text-[10px] text-[var(--ink-400)] mt-1.5 font-normal">
+              声望 {Math.floor(reputation)} / {reputationCap} · 自然增长 <span className="text-green-400 font-mono">+{repGrowth}/月</span>
+            </div>
           </div>
         )}
       </div>
@@ -308,16 +339,19 @@ export const OverviewPanel: React.FC = () => {
       <div className="p-3">
         <div className="grid grid-cols-2 gap-3">
           <div className="scroll-panel-dark p-3 text-center">
-            <div className="text-xs text-[var(--ink-400)]">本月收入</div>
+            <div className="text-xs text-[var(--ink-400)]">预计月收入</div>
             <div className="font-display text-lg text-green-400">+{totalOutput}</div>
           </div>
           <div className="scroll-panel-dark p-3 text-center">
-            <div className="text-xs text-[var(--ink-400)]">本月支出</div>
+            <div className="text-xs text-[var(--ink-400)]">预计月支出</div>
             <div className="font-display text-lg text-red-400">-{totalMaintenance}</div>
           </div>
         </div>
         <div className={`text-center font-display text-lg mt-3 ${netIncome >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-          月净收益 {netIncome >= 0 ? '+' : ''}{netIncome}
+          预计月净收益 {netIncome >= 0 ? '+' : ''}{netIncome}
+        </div>
+        <div className="text-[9.5px] text-[var(--ink-500)] text-center mt-1 leading-tight">
+          含建筑产出、附庸上贡、弟子月俸、建筑与交易维护；不含试炼/事件等一次性收支
         </div>
       </div>
 
@@ -352,8 +386,27 @@ export const OverviewPanel: React.FC = () => {
             </div>
             {activeCalamity && (
               <div className="mt-2 p-2 rounded bg-red-500/10 border border-red-500/30">
-                <div className="text-[10px] text-red-400 font-medium">{CalamityTypeNames[activeCalamity.type]}</div>
+                <div className="text-[10px] text-red-400 font-medium">
+                  {CalamityTypeNames[activeCalamity.type]}
+                  {calamityRemaining > 0 && <span className="text-red-300/70 ml-1">（剩 {calamityRemaining} 月）</span>}
+                </div>
                 <div className="text-[10px] text-sect-jade/60">{activeCalamity.description}</div>
+              </div>
+            )}
+            {activeEffects.filter(e => e.kind === 'building').length > 0 && (
+              <div className="mt-2 space-y-1">
+                {activeEffects.filter(e => e.kind === 'building').map(e => (
+                  <div key={e.id} className="p-1.5 rounded bg-cyan-500/10 border border-cyan-500/25">
+                    <div className="text-[10px] text-cyan-300 font-medium">
+                      {e.title}<span className="text-cyan-200/60 ml-1">剩 {e.remainingMonths} 月</span>
+                    </div>
+                    <div className="text-[10px] text-sect-jade/60">
+                      {e.outputMultiplier !== 1 && `产出 ×${e.outputMultiplier}`}
+                      {e.outputMultiplier !== 1 && e.cultivationBonus > 0 && '、'}
+                      {e.cultivationBonus > 0 && `${e.cultivationScope === 'inner' ? '内门及以上' : '全宗'}修炼 +${e.cultivationBonus}%`}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
             {calamityWarnings.length > 0 && (

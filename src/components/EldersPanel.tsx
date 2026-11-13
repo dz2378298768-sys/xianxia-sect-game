@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { Crown, Users, Building2, Star, Award, X, Swords, LogOut } from 'lucide-react';
 import { RESIDENCE_TYPES } from '@/types/building';
-import { calculateDiscipleCombatPower } from '@/utils/gameLogic';
+import { calculateDiscipleCombatPower, calculateBuildingOutput } from '@/utils/gameLogic';
 
 export const EldersPanel: React.FC = () => {
   const { disciples, buildings, challengeCaveMansion, resignElder } = useGameStore();
@@ -115,7 +115,14 @@ export const EldersPanel: React.FC = () => {
                     </div>
                   </div>
                   <div className="text-right text-sm">
-                    <div className="text-sect-gold">加成 +{building?.elderBonus || 0}%</div>
+                    <div className="text-sect-gold">
+                      管理加成 +{building
+                        ? Math.round(calculateBuildingOutput(
+                            building,
+                            disciples.filter(d => building.assignedDisciples.includes(d.id)),
+                          ).breakdown.managerBonus)
+                        : 0}%
+                    </div>
                     <div className="text-sect-jade/50 text-xs">
                       贡献 {Math.floor(elder.contributionPoints)}
                     </div>

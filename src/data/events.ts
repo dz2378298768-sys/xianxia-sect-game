@@ -38,6 +38,7 @@ export const GAME_EVENTS: GameEventConfig[] = [
     rarity: 'common',
     conditions: { minDisciples: 2, cooldownMonths: 12 },
     description: '两名弟子因分配任务起了争执，眼看就要动手。',
+    defaultChoiceId: 'a',
     choices: [
       {
         id: 'a',
@@ -86,6 +87,7 @@ export const GAME_EVENTS: GameEventConfig[] = [
     rarity: 'uncommon',
     conditions: { minRealmProgress: 80, cooldownMonths: 18 },
     description: '一名弟子修炼过急，灵气逆冲经脉，隐隐有走火入魔之兆。',
+    defaultChoiceId: 'a',
     targetDisciple: 'highestRealm',
     choices: [
       {
@@ -235,6 +237,7 @@ export const GAME_EVENTS: GameEventConfig[] = [
     rarity: 'uncommon',
     conditions: { needsBuilding: 'servant_hall', cooldownMonths: 18 },
     description: '杂役堂后山灵脉忽然躁动，地底灵气翻涌不息。',
+    defaultChoiceId: 'a',
     choices: [
       {
         id: 'a',
@@ -355,6 +358,7 @@ export const GAME_EVENTS: GameEventConfig[] = [
     rarity: 'common',
     conditions: { cooldownMonths: 12 },
     description: '邻近宗门遣人送来战书，言辞间颇多轻慢。',
+    defaultChoiceId: 'a',
     choices: [
       {
         id: 'a',
@@ -378,6 +382,7 @@ export const GAME_EVENTS: GameEventConfig[] = [
     rarity: 'uncommon',
     conditions: { requiresDemonicHostile: true, cooldownMonths: 18 },
     description: '魔道宗门陈兵山下，扬言若不献上灵石，便要血洗山门。',
+    defaultChoiceId: 'a',
     choices: [
       {
         id: 'a',
@@ -514,6 +519,7 @@ export const GAME_EVENTS: GameEventConfig[] = [
     rarity: 'rare',
     conditions: { cooldownMonths: 36, oncePerGame: false },
     description: '夜半时分，天际忽降灵雨，甘霖所至，草木疯长。',
+    defaultChoiceId: 'auto',
     choices: [
       {
         id: 'auto',
@@ -530,6 +536,7 @@ export const GAME_EVENTS: GameEventConfig[] = [
     rarity: 'uncommon',
     conditions: { minReputation: 100, cooldownMonths: 24 },
     description: '后山妖气冲天，成群妖兽下山，直逼宗门药田。',
+    defaultChoiceId: 'a',
     choices: [
       {
         id: 'a',
@@ -582,6 +589,7 @@ export const GAME_EVENTS: GameEventConfig[] = [
     rarity: 'legendary',
     conditions: { minRealm: 'spirit', oncePerGame: true, cooldownMonths: 999 },
     description: '门中化神弟子夜观天象，忽见接引仙光，飞升之期将近。',
+    defaultChoiceId: 'a',
     choices: [
       {
         id: 'a',
