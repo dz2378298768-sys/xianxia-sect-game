@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { useGameStore } from '@/store/gameStore';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -173,7 +173,7 @@ export const RulesPanel: React.FC = () => {
     // 招收规则特殊渲染
     if (ruleType === 'recruitment') {
       return (
-        <div key={ruleType} className="p-4 rounded-lg bg-sect-ink-light/30 border border-sect-gold/10">
+        <div key={ruleType} className="rounded-lg bg-white/[0.025] p-3">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <Badge variant="gold">
@@ -224,7 +224,7 @@ export const RulesPanel: React.FC = () => {
     }
     
     return (
-      <div key={ruleType} className="p-4 rounded-lg bg-sect-ink-light/30 border border-sect-gold/10">
+      <div key={ruleType} className="rounded-lg bg-white/[0.025] p-3">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <Badge variant="default">{label.from}</Badge>
@@ -290,14 +290,11 @@ export const RulesPanel: React.FC = () => {
   };
   
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="font-display text-2xl text-gold-gradient">门规戒律</h1>
-        <p className="text-sect-jade/60 text-sm mt-1">
-          制定宗门规则，让弟子自动晋升发展
-        </p>
-      </div>
-      
+    <div className="panel-sheet">
+      <p className="text-[11px] text-[var(--ink-400)]">
+        制定宗门规则，让弟子自动晋升发展
+      </p>
+
       <Card title="弟子招收规则" icon={<UserPlus size={18} />}>
         <div className="space-y-4">
           {renderRuleCard('recruitment')}
@@ -316,7 +313,7 @@ export const RulesPanel: React.FC = () => {
       {/* 长老任命：手动任命符合条件核心弟子 + 自动任命开关 */}
       <Card title="长老任命" icon={<UserPlus size={18} />}>
         <div className="space-y-4">
-          <div className="flex items-center justify-between p-3 rounded-lg bg-sect-ink-light/30 border border-sect-gold/10">
+          <div className="flex items-center justify-between rounded-lg bg-white/[0.025] p-2.5">
             <div>
               <div className="text-sm text-sect-jade">每月自动任命</div>
               <div className="text-xs text-sect-jade/50 mt-1">
@@ -354,7 +351,7 @@ export const RulesPanel: React.FC = () => {
               return (
                 <div className="space-y-2">
                   {eligible.map(d => (
-                    <div key={d.id} className="flex items-center justify-between p-2 rounded-lg bg-sect-ink-light/30 border border-sect-gold/10">
+                    <div key={d.id} className="flex items-center justify-between rounded-lg bg-white/[0.025] p-2">
                       <div className="text-sm">
                         <span className="text-sect-jade font-medium">{d.name}</span>
                         <span className="text-sect-jade/50 ml-2">{getRealmDisplay(d)}</span>

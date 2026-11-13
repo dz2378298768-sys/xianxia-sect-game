@@ -210,50 +210,53 @@ export const OpeningGuideModal: React.FC = () => {
       onClose={close}
       title="宗门初立 · 引路篇"
       size="lg"
+      footer={
+        <div className="flex flex-col gap-2">
+          {/* 步骤指示固定在底部，长页面也不影响点下一步 */}
+          <div className="flex items-center gap-2">
+            <span className="guide-step-badge">第 {step + 1} / {STEP_COUNT} 步</span>
+            <div className="guide-step-dots">
+              {Array.from({ length: STEP_COUNT }).map((_, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  aria-label={`第 ${i + 1} 步`}
+                  onClick={() => setStep(i)}
+                  className={`guide-step-dot ${i === step ? 'guide-step-dot-active' : ''}`}
+                />
+              ))}
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={close}
+              className="text-[11px] text-[var(--ink-400)] hover:text-[var(--ink-200)] transition-colors"
+            >
+              跳过引导
+            </button>
+            <div className="flex items-center gap-2">
+              {step > 0 && (
+                <Button variant="ghost" size="sm" onClick={() => setStep(s => s - 1)}>
+                  上一步
+                </Button>
+              )}
+              {isLast ? (
+                <Button variant="gold" size="sm" onClick={close}>
+                  开始经营
+                </Button>
+              ) : (
+                <Button variant="gold" size="sm" onClick={() => setStep(s => Math.min(STEP_COUNT - 1, s + 1))}>
+                  下一步
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      }
     >
       <div className="flex flex-col gap-3">
-        <div className="flex items-center gap-2">
-          <span className="guide-step-badge">第 {step + 1} / {STEP_COUNT} 步</span>
-          <div className="guide-step-dots">
-            {Array.from({ length: STEP_COUNT }).map((_, i) => (
-              <button
-                key={i}
-                type="button"
-                aria-label={`第 ${i + 1} 步`}
-                onClick={() => setStep(i)}
-                className={`guide-step-dot ${i === step ? 'guide-step-dot-active' : ''}`}
-              />
-            ))}
-          </div>
-        </div>
-
         {steps[step]}
-
-        <div className="flex items-center justify-between gap-2 pt-1">
-          <button
-            type="button"
-            onClick={close}
-            className="text-[11px] text-[var(--ink-400)] hover:text-[var(--ink-200)] transition-colors"
-          >
-            跳过引导
-          </button>
-          <div className="flex items-center gap-2">
-            {step > 0 && (
-              <Button variant="ghost" size="sm" onClick={() => setStep(s => s - 1)}>
-                上一步
-              </Button>
-            )}
-            {isLast ? (
-              <Button variant="gold" size="sm" onClick={close}>
-                开始经营
-              </Button>
-            ) : (
-              <Button variant="gold" size="sm" onClick={() => setStep(s => Math.min(STEP_COUNT - 1, s + 1))}>
-                下一步
-              </Button>
-            )}
-          </div>
-        </div>
       </div>
     </Modal>
   );

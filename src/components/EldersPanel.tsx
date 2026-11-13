@@ -3,7 +3,7 @@ import { useGameStore } from '@/store/gameStore';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
-import { Crown, Users, Building2, Star, Award, X, Swords, LogOut } from 'lucide-react';
+import { Crown, Users, Building2, Star, Award, Swords, LogOut } from 'lucide-react';
 import { RESIDENCE_TYPES } from '@/types/building';
 import { calculateDiscipleCombatPower, calculateBuildingOutput } from '@/utils/gameLogic';
 
@@ -27,63 +27,53 @@ export const EldersPanel: React.FC = () => {
   const assignedBuildings = buildings.filter(b => b.status === 'active' && b.managerId);
   
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="font-display text-2xl text-gold-gradient">长老院</h1>
-        <p className="text-sect-jade/60 text-sm mt-1">
-          任命长老管理各堂口，提供加成
-        </p>
-      </div>
-      
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-orange-500/20">
-              <Crown className="text-sect-pill" size={24} />
+    <div className="panel-sheet">
+      <p className="text-[11px] text-[var(--ink-400)]">
+        任命长老管理各堂口，提供加成
+      </p>
+
+      <Card>
+        <div className="grid grid-cols-3 divide-x divide-[rgba(212,168,87,0.12)]">
+          <div className="flex items-center gap-2.5 px-3 first:pl-0">
+            <div className="p-2 rounded-lg bg-orange-500/15 flex-shrink-0">
+              <Crown className="text-sect-pill" size={20} />
             </div>
-            <div>
-              <div className="text-sect-jade/60 text-xs">现任长老</div>
-              <div className="font-display text-xl text-sect-pill-light">
+            <div className="min-w-0">
+              <div className="text-[10px] text-[var(--ink-400)]">现任长老</div>
+              <div className="font-display text-lg text-sect-pill-light leading-tight">
                 {elders.length} 位
               </div>
             </div>
           </div>
-        </Card>
-        
-        <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-purple-500/20">
-              <Award className="text-sect-spirit" size={24} />
+
+          <div className="flex items-center gap-2.5 px-3">
+            <div className="p-2 rounded-lg bg-purple-500/15 flex-shrink-0">
+              <Award className="text-sect-spirit" size={20} />
             </div>
-            <div>
-              <div className="text-sect-jade/60 text-xs">长老候选</div>
-              <div className="font-display text-xl text-sect-spirit-light">
+            <div className="min-w-0">
+              <div className="text-[10px] text-[var(--ink-400)]">长老候选</div>
+              <div className="font-display text-lg text-sect-spirit-light leading-tight">
                 {elderCandidates.length} 位
               </div>
             </div>
           </div>
-        </Card>
-        
-        <Card 
-          className="p-4 cursor-pointer hover:border-sect-gold/40 transition-colors"
-          onClick={() => setShowVacantModal(true)}
-        >
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-yellow-500/20">
-              <Building2 className="text-yellow-400" size={24} />
+
+          <div
+            className="flex items-center gap-2.5 px-3 cursor-pointer hover:opacity-80 transition-opacity"
+            onClick={() => setShowVacantModal(true)}
+          >
+            <div className="p-2 rounded-lg bg-yellow-500/15 flex-shrink-0">
+              <Building2 className="text-yellow-400" size={20} />
             </div>
-            <div className="flex-1">
-              <div className="text-sect-jade/60 text-xs">空缺堂口</div>
-              <div className="font-display text-xl text-yellow-400">
+            <div className="min-w-0">
+              <div className="text-[10px] text-[var(--ink-400)]">空缺堂口</div>
+              <div className="font-display text-lg text-yellow-400 leading-tight">
                 {vacantBuildings.length} 个
               </div>
             </div>
-            <div className="text-sect-jade/30">
-              <X size={16} />
-            </div>
           </div>
-        </Card>
-      </div>
+        </div>
+      </Card>
       
       <Card title="现任长老">
         {elders.length === 0 ? (

@@ -580,19 +580,17 @@ export const BuildingsPanel: React.FC = () => {
   };
   
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div>
-          <h1 className="font-display text-2xl text-gold-gradient">建筑设施</h1>
-          <p className="text-sect-jade/60 text-sm mt-1">
-            已启用 {activeBuildings.length} / 共 {buildings.length} 座建筑
-          </p>
-        </div>
+    <div className="panel-sheet">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <p className="text-[11px] text-[var(--ink-400)]">
+          已启用 {activeBuildings.length} / 共 {buildings.length} 座建筑
+        </p>
         <Button
           variant="gold"
+          size="sm"
           onClick={() => setShowBuildModal(true)}
         >
-          <Plus size={18} className="mr-1.5" />
+          <Plus size={16} className="mr-1" />
           新建建筑
         </Button>
       </div>
@@ -689,7 +687,7 @@ export const BuildingsPanel: React.FC = () => {
         isOpen={!!selectedBuilding}
         onClose={() => setSelectedBuildingId(null)}
         title={selectedBuilding?.name || '建筑详情'}
-        size="md"
+        size="xl"
       >
         {selectedBuilding && (
           <div className="space-y-3">

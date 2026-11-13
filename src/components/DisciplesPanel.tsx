@@ -29,7 +29,7 @@ import {
   History, ArrowDownUp, Backpack,
   Compass, Hammer, ScrollText, Users, Gift, Trophy, Package, Hand, Circle, ClipboardList,
 } from 'lucide-react';
-import { calculateDiscipleCombatPower, calculateDiscipleCombatPowerBreakdown, getStageBreakthroughRequired, calculateRecruitCost, getRecruitRefreshCost, ADULT_AGE, getBreakthroughSuccessRate } from '@/utils/gameLogic';
+import { calculateDiscipleCombatPower, calculateDiscipleCombatPowerBreakdown, getStageBreakthroughRequired, calculateRecruitCost, getRecruitRefreshCost, ADULT_AGE, getBreakthroughSuccessRate, calculateDiscipleWelfareCost } from '@/utils/gameLogic';
 import { CombatPowerBreakdownView } from '@/components/CombatPowerBreakdown';
 import { CONSTITUTIONS, RARITY_COLORS, RARITY_NAMES } from '@/data/constitutions';
 import { SectIcon } from '@/components/icons/SectIcons';
@@ -297,6 +297,7 @@ export const DisciplesPanel: React.FC = () => {
     artifactInventory, talismanInventory, beastInventory, pillInventory,
     encourageDaoPartners, toggleEncourageDaoPartners,
     wishes, acceptWish, rejectWish,
+    year, distributeWelfare, welfareLastUsed,
   } = useGameStore();
   const { selectedDiscipleId, setSelectedDiscipleId } = useUIStore();
   const [statusFilter, setStatusFilter] = useState<DiscipleStatus | 'all'>('all');
@@ -308,6 +309,7 @@ export const DisciplesPanel: React.FC = () => {
   const [recruitResultMsg, setRecruitResultMsg] = useState<string | null>(null);
   const [kickConfirm, setKickConfirm] = useState(false);
   const [showContributionLog, setShowContributionLog] = useState(false);
+  const [showWelfare, setShowWelfare] = useState(false);
   const [giveKind, setGiveKind] = useState<'pill' | 'artifact' | 'talisman' | 'beast'>('pill');
   const [wishMsg, setWishMsg] = useState<string | null>(null);
   // 批量操作
@@ -413,54 +415,52 @@ export const DisciplesPanel: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-full min-h-0 gap-2">
-      {/* 顶部标题栏 + 招募按钮 */}
-      <div className="flex items-center justify-between flex-wrap gap-2 shrink-0">
-        <div>
-          <h1 className="font-display text-lg text-gold-gradient">弟子管理</h1>
-          <p className="text-sect-jade/60 text-[10px] mt-0.5">
-            共 {disciples.length} 名弟子{discipleCap !== null ? ` / 上限 ${discipleCap}` : ''}
-            {childCount > 0 ? ` · 稚子 ${childCount}` : ''} · 当前筛选 {filteredDisciples.length} 名
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
+    <div className="panel-sheet h-full min-h-0 !gap-2">
+      {/* 顶部：人数概览 + 四个操作，页内不再放大标题 */}
+      <div className="flex items-center justify-between gap-2 shrink-0">
+        <p className="min-w-0 truncate text-[11.5px] text-[var(--ink-400)]">
+          共 {disciples.length} 名{discipleCap !== null ? ` / 上限 ${discipleCap}` : ''}
+          {childCount > 0 ? ` · 稚子 ${childCount}` : ''} · 当前 {filteredDisciples.length} 名
+        </p>
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            className="filter-chip"
             onClick={toggleEncourageDaoPartners}
-            title={encourageDaoPartners
-              ? '已开启：道侣每月有概率诞下子嗣（受弟子上限与外门床位限制）'
-              : '已关闭：道侣不再生育'}
+            title={encourageDaoPartners ? '道侣每月有概率诞下子嗣' : '道侣不再生育'}
           >
-            <Heart size={14} className={`mr-1 ${encourageDaoPartners ? 'text-rose-300' : 'text-sect-jade/40'}`} />
-            道侣生育：{encourageDaoPartners ? '开' : '关'}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
+            <Heart size={12} className={encourageDaoPartners ? 'text-rose-300' : 'text-[var(--ink-400)]'} />
+            道侣{encourageDaoPartners ? '开' : '关'}
+          </button>
+          <button
+            type="button"
+            className={`filter-chip ${batchMode ? 'filter-chip-active' : ''}`}
             onClick={() => {
               setBatchMode(!batchMode);
               if (batchMode) setSelectedIds(new Set());
             }}
           >
-            <ArrowDownUp size={14} className="mr-1" />
-            {batchMode ? '退出批量' : '批量操作'}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
+            {batchMode ? '退出批量' : '批量'}
+          </button>
+          <button
+            type="button"
+            className="filter-chip"
             onClick={handleRecruit}
             disabled={!canRecruit}
-            title={atDiscipleCap ? `弟子已达上限 ${discipleCap} 人` : `刷新候选 ${refreshCost} 灵石，招收按天赋计价`}
+            title={atDiscipleCap ? `弟子已达上限 ${discipleCap} 人` : `刷新候选 ${refreshCost} 灵石`}
           >
-            <UserPlus size={14} className="mr-1" />
-            招募弟子
-          </Button>
+            <UserPlus size={12} />
+            招募
+          </button>
+          <button type="button" className="filter-chip" onClick={() => setShowWelfare(true)}>
+            <Sparkles size={12} />
+            福利
+          </button>
         </div>
-        {recruitResultMsg && (
-          <span className="text-xs text-rose-300 ml-2">{recruitResultMsg}</span>
-        )}
       </div>
+      {recruitResultMsg && (
+        <span className="text-[11.5px] text-rose-300">{recruitResultMsg}</span>
+      )}
 
       {/* 批量操作栏 */}
       {batchMode && (
@@ -498,79 +498,52 @@ export const DisciplesPanel: React.FC = () => {
         </div>
       )}
 
-      {/* 主区域：左侧等级导航 + 右侧弟子列表（长方形卡片） */}
-      <div className="disciple-panel-layout flex-1 min-h-0">
-        {/* 左侧：等级导航 + 境界筛选 + 排序 */}
-        <div className="disciple-level-nav">
-          {/* 身份筛选 */}
-          <div className="text-[10px] text-sect-gold/50 px-1 pt-1 pb-0.5">身份</div>
-          {statusNavItems.map(item => (
-            <button
-              key={item.value}
-              className={`disciple-level-nav-item ${statusFilter === item.value ? 'disciple-level-nav-item-active' : ''}`}
-              onClick={() => setStatusFilter(item.value)}
-              title={`${item.label} ${item.count}人`}
-            >
-              <span className="disciple-level-nav-count">{item.count}</span>
-              <span className="disciple-level-nav-label">{item.label}</span>
-            </button>
+      {/* 筛选：横向胶囊一排，不再用左侧窄栏 */}
+      <div className="disciple-filter-bar shrink-0">
+        {statusNavItems.map(item => (
+          <button
+            key={item.value}
+            type="button"
+            className={`filter-chip ${statusFilter === item.value ? 'filter-chip-active' : ''}`}
+            onClick={() => setStatusFilter(item.value)}
+          >
+            {item.label}
+            <span className="filter-chip-count">{item.count}</span>
+          </button>
+        ))}
+        <span className="disciple-filter-sep" />
+        <select
+          className="filter-select"
+          value={realmFilter}
+          onChange={e => setRealmFilter(e.target.value as Realm | 'all')}
+        >
+          <option value="all">境界·全部</option>
+          {realmNavItems.filter(i => i.value !== 'all').map(i => (
+            <option key={i.value} value={i.value}>{i.label}（{i.count}）</option>
           ))}
+        </select>
+        <select
+          className="filter-select"
+          value={sortBy}
+          onChange={e => setSortBy(e.target.value as 'default' | 'combat' | 'joinDate')}
+        >
+          <option value="default">排序·默认</option>
+          <option value="combat">排序·战力</option>
+          <option value="joinDate">排序·入宗</option>
+        </select>
+        <button
+          type="button"
+          className={`filter-chip ${followOnly ? 'filter-chip-active' : ''}`}
+          onClick={() => setFollowOnly(!followOnly)}
+        >
+          <Heart size={11} fill={followOnly ? 'currentColor' : 'none'} />
+          关注
+        </button>
+      </div>
 
-          {/* 境界筛选 */}
-          <div className="text-[10px] text-sect-gold/50 px-1 pt-2 pb-0.5">境界</div>
-          {realmNavItems.map(item => (
-            <button
-              key={item.value}
-              className={`disciple-level-nav-item ${realmFilter === item.value ? 'disciple-level-nav-item-active' : ''}`}
-              onClick={() => setRealmFilter(item.value)}
-              title={`${item.label} ${item.count}人`}
-            >
-              <span className="disciple-level-nav-count">{item.count}</span>
-              <span className="disciple-level-nav-label">{item.label}</span>
-            </button>
-          ))}
+      {/* 弟子列表：两列密排，一屏约 8 人，点开才是详情弹窗 */}
+      <div className="disciple-list-grid flex-1 min-h-0">
 
-          {/* 排序 */}
-          <div className="text-[10px] text-sect-gold/50 px-1 pt-2 pb-0.5">排序</div>
-          <button
-            className={`disciple-level-nav-item ${sortBy === 'default' ? 'disciple-level-nav-item-active' : ''}`}
-            onClick={() => setSortBy('default')}
-            title="默认顺序"
-          >
-            <ArrowDownUp size={12} className="opacity-50" />
-            <span className="disciple-level-nav-label">默认</span>
-          </button>
-          <button
-            className={`disciple-level-nav-item ${sortBy === 'combat' ? 'disciple-level-nav-item-active' : ''}`}
-            onClick={() => setSortBy('combat')}
-            title="按战力降序"
-          >
-            <Sword size={12} className="opacity-50" />
-            <span className="disciple-level-nav-label">战力</span>
-          </button>
-          <button
-            className={`disciple-level-nav-item ${sortBy === 'joinDate' ? 'disciple-level-nav-item-active' : ''}`}
-            onClick={() => setSortBy('joinDate')}
-            title="按入宗时间排序"
-          >
-            <Calendar size={12} className="opacity-50" />
-            <span className="disciple-level-nav-label">入宗</span>
-          </button>
-
-          {/* 关注筛选 */}
-          <div className="text-[10px] text-sect-gold/50 px-1 pt-2 pb-0.5">关注</div>
-          <button
-            className={`disciple-level-nav-item ${followOnly ? 'disciple-level-nav-item-active' : ''}`}
-            onClick={() => setFollowOnly(!followOnly)}
-            title={followOnly ? '显示所有弟子' : '仅显示关注的弟子'}
-          >
-            <Heart size={12} className="opacity-50" fill={followOnly ? 'currentColor' : 'none'} color={followOnly ? 'var(--gold-300)' : undefined} />
-            <span className="disciple-level-nav-label">{followOnly ? '已关注' : '关注'}</span>
-          </button>
-        </div>
-
-        {/* 右侧：弟子列表（长方形卡片，可滚动） */}
-        <div className="disciple-list-area">
           {filteredDisciples.length === 0 ? (
             <div className="text-center text-sect-jade/40 text-xs py-6">
               暂无弟子
@@ -579,7 +552,6 @@ export const DisciplesPanel: React.FC = () => {
             const isFollowed = followedDiscipleIds.includes(disciple.id);
             const breakthroughRequired = getStageBreakthroughRequired(disciple.realm, disciple.realmStage);
             const cultivationPct = Math.min(100, (disciple.realmProgress / breakthroughRequired) * 100);
-            const satisfactionPct = Math.max(0, Math.min(100, disciple.satisfaction));
             const assignedBuildingName = disciple.assignedBuilding
               ? getBuildingById(disciple.assignedBuilding)?.name
               : null;
@@ -588,7 +560,7 @@ export const DisciplesPanel: React.FC = () => {
             return (
               <div
                 key={disciple.id}
-                className={`disciple-rect-card ${isSelected ? 'ring-1 ring-gold-400/50' : ''}`}
+                className={`disciple-rect-card ${isSelected ? 'ring-1 ring-gold-400/50' : ''} ${batchMode ? 'pl-5' : ''}`}
                 onClick={() => {
                   if (batchMode) {
                     const next = new Set(selectedIds);
@@ -603,7 +575,7 @@ export const DisciplesPanel: React.FC = () => {
               >
                 {/* 批量选择框 */}
                 {batchMode && (
-                  <div className="absolute left-1 top-1/2 -translate-y-1/2 z-10">
+                  <div className="absolute left-0.5 top-0.5 z-10">
                     <input
                       type="checkbox"
                       checked={isSelected}
@@ -618,95 +590,86 @@ export const DisciplesPanel: React.FC = () => {
                     />
                   </div>
                 )}
-                {/* 关注按钮 */}
+                {/* 头像 */}
+                <SimpleAvatar
+                  seed={disciple.avatarSeed}
+                  size={32}
+                  status={disciple.status}
+                  realm={disciple.realm}
+                  name={disciple.name}
+                />
+
+                {/* 关注：贴卡片右上角，不占正文行高 */}
                 <button
                   onClick={e => {
                     e.stopPropagation();
                     toggleFollowDisciple(disciple.id);
                   }}
-                  className={`disciple-rect-follow ${isFollowed ? 'disciple-rect-follow-active' : ''}`}
+                  className={`disciple-follow-inline ${isFollowed ? 'is-on' : ''}`}
                   title={isFollowed ? '取消关注' : '关注弟子'}
                 >
-                  <Heart size={12} fill={isFollowed ? 'currentColor' : 'none'} strokeWidth={1.8} />
+                  <Heart size={10} fill={isFollowed ? 'currentColor' : 'none'} strokeWidth={1.8} />
                 </button>
 
-                {/* 左侧：头像 */}
-                <div className="disciple-rect-avatar">
-                  <SimpleAvatar
-                    seed={disciple.avatarSeed}
-                    size={48}
-                    status={disciple.status}
-                    realm={disciple.realm}
-                    name={disciple.name}
-                  />
-                </div>
-
-                {/* 右侧：等级、修为、双进度条 */}
-                <div className="disciple-rect-body">
-                  {/* 头部：姓名 + 身份 + 境界 */}
-                  <div className="disciple-rect-header">
-                    <span className="disciple-rect-name">{disciple.name}</span>
-                    <Badge variant={getStatusVariant(disciple.status)} size="sm">
-                      {DiscipleStatusNames[disciple.status]}
-                    </Badge>
-                    <span className={`text-[10px] ${getRealmColor(disciple.realm)}`}>
-                      {getRealmDisplay(disciple)}
-                    </span>
-                  </div>
-
-                  {/* 中部：等级、修为、贡献、归属建筑 */}
-                  <div className="disciple-rect-meta">
-                    <span className="flex items-center gap-0.5">
-                      <Star size={10} className="text-sect-herb-light/60" />
-                      贡献{Math.floor(disciple.contributionPoints)}
-                    </span>
-                    {assignedBuildingName && (
-                      <span className="flex items-center gap-0.5 truncate">
-                        <Building2 size={10} className="text-sect-gold/60" />
-                        {assignedBuildingName}
-                      </span>
-                    )}
+                {/* 主体：名号 + 身份/归属 + 修为条 */}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 pr-5">
+                    <span className="truncate font-display text-[12.5px] text-[var(--ink-100)]">{disciple.name}</span>
+                    <span className={`shrink-0 text-[11px] ${getRealmColor(disciple.realm)}`}>{getRealmDisplay(disciple)}</span>
                     {pendingWishDiscipleIds.has(disciple.id) && (
-                      <span className="flex items-center gap-0.5 text-amber-300/90">
-                        <Sparkles size={10} />
-                        心愿
-                      </span>
+                      <Sparkles size={10} className="shrink-0 text-amber-300" />
                     )}
                   </div>
-
-                  {/* 底部：双进度条（修练值 + 满意度） */}
-                  <div className="disciple-rect-progress">
-                    <div className="disciple-progress-row">
-                      <span className="disciple-progress-label">修为</span>
-                      <div className="disciple-progress-track">
-                        <div
-                          className="disciple-progress-fill disciple-progress-fill-cultivation"
-                          style={{ width: `${cultivationPct}%` }}
-                        />
-                      </div>
-                      <span className="disciple-progress-value">
-                        {Math.floor(disciple.realmProgress)}/{breakthroughRequired}
-                      </span>
-                    </div>
-                    <div className="disciple-progress-row">
-                      <span className="disciple-progress-label">满意</span>
-                      <div className="disciple-progress-track">
-                        <div
-                          className="disciple-progress-fill disciple-progress-fill-satisfaction"
-                          style={{ width: `${satisfactionPct}%` }}
-                        />
-                      </div>
-                      <span className="disciple-progress-value">
-                        {Math.floor(disciple.satisfaction)}%
-                      </span>
-                    </div>
+                  <div className="mt-0.5 flex items-center gap-1 text-[11px] text-[var(--ink-400)]">
+                    <span className="shrink-0">{DiscipleStatusNames[disciple.status]}</span>
+                    {assignedBuildingName && <span className="truncate">· {assignedBuildingName}</span>}
+                    <span className="ml-auto shrink-0 font-mono text-[var(--ink-300)]">{Math.floor(disciple.satisfaction)}%</span>
+                  </div>
+                  <div className="mt-1 h-1 overflow-hidden rounded-full bg-[rgba(255,255,255,0.08)]">
+                    <div
+                      className="h-full rounded-full"
+                      style={{ width: `${cultivationPct}%`, background: 'linear-gradient(90deg, #8fbf8f, #5f9f7f)' }}
+                    />
                   </div>
                 </div>
               </div>
             );
           })}
         </div>
-      </div>
+
+      {/* 弟子福利：从总览移到弟子页，与管理动作放在一起 */}
+      <Modal isOpen={showWelfare} onClose={() => setShowWelfare(false)} title="弟子福利" size="sm">
+        <p className="mb-2 text-[12px] text-[var(--ink-400)]">每 5 年可发放一次，提升全体弟子满意度</p>
+        <div className="flex gap-2">
+          {[1, 2, 3].map(level => {
+            const yearsSinceLastUse = year - welfareLastUsed;
+            const cooldownRemaining = welfareLastUsed > 0 && yearsSinceLastUse < 5 ? 5 - yearsSinceLastUse : 0;
+            const disabled = cooldownRemaining > 0;
+            const activeCount = disciples.filter(d => d.status !== 'mortal').length;
+            const { cost, satisfactionGain } = calculateDiscipleWelfareCost(activeCount, level);
+            return (
+              <button
+                key={level}
+                type="button"
+                disabled={disabled}
+                className={`flex-1 rounded-lg border border-[rgba(212,168,87,0.28)] bg-[rgba(255,255,255,0.03)] px-2 py-2 text-center ${disabled ? 'opacity-40' : 'active:bg-[rgba(212,168,87,0.12)]'}`}
+                onClick={() => {
+                  const result = distributeWelfare(level);
+                  if (!result.ok) alert(result.reason);
+                  else if (result.cost !== undefined) alert(`发放了 ${result.cost} 灵石福利，全体弟子满意度 +${result.satisfactionGain}。`);
+                }}
+              >
+                <span className="block text-[12.5px] text-[var(--gold-200)]">
+                  {level === 1 ? '普通' : level === 2 ? '丰厚' : '优厚'}
+                </span>
+                <span className="mt-0.5 block text-[11px] text-[var(--ink-400)]">
+                  {disabled ? `冷却 ${cooldownRemaining}年` : `${cost}灵石 · +${satisfactionGain}`}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </Modal>
 
       <Modal
         isOpen={!!selectedDisciple}

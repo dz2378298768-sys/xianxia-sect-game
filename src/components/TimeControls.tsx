@@ -16,16 +16,67 @@ function formatDay(day: number): string {
   return '三十';
 }
 
+interface TimeControlsProps {
+  /** 紧凑内联模式：嵌进顶栏一行显示，不画悬浮胶囊（手机横屏用） */
+  inline?: boolean;
+}
+
 /**
  * 常驻时间栏：日期 + 当月日进度 + 倍速 + 暂停。
  * 1x 下 1 秒走 1 日，进度条按日分段；暂停时进度条变暗并提示「已暂停」。
  */
-export const TimeControls: React.FC = () => {
+export const TimeControls: React.FC<TimeControlsProps> = ({ inline = false }) => {
   const { year, month } = useGameStore();
   const { paused, speed, monthElapsed, togglePause, setSpeed } = useClockStore();
 
   const day = Math.min(DAYS_PER_MONTH, Math.floor(monthElapsed / DAY_DURATION_MS) + 1);
   const progress = Math.min(100, (monthElapsed / MONTH_DURATION_MS) * 100);
+
+  const speedButtons = (
+    <div className="clock-speed">
+      {SPEEDS.map(s => (
+        <button
+          key={s}
+          type="button"
+          onClick={() => setSpeed(s)}
+          className={`clock-speed-btn ${speed === s ? 'clock-speed-btn-active' : ''}`}
+          title={`${s} 倍速${s === 1 ? '（1 秒 1 日）' : ''}`}
+        >
+          {s}x
+        </button>
+      ))}
+    </div>
+  );
+
+  const pauseButton = (
+    <button
+      type="button"
+      onClick={togglePause}
+      className={`clock-pause-btn ${inline ? 'clock-pause-btn-sm' : ''} ${paused ? 'clock-pause-btn-paused' : ''}`}
+      title={paused ? '继续时间' : '暂停时间'}
+      aria-label={paused ? '继续时间' : '暂停时间'}
+      aria-pressed={paused}
+    >
+      {paused
+        ? <Play size={inline ? 14 : 16} strokeWidth={2.4} fill="currentColor" />
+        : <Pause size={inline ? 14 : 16} strokeWidth={2.4} fill="currentColor" />}
+    </button>
+  );
+
+  // 手机横屏：并进顶栏一行，去掉突兀的悬浮胶囊与进度条
+  if (inline) {
+    return (
+      <div className="clock-inline">
+        <div className="clock-date">
+          <span className="clock-date-main">{year}年{month}月</span>
+          <span className="clock-date-day">{formatDay(day)}</span>
+        </div>
+        {paused && <span className="clock-paused-tag">暂停</span>}
+        {speedButtons}
+        {pauseButton}
+      </div>
+    );
+  }
 
   return (
     <div className="clock-bar">
@@ -46,32 +97,8 @@ export const TimeControls: React.FC = () => {
 
       {paused && <span className="clock-paused-tag">已暂停</span>}
 
-      <div className="clock-speed">
-        {SPEEDS.map(s => (
-          <button
-            key={s}
-            type="button"
-            onClick={() => setSpeed(s)}
-            className={`clock-speed-btn ${speed === s ? 'clock-speed-btn-active' : ''}`}
-            title={`${s} 倍速${s === 1 ? '（1 秒 1 日）' : ''}`}
-          >
-            {s}x
-          </button>
-        ))}
-      </div>
-
-      <button
-        type="button"
-        onClick={togglePause}
-        className={`clock-pause-btn ${paused ? 'clock-pause-btn-paused' : ''}`}
-        title={paused ? '继续时间' : '暂停时间'}
-        aria-label={paused ? '继续时间' : '暂停时间'}
-        aria-pressed={paused}
-      >
-        {paused
-          ? <Play size={16} strokeWidth={2.4} fill="currentColor" />
-          : <Pause size={16} strokeWidth={2.4} fill="currentColor" />}
-      </button>
+      {speedButtons}
+      {pauseButton}
     </div>
   );
 };

@@ -17,6 +17,7 @@ export const EconomyPanel: React.FC = () => {
     spiritStones, buildings, disciples,
     herbInventory, ironInventory, paperInventory, spiritStoneHistory,
     sectSchool, unlockedTalents, expansionCount, otherSects, activeEffects,
+    expandSect,
   } = useGameStore();
 
   const activeBuildings = buildings.filter(b => b.status === 'active');
@@ -107,18 +108,9 @@ export const EconomyPanel: React.FC = () => {
   const bankruptcyLevel = getBankruptcyLevel();
   
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="font-display text-2xl text-gold-gradient">经济收支</h1>
-          <p className="text-sect-jade/60 text-sm mt-1">
-            管理宗门灵石收支
-          </p>
-        </div>
-      </div>
-      
+    <div className="panel-sheet">
       {bankruptcyLevel > 0 && (
-        <Card className="border-red-500/30 bg-red-500/5">
+        <Card className="card-pad border-red-500/30 bg-red-500/5">
           <div className="flex items-center gap-3 text-red-400">
             <AlertTriangle size={24} />
             <div>
@@ -134,7 +126,7 @@ export const EconomyPanel: React.FC = () => {
       )}
       
       {activeEffects.length > 0 && (
-        <Card className="border-amber-500/30 bg-amber-500/5">
+        <Card className="card-pad border-amber-500/30 bg-amber-500/5">
           <div className="flex items-start gap-3 text-amber-300">
             <AlertTriangle size={20} />
             <div className="min-w-0">
@@ -155,11 +147,11 @@ export const EconomyPanel: React.FC = () => {
         </Card>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-purple-500/20">
-              <Gem className="text-sect-spirit" size={24} />
+      <Card>
+        <div className="grid grid-cols-3 divide-x divide-[rgba(212,168,87,0.12)]">
+          <div className="flex items-center gap-3 px-3 first:pl-0">
+            <div className="p-2 rounded-lg bg-purple-500/15">
+              <Gem className="text-sect-spirit" size={22} />
             </div>
             <div>
               <div className="text-sect-jade/60 text-xs">灵石余额</div>
@@ -168,12 +160,10 @@ export const EconomyPanel: React.FC = () => {
               </div>
             </div>
           </div>
-        </Card>
-        
-        <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-green-500/20">
-              <TrendingUp className="text-green-400" size={24} />
+
+          <div className="flex items-center gap-3 px-3">
+            <div className="p-2 rounded-lg bg-green-500/15">
+              <TrendingUp className="text-green-400" size={22} />
             </div>
             <div>
               <div className="text-sect-jade/60 text-xs">预计月收入</div>
@@ -182,12 +172,10 @@ export const EconomyPanel: React.FC = () => {
               </div>
             </div>
           </div>
-        </Card>
-        
-        <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-red-500/20">
-              <TrendingDown className="text-red-400" size={24} />
+
+          <div className="flex items-center gap-3 px-3">
+            <div className="p-2 rounded-lg bg-red-500/15">
+              <TrendingDown className="text-red-400" size={22} />
             </div>
             <div>
               <div className="text-sect-jade/60 text-xs">预计月支出</div>
@@ -196,8 +184,8 @@ export const EconomyPanel: React.FC = () => {
               </div>
             </div>
           </div>
-        </Card>
-      </div>
+        </div>
+      </Card>
 
       {/* 近12月灵石余额折线图 */}
       <Card title="近12月灵石余额">
@@ -210,8 +198,8 @@ export const EconomyPanel: React.FC = () => {
               </div>
             );
           }
-          // 手机端大幅增加画布尺寸与字号，确保线条和刻度清晰可辨
-          const H = isMobile ? (isPortrait ? 300 : 220) : 260;
+          // 手机横屏高度紧张：折线图降到 170px，一屏能同时看到余额与净变化
+          const H = isCompact && !isPortrait ? 170 : isMobile ? (isPortrait ? 300 : 220) : 260;
           const fs = isMobile || isCompact ? 14 : 12;
           const fsX = isMobile || isCompact ? 13 : 11;
           const strokeW = isMobile || isCompact ? 3.5 : 2.5;
@@ -282,7 +270,7 @@ export const EconomyPanel: React.FC = () => {
             const prev = i > 0 ? data[i - 1].spiritStones : data[i].spiritStones - data[i].netIncome;
             return Math.round(data[i].spiritStones - prev);
           };
-          const H = isMobile ? (isPortrait ? 280 : 200) : 240;
+          const H = isCompact && !isPortrait ? 160 : isMobile ? (isPortrait ? 280 : 200) : 240;
           const fs = isMobile || isCompact ? 14 : 12;
           const fsX = isMobile || isCompact ? 13 : 11;
           const strokeW = isMobile || isCompact ? 3.5 : 2.5;
@@ -341,94 +329,116 @@ export const EconomyPanel: React.FC = () => {
         })()}
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card title="收入明细">
-          <div className="space-y-3">
+      {/* 收支明细：收入与支出并排一张表，底部给结余 */}
+      <Card title="本月收支明细">
+        <div className="grid grid-cols-2 gap-x-4">
+          <div>
+            <div className="flex items-center gap-1.5 pb-1.5 mb-1 border-b border-[rgba(212,168,87,0.1)]">
+              <Wallet size={13} className="text-green-400/70" />
+              <span className="text-xs text-[var(--ink-300)]">收入</span>
+            </div>
             {incomeDetails.length === 0 ? (
-              <div className="text-sect-jade/50 text-sm text-center py-4">
-                暂无收入来源
-              </div>
+              <div className="py-3 text-center text-xs text-[var(--ink-400)]">暂无收入</div>
             ) : (
               incomeDetails.map((item, i) => (
-                <div key={i} className="flex items-center justify-between py-2 border-b border-sect-gold/5 last:border-0">
-                  <div className="flex items-center gap-2">
-                    <Wallet size={16} className="text-green-400/60" />
-                    <span className="text-sect-jade/80 text-sm">{item.name}</span>
-                  </div>
-                  <div className="text-right">
-                    {item.spiritStones > 0 && (
-                      <div className="text-green-400 text-sm">+{item.spiritStones} 灵石</div>
-                    )}
-                  </div>
+                <div key={i} className="flex items-baseline justify-between gap-2 py-1.5 border-b border-[rgba(212,168,87,0.06)] last:border-0">
+                  <span className="text-xs text-[var(--ink-200)] truncate">{item.name}</span>
+                  <span className="text-xs font-mono text-green-400 flex-shrink-0">+{item.spiritStones}</span>
                 </div>
               ))
             )}
           </div>
-        </Card>
-        
-        <Card title="支出明细">
-          <div className="space-y-3">
+          <div>
+            <div className="flex items-center gap-1.5 pb-1.5 mb-1 border-b border-[rgba(212,168,87,0.1)]">
+              <PiggyBank size={13} className="text-red-400/70" />
+              <span className="text-xs text-[var(--ink-300)]">支出</span>
+            </div>
             {expenseDetails.map((item, i) => (
-              <div key={i} className="flex items-center justify-between py-2 border-b border-sect-gold/5 last:border-0">
-                <div className="flex items-center gap-2">
-                  <PiggyBank size={16} className="text-red-400/60" />
-                  <span className="text-sect-jade/80 text-sm">{item.name}</span>
-                </div>
-                <span className="text-red-400 text-sm">-{item.amount} 灵石</span>
+              <div key={i} className="flex items-baseline justify-between gap-2 py-1.5 border-b border-[rgba(212,168,87,0.06)] last:border-0">
+                <span className="text-xs text-[var(--ink-200)] truncate">{item.name}</span>
+                <span className="text-xs font-mono text-red-400 flex-shrink-0">-{item.amount}</span>
               </div>
             ))}
           </div>
-        </Card>
-      </div>
+        </div>
+        <div className="mt-3 pt-2 flex items-center justify-between border-t border-[rgba(212,168,87,0.16)]">
+          <span className="text-xs text-[var(--ink-300)]">本月结余</span>
+          <span className={`font-display text-sm ${netIncome >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+            {netIncome >= 0 ? '+' : ''}{netIncome} 灵石
+          </span>
+        </div>
+      </Card>
       
+      {/* 宗门投资：扩张从总览移到经济页，和收支放一起看才讲得通 */}
+      <Card title="宗门投资">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-[12.5px] text-[var(--ink-200)]">已扩张 {expansionCount} 次</div>
+            <div className="mt-0.5 text-[11.5px] text-[var(--ink-400)]">
+              每次扩张全局产出 +5%，本次花费 {500 + expansionCount * 300} 灵石
+            </div>
+          </div>
+          <button
+            className="btn-ink shrink-0 px-3 text-xs"
+            onClick={() => {
+              const result = expandSect();
+              if (!result.ok) alert(result.reason);
+            }}
+          >
+            扩张宗门
+          </button>
+        </div>
+      </Card>
+
       <Card title="资源库存">
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          <div className="text-center p-3 rounded-lg bg-sect-ink-light/30">
-            <div className="text-sect-herb mb-1 flex justify-center">
-              <SectIcon name="herb" size={28} strokeWidth={1.8} />
+        <div className="grid grid-cols-3 gap-1.5">
+          <div className="stat-tile flex items-center gap-2 !py-2">
+            <span className="text-sect-herb flex-shrink-0"><SectIcon name="herb" size={20} strokeWidth={1.8} /></span>
+            <div className="min-w-0">
+              <div className="text-[10px] text-[var(--ink-400)]">灵草</div>
+              <div className="font-display text-sm text-sect-herb-light leading-tight">{herbInventory} 株</div>
             </div>
-            <div className="text-sect-jade/60 text-xs">灵草</div>
-            <div className="font-display text-sect-herb-light">{herbInventory} 株</div>
-            <div className="text-xs text-green-400 mt-1">+{totalHerbIncomeFinal}/月</div>
+            <span className="ml-auto text-[10px] font-mono text-green-400 flex-shrink-0">+{totalHerbIncomeFinal}</span>
           </div>
-          <div className="text-center p-3 rounded-lg bg-sect-ink-light/30">
-            <div className="mb-1 flex justify-center" style={{ color: 'var(--ink-200, #c8c8d0)' }}>
-              <SectIcon name="sword" size={28} strokeWidth={1.8} />
+          <div className="stat-tile flex items-center gap-2 !py-2">
+            <span className="flex-shrink-0" style={{ color: 'var(--ink-200, #c8c8d0)' }}><SectIcon name="sword" size={20} strokeWidth={1.8} /></span>
+            <div className="min-w-0">
+              <div className="text-[10px] text-[var(--ink-400)]">玄铁</div>
+              <div className="font-display text-sm leading-tight" style={{ color: 'var(--ink-100, #e0e0e8)' }}>{ironInventory} 块</div>
             </div>
-            <div className="text-sect-jade/60 text-xs">玄铁</div>
-            <div className="font-display" style={{ color: 'var(--ink-100, #e0e0e8)' }}>{ironInventory} 块</div>
-            <div className="text-xs text-green-400 mt-1">+{totalIronIncome}/月</div>
+            <span className="ml-auto text-[10px] font-mono text-green-400 flex-shrink-0">+{totalIronIncome}</span>
           </div>
-          <div className="text-center p-3 rounded-lg bg-sect-ink-light/30">
-            <div className="text-sect-gold mb-1 flex justify-center">
-              <SectIcon name="scrollText" size={28} strokeWidth={1.8} />
+          <div className="stat-tile flex items-center gap-2 !py-2">
+            <span className="text-sect-gold flex-shrink-0"><SectIcon name="scrollText" size={20} strokeWidth={1.8} /></span>
+            <div className="min-w-0">
+              <div className="text-[10px] text-[var(--ink-400)]">灵纸</div>
+              <div className="font-display text-sm text-sect-gold leading-tight">{paperInventory} 张</div>
             </div>
-            <div className="text-sect-jade/60 text-xs">灵纸</div>
-            <div className="font-display text-sect-gold">{paperInventory} 张</div>
-            <div className="text-xs text-green-400 mt-1">+{totalPaperIncome}/月</div>
+            <span className="ml-auto text-[10px] font-mono text-green-400 flex-shrink-0">+{totalPaperIncome}</span>
           </div>
-          <div className="text-center p-3 rounded-lg bg-sect-ink-light/30">
-            <div className="text-sect-gold mb-1 flex justify-center">
-              <SectIcon name="group" size={28} strokeWidth={1.8} />
+          <div className="stat-tile flex items-center gap-2 !py-2">
+            <span className="text-[var(--ink-300)] flex-shrink-0"><SectIcon name="group" size={20} strokeWidth={1.8} /></span>
+            <div className="min-w-0">
+              <div className="text-[10px] text-[var(--ink-400)]">杂役弟子</div>
+              <div className="font-display text-sm text-[var(--ink-100)] leading-tight">{servantCount} 人</div>
             </div>
-            <div className="text-sect-jade/60 text-xs">杂役弟子</div>
-            <div className="font-display text-sect-jade">{servantCount} 人</div>
-            <div className="text-xs text-[var(--ink-500)] mt-1">月俸已计入支出</div>
           </div>
-          <div className="text-center p-3 rounded-lg bg-sect-ink-light/30">
-            <div className="text-sect-spirit mb-1 flex justify-center">
-              <SectIcon name="building" size={28} strokeWidth={1.8} />
+          <div className="stat-tile flex items-center gap-2 !py-2">
+            <span className="text-sect-spirit flex-shrink-0"><SectIcon name="building" size={20} strokeWidth={1.8} /></span>
+            <div className="min-w-0">
+              <div className="text-[10px] text-[var(--ink-400)]">启用建筑</div>
+              <div className="font-display text-sm text-[var(--ink-100)] leading-tight">{activeBuildings.length} 座</div>
             </div>
-            <div className="text-sect-jade/60 text-xs">启用建筑</div>
-            <div className="font-display text-sect-jade">{activeBuildings.length} 座</div>
           </div>
-          <div className="text-center p-3 rounded-lg bg-sect-ink-light/30">
-            <div className={`mb-1 flex justify-center ${netIncome >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-              <SectIcon name={netIncome >= 0 ? 'trendUp' : 'trendDown'} size={28} strokeWidth={1.8} />
-            </div>
-            <div className="text-sect-jade/60 text-xs">净收益</div>
-            <div className={`font-display ${netIncome >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-              {netIncome >= 0 ? '+' : ''}{netIncome}/月
+          <div className="stat-tile flex items-center gap-2 !py-2">
+            <span className={`flex-shrink-0 ${netIncome >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              <SectIcon name={netIncome >= 0 ? 'trendUp' : 'trendDown'} size={20} strokeWidth={1.8} />
+            </span>
+            <div className="min-w-0">
+              <div className="text-[10px] text-[var(--ink-400)]">净收益</div>
+              <div className={`font-display text-sm leading-tight ${netIncome >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                {netIncome >= 0 ? '+' : ''}{netIncome}
+              </div>
             </div>
           </div>
         </div>

@@ -28,18 +28,13 @@ export const SectCombatPanel: React.FC = () => {
   const maxRealmPower = Math.max(...summary.byRealm.map(g => g.power), 1);
 
   return (
-    <div className="space-y-4">
+    <div className="panel-sheet">
       {/* 总战力卡片 */}
-      <Card>
-        <div className="flex items-center gap-2 mb-3">
-          <Sword size={20} className="text-red-400/50" strokeWidth={1.8} />
-          <h2 className="font-display text-lg" style={{ color: 'var(--gold-200)' }}>宗门战力</h2>
-        </div>
-
+      <Card title="宗门战力" icon={<Sword size={14} className="text-red-400/60" strokeWidth={1.8} />}>
         {/* 总战力大数字 */}
-        <div className="text-center py-4">
+        <div className="text-center py-3">
           <div className="text-[11px]" style={{ color: 'var(--ink-400)' }}>宗门总战力</div>
-          <div className="font-display font-bold" style={{ fontSize: '36px', color: 'var(--gold-200)' }}>
+          <div className="font-display font-bold" style={{ fontSize: '34px', color: 'var(--gold-200)' }}>
             {summary.totalPower.toLocaleString()}
           </div>
           <div className="text-[11px] mt-1" style={{ color: 'var(--ink-400)' }}>
@@ -68,11 +63,7 @@ export const SectCombatPanel: React.FC = () => {
       </Card>
 
       {/* 身份战力分布 */}
-      <Card>
-        <div className="flex items-center gap-2 mb-3">
-          <Users size={16} className="text-blue-400/50" strokeWidth={1.8} />
-          <h3 className="font-display text-sm" style={{ color: 'var(--gold-200)' }}>身份战力分布</h3>
-        </div>
+      <Card title="身份战力分布" icon={<Users size={14} className="text-blue-400/60" strokeWidth={1.8} />}>
         <div className="space-y-2">
           {summary.byStatus.map((g, i) => {
             const pct = (g.power / maxStatusPower) * 100;
@@ -101,11 +92,7 @@ export const SectCombatPanel: React.FC = () => {
       </Card>
 
       {/* 境界战力分布 */}
-      <Card>
-        <div className="flex items-center gap-2 mb-3">
-          <Star size={16} className="text-purple-400/50" strokeWidth={1.8} />
-          <h3 className="font-display text-sm" style={{ color: 'var(--gold-200)' }}>境界战力分布</h3>
-        </div>
+      <Card title="境界战力分布" icon={<Star size={14} className="text-purple-400/60" strokeWidth={1.8} />}>
         <div className="space-y-2">
           {summary.byRealm.map((g, i) => {
             const pct = (g.power / maxRealmPower) * 100;
@@ -134,11 +121,7 @@ export const SectCombatPanel: React.FC = () => {
       </Card>
 
       {/* 最强弟子 Top5 */}
-      <Card>
-        <div className="flex items-center gap-2 mb-3">
-          <Trophy size={16} className="text-yellow-400/50" strokeWidth={1.8} />
-          <h3 className="font-display text-sm" style={{ color: 'var(--gold-200)' }}>最强弟子 Top 5</h3>
-        </div>
+      <Card title="最强弟子 Top 5" icon={<Trophy size={14} className="text-yellow-400/60" strokeWidth={1.8} />}>
         <div className="space-y-1">
           {summary.topDisciples.map((d, i) => (
             <div

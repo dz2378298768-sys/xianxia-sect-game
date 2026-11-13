@@ -3,6 +3,7 @@ import { useGameStore } from '@/store/gameStore';
 import { useUIStore } from '@/store/uiStore';
 import { MountainScene } from '@/components/MountainScene';
 import { TopBar } from '@/components/TopBar';
+import { QuickRail } from '@/components/QuickRail';
 import { BottomNav } from '@/components/BottomNav';
 import { MainMenu } from '@/components/MainMenu';
 import { MonthlyReportModal } from '@/components/MonthlyReportModal';
@@ -16,12 +17,9 @@ import { SectInfoDrawer } from '@/components/SectInfoDrawer';
 import { WorldPanel } from '@/components/WorldPanel';
 import { ActivitiesPanel } from '@/components/ActivitiesPanel';
 import { OrientationOverlay } from '@/components/OrientationOverlay';
-import { EventFeed } from '@/components/EventFeed';
 import { EventHistoryModal } from '@/components/EventHistoryModal';
-import { TasksPanel } from '@/components/TasksPanel';
 import { useDevice } from '@/hooks/useDevice';
 import { useModalPause } from '@/hooks/useModalPause';
-import { ReportBadge } from '@/components/ReportBadge';
 import { TimeControls } from '@/components/TimeControls';
 import { GameClock } from '@/components/GameClock';
 import { EventModal } from '@/components/EventModal';
@@ -58,10 +56,10 @@ const AffairsPanel: React.FC = () => {
         {tabs.map(t => (
           <button
             key={t.key}
-            className={`text-[11px] px-2.5 py-1 rounded-full whitespace-nowrap transition-colors ${
+            className={`text-[11px] px-3 min-h-[28px] rounded-full whitespace-nowrap transition-colors ${
               tab === t.key
-                ? 'bg-sect-gold/20 text-sect-gold border border-sect-gold/30'
-                : 'text-sect-jade/60 hover:text-sect-jade/80 border border-transparent'
+                ? 'bg-[rgba(212,168,87,0.18)] text-[var(--gold-200)] border border-[rgba(212,168,87,0.45)]'
+                : 'text-[var(--ink-300)] hover:text-[var(--ink-100)] border border-transparent'
             }`}
             onClick={() => setTab(t.key)}
           >
@@ -90,18 +88,18 @@ const BuildingsPanelContainer: React.FC = () => {
     <div className="flex flex-col h-full">
       <div className="flex gap-1 px-2 pt-2 pb-1">
         <button
-          className={`text-[11px] px-2.5 py-1 rounded-full transition-colors ${
+          className={`text-[11px] px-3 min-h-[28px] rounded-full transition-colors ${
             tab === 'buildings'
-              ? 'bg-sect-gold/20 text-sect-gold border border-sect-gold/30'
-              : 'text-sect-jade/60 hover:text-sect-jade/80 border border-transparent'
+              ? 'bg-[rgba(212,168,87,0.18)] text-[var(--gold-200)] border border-[rgba(212,168,87,0.45)]'
+              : 'text-[var(--ink-300)] hover:text-[var(--ink-100)] border border-transparent'
           }`}
           onClick={() => setTab('buildings')}
         >建造</button>
         <button
-          className={`text-[11px] px-2.5 py-1 rounded-full transition-colors ${
+          className={`text-[11px] px-3 min-h-[28px] rounded-full transition-colors ${
             tab === 'allocation'
-              ? 'bg-sect-gold/20 text-sect-gold border border-sect-gold/30'
-              : 'text-sect-jade/60 hover:text-sect-jade/80 border border-transparent'
+              ? 'bg-[rgba(212,168,87,0.18)] text-[var(--gold-200)] border border-[rgba(212,168,87,0.45)]'
+              : 'text-[var(--ink-300)] hover:text-[var(--ink-100)] border border-transparent'
           }`}
           onClick={() => setTab('allocation')}
         >分配</button>
@@ -154,7 +152,7 @@ const HomeHud: React.FC = () => {
 
 const GameLayout: React.FC = () => {
   const { buildings, gameStarted, showMainMenu, startGame, newGame, reportView, loadFromSlot } = useGameStore();
-  const { activePanel, setActivePanel, selectedBuildingId, setSelectedBuildingId, mobileSidePanel, setMobileSidePanel } = useUIStore();
+  const { activePanel, setActivePanel, selectedBuildingId, setSelectedBuildingId } = useUIStore();
   const device = useDevice();
   const isCompact = device.isCompact;
 
@@ -163,12 +161,36 @@ const GameLayout: React.FC = () => {
   const prevPanelRef = React.useRef<typeof activePanel>(null);
   const panelRef = React.useRef<HTMLDivElement>(null);
 
+  // HUD 悬浮在场景上：把它的真实高度写进 CSS 变量，供其余浮层让位
+  const hudRef = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    const el = hudRef.current;
+    if (!el) return;
+    const apply = () => {
+      document.documentElement.style.setProperty('--hud-h', `${el.offsetHeight}px`);
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    window.addEventListener('resize', apply);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', apply);
+      document.documentElement.style.removeProperty('--hud-h');
+    };
+  }, [gameStarted]);
+
   React.useEffect(() => {
     if (activePanel && activePanel !== prevPanelRef.current) {
       // 新面板打开
       setPanelAnim('enter');
       const timer = setTimeout(() => setPanelAnim('idle'), 350);
       prevPanelRef.current = activePanel;
+      // 面板打开前重新量一次 HUD 高度，避免字体加载/安全区变化后用到旧值造成遮挡
+      const hud = hudRef.current;
+      if (hud) {
+        document.documentElement.style.setProperty('--hud-h', `${hud.offsetHeight}px`);
+      }
       return () => clearTimeout(timer);
     } else if (!activePanel) {
       setPanelAnim('idle');
@@ -224,9 +246,10 @@ const GameLayout: React.FC = () => {
       <GameClock />
       <OrientationOverlay />
       {/* 常驻 HUD：顶栏 + 时间栏在所有游戏界面（含面板、任务浮层）之上保持可见 */}
-      <div className="game-hud">
+      <div className="game-hud" ref={hudRef}>
         <TopBar />
-        <TimeControls />
+        {/* 手机横屏：时间控件已并进顶栏一行，不再单独占一条 */}
+        {!isCompact && <TimeControls />}
       </div>
       <SectInfoDrawer />
 
@@ -239,61 +262,45 @@ const GameLayout: React.FC = () => {
         />
 
         {/* 主界面速览（打开面板时隐藏） */}
-        {activePanel === null && mobileSidePanel !== 'tasks' && <HomeHud />}
+        {activePanel === null && <HomeHud />}
 
-        {/* 桌面端：左侧任务与异闻浮动面板（位于速览胶囊下方） */}
-        {!isCompact && activePanel === null && <TasksPanel />}
-
-        {/* 山门右下角：宗门事件 feed（打开面板时隐藏，避免遮挡） */}
-        {activePanel === null && mobileSidePanel !== 'tasks' && <EventFeed />}
-        <ReportBadge />
-
-        {/* 紧凑布局：任务入口（内容区右上，位于时间条下方） */}
-        {isCompact && activePanel === null && mobileSidePanel !== 'tasks' && (
-          <button
-            className="absolute right-2 top-2 z-30 px-3.5 py-2 rounded-full scroll-panel-dark text-[var(--gold-200)] text-[12px] btn-press"
-            onClick={() => setMobileSidePanel('tasks')}
-            title="任务与异闻"
-          >
-            任务
-          </button>
-        )}
+        {/* 左侧状态栏：任务 / 异闻 / 报告 / 事件 / 关注，点开才是弹窗 */}
+        {activePanel === null && <QuickRail />}
 
         {/* 全屏面板：底部导航触发 */}
         {activePanel !== null && (
           <div
             ref={panelRef}
             className={`absolute inset-0 z-20 bg-[var(--ink-900)] flex flex-col overflow-hidden ${panelAnim === 'enter' ? 'panel-enter' : ''}`}
+            style={{ paddingTop: 'max(calc(var(--hud-h, 84px) + 2px), 40px)' }}
           >
             {/* 面板头部：标题 + 关闭按钮 */}
-            <div className="flex items-center justify-between px-3 py-2 border-b border-sect-ink-light/30">
-              <span className="text-[12.5px] font-display text-sect-gold">
-                {activePanel === 'affairs' && '宗务'}
-                {activePanel === 'disciples' && '弟子'}
-                {activePanel === 'buildings' && '建造'}
-                {activePanel === 'world' && '世界'}
-                {activePanel === 'activities' && '活动'}
-                {activePanel === 'warehouse' && '库房'}
-              </span>
+            <div className="flex items-center justify-between px-3 py-1 border-b border-[rgba(212,168,87,0.16)] bg-[rgba(8,11,18,0.55)]">
+              <div className="flex items-center gap-2">
+                <span className="h-3 w-[2px] rounded-full bg-[var(--gold-400)]/70" />
+                <span className="font-display text-[13px] tracking-[1px] text-[var(--gold-200)]">
+                  {activePanel === 'affairs' && '宗务'}
+                  {activePanel === 'disciples' && '弟子'}
+                  {activePanel === 'buildings' && '建造'}
+                  {activePanel === 'world' && '世界'}
+                  {activePanel === 'activities' && '活动'}
+                  {activePanel === 'warehouse' && '库房'}
+                </span>
+              </div>
               <button
-                className="text-sect-jade/60 hover:text-sect-jade text-[12px] px-2.5 py-1.5 -mr-1"
+                className="rounded-full px-3 min-h-[26px] text-[12px] text-[var(--ink-300)] active:bg-white/5"
                 onClick={() => setActivePanel(null)}
               >
                 关闭
               </button>
             </div>
             {/* 面板内容 */}
-            <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 panel-scrollbar pb-[70px]">
+            <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 panel-scrollbar pb-[58px]">
               {renderPanel()}
             </div>
           </div>
         )}
-        {/* 移动端：任务与异闻浮层（放在内容区内，天然让出顶部时间 HUD） */}
-        {isCompact && mobileSidePanel === 'tasks' && (
-          <div className="absolute inset-0 z-30 scroll-panel-dark p-2 pb-16">
-            <TasksPanel mobileMode />
-          </div>
-        )}
+        {/* 移动端任务抽屉已由左侧状态栏替代 */}
       </div>
 
       {/* 底部导航 */}

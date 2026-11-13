@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useGameStore } from '@/store/gameStore';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
+import { Modal } from '@/components/ui/Modal';
 import { SectIcon } from '@/components/icons/SectIcons';
 import { SimpleAvatar } from '@/components/ui/Avatar';
 import {
@@ -810,6 +811,8 @@ export const WorldPanel: React.FC = () => {
   const store = useGameStore();
   const { otherSects, trials, disciples, buildings, autoTrialEnabled, toggleAutoTrial, refreshTrials } = store;
   const [activeTab, setActiveTab] = useState<WorldTab>('sects');
+  // 天下宗门：列表只做摘要，点开才是完整情报弹窗
+  const [selectedSectId, setSelectedSectId] = useState<string | null>(null);
 
   // 本宗战力
   const ourCombatPower = useMemo(
@@ -836,27 +839,21 @@ export const WorldPanel: React.FC = () => {
   const failedTrials = trials.filter(t => t.status === 'failed' && isNormalTrial(t));
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="font-display text-base text-gold-gradient flex items-center gap-2">
-            <SectIcon name="world" size={20} strokeWidth={1.8} className="text-sect-gold" />
-            天下大势
-          </h1>
-          <p className="text-sect-jade/60 text-xs mt-0.5">
-            本宗战力 <span className="text-[var(--cinnabar)] font-bold">{ourCombatPower.toLocaleString()}</span>
-          </p>
-        </div>
-      </div>
+    <div className="panel-sheet">
+      <p className="text-[11.5px] text-[var(--ink-400)]">
+        本宗战力 <span className="font-mono text-[var(--cinnabar)]">{ourCombatPower.toLocaleString()}</span>
+        <span className="mx-1.5 text-[var(--ink-500)]">·</span>
+        已知宗门 {otherSects.length}
+      </p>
 
       {/* 子页签 */}
-      <div className="flex gap-2">
+      <div className="flex gap-1.5 overflow-x-auto scrollbar-none">
         <button
           onClick={() => setActiveTab('sects')}
-          className={`px-4 py-2 rounded-lg text-sm font-display flex items-center gap-1.5 transition-all ${
+          className={`filter-chip ${
             activeTab === 'sects'
               ? 'bg-[var(--gold-300)]/15 text-[var(--gold-300)] border border-[var(--gold-300)]/40'
-              : 'text-[var(--ink-300)] border border-[var(--ink-400)]/20 hover:border-[var(--gold-300)]/30'
+              : ''
           }`}
         >
           <SectIcon name="group" size={14} strokeWidth={1.8} />
@@ -864,10 +861,10 @@ export const WorldPanel: React.FC = () => {
         </button>
         <button
           onClick={() => setActiveTab('trials')}
-          className={`px-4 py-2 rounded-lg text-sm font-display flex items-center gap-1.5 transition-all ${
+          className={`filter-chip ${
             activeTab === 'trials'
               ? 'bg-[var(--gold-300)]/15 text-[var(--gold-300)] border border-[var(--gold-300)]/40'
-              : 'text-[var(--ink-300)] border border-[var(--ink-400)]/20 hover:border-[var(--gold-300)]/30'
+              : ''
           }`}
         >
           <SectIcon name="sword" size={14} strokeWidth={1.8} />
@@ -878,10 +875,10 @@ export const WorldPanel: React.FC = () => {
         </button>
         <button
           onClick={() => setActiveTab('exploration')}
-          className={`px-4 py-2 rounded-lg text-sm font-display flex items-center gap-1.5 transition-all ${
+          className={`filter-chip ${
             activeTab === 'exploration'
               ? 'bg-[var(--gold-300)]/15 text-[var(--gold-300)] border border-[var(--gold-300)]/40'
-              : 'text-[var(--ink-300)] border border-[var(--ink-400)]/20 hover:border-[var(--gold-300)]/30'
+              : ''
           }`}
         >
           <Compass size={14} className="text-sky-400" />
@@ -892,115 +889,93 @@ export const WorldPanel: React.FC = () => {
       {/* ===== 天下宗门页签 ===== */}
       {activeTab === 'sects' && (
         <>
-          {/* 概览统计 */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <Card className="p-3">
-              <div className="flex items-center gap-2">
-                <div className="p-1.5 rounded-lg bg-[rgba(212,168,87,0.15)]">
-                  <SectIcon name="group" size={18} strokeWidth={1.8} className="text-sect-gold" />
-                </div>
-                <div>
-                  <div className="text-sect-jade/60 text-xs">已知宗门</div>
-                  <div className="font-display text-lg text-sect-gold">{otherSects.length}</div>
-                </div>
-              </div>
-            </Card>
-            <Card className="p-3">
-              <div className="flex items-center gap-2">
-                <div className="p-1.5 rounded-lg bg-[rgba(74,122,107,0.2)]">
-                  <SectIcon name="crystal" size={18} strokeWidth={1.8} className="text-sect-jade-light" />
-                </div>
-                <div>
-                  <div className="text-sect-jade/60 text-xs">盟友/友好</div>
-                  <div className="font-display text-lg text-sect-jade-light">{allyCount}</div>
-                </div>
-              </div>
-            </Card>
-            <Card className="p-3">
-              <div className="flex items-center gap-2">
-                <div className="p-1.5 rounded-lg bg-[rgba(194,58,46,0.2)]">
-                  <SectIcon name="sword" size={18} strokeWidth={1.8} className="text-red-400" />
-                </div>
-                <div>
-                  <div className="text-sect-jade/60 text-xs">戒备/敌对</div>
-                  <div className="font-display text-lg text-red-400">{hostileCount}</div>
-                </div>
-              </div>
-            </Card>
-            <Card className="p-3">
-              <div className="flex items-center gap-2">
-                <div className="p-1.5 rounded-lg bg-[rgba(123,94,167,0.2)]">
-                  <SectIcon name="balance" size={18} strokeWidth={1.8} className="text-sect-spirit" />
-                </div>
-                <div>
-                  <div className="text-sect-jade/60 text-xs">正/魔</div>
-                  <div className="font-display text-sm">
-                    <span className="text-sect-jade-light">{righteousCount}</span>
-                    <span className="text-sect-jade/40 mx-1">/</span>
-                    <span className="text-red-400">{demonicCount}</span>
-                  </div>
-                </div>
-              </div>
-            </Card>
+          {/* 概览：一行小指标，不再四张大卡占掉第一屏 */}
+          <div className="world-sect-summary">
+            <span>已知 <b>{otherSects.length}</b></span>
+            <span>盟友 <b className="text-[var(--jade-light)]">{allyCount}</b></span>
+            <span>敌对 <b className="text-[#e08a7d]">{hostileCount}</b></span>
+            <span>正/魔 <b>{righteousCount}/{demonicCount}</b></span>
           </div>
 
-          {/* 外交统计 */}
+          {/* 外交状态 */}
           {(allyDiploCount > 0 || rivalDiploCount > 0 || vassalDiploCount > 0 || tradeCount > 0) && (
-            <div className="flex flex-wrap gap-2">
+            <div className="world-diplo-chips flex flex-wrap gap-1.5">
               {allyDiploCount > 0 && (
-                <div className="px-3 py-1 rounded-lg bg-[rgba(74,122,107,0.15)] border border-[var(--jade-light)]/30 text-xs text-[var(--jade-light)] flex items-center gap-1.5">
-                  <SectIcon name="talisman" size={12} strokeWidth={1.8} />
+                <div className="px-2 py-0.5 rounded-full bg-[rgba(74,122,107,0.15)] border border-[var(--jade-light)]/30 text-[11px] text-[var(--jade-light)] flex items-center gap-1">
+                  <SectIcon name="talisman" size={11} strokeWidth={1.8} />
                   同盟 {allyDiploCount}
                 </div>
               )}
               {rivalDiploCount > 0 && (
-                <div className="px-3 py-1 rounded-lg bg-[rgba(194,58,46,0.15)] border border-red-400/30 text-xs text-red-400 flex items-center gap-1.5">
-                  <SectIcon name="sword" size={12} strokeWidth={1.8} />
+                <div className="px-2 py-0.5 rounded-full bg-[rgba(194,58,46,0.15)] border border-red-400/30 text-[11px] text-red-400 flex items-center gap-1">
+                  <SectIcon name="sword" size={11} strokeWidth={1.8} />
                   宿敌 {rivalDiploCount}
                 </div>
               )}
               {vassalDiploCount > 0 && (
-                <div className="px-3 py-1 rounded-lg bg-[rgba(212,168,87,0.15)] border border-[var(--gold-300)]/30 text-xs text-[var(--gold-300)] flex items-center gap-1.5">
-                  <SectIcon name="crystal" size={12} strokeWidth={1.8} />
+                <div className="px-2 py-0.5 rounded-full bg-[rgba(212,168,87,0.15)] border border-[var(--gold-300)]/30 text-[11px] text-[var(--gold-300)] flex items-center gap-1">
+                  <SectIcon name="crystal" size={11} strokeWidth={1.8} />
                   附庸 {vassalDiploCount}
                 </div>
               )}
               {tradeCount > 0 && (
-                <div className="px-3 py-1 rounded-lg bg-[rgba(212,168,87,0.1)] border border-[var(--gold-300)]/20 text-xs text-[var(--gold-200)] flex items-center gap-1.5">
-                  <SectIcon name="gem" size={12} strokeWidth={1.8} />
+                <div className="px-2 py-0.5 rounded-full bg-[rgba(212,168,87,0.1)] border border-[var(--gold-300)]/20 text-[11px] text-[var(--gold-200)] flex items-center gap-1">
+                  <SectIcon name="gem" size={11} strokeWidth={1.8} />
                   交易中 {tradeCount}
                 </div>
               )}
             </div>
           )}
 
-          {/* 宗门列表 */}
-          <Card>
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <h2 className="font-display text-sm text-gold-gradient">天下宗门</h2>
-                <Badge variant="default" size="sm">{otherSects.length} 个</Badge>
-              </div>
-            </div>
+          {/* 天下宗门列表：一行一个，点开看完整情报 */}
+          <div className="flex items-center justify-between">
+            <h2 className="font-display text-[13px] text-[var(--gold-200)]">天下宗门</h2>
+            <span className="text-[11px] text-[var(--ink-400)]">{otherSects.length} 个</span>
+          </div>
 
-            <p className="text-sect-jade/50 text-xs mb-3 leading-relaxed">
-              赠送灵石可提升好感，侮辱则降低好感。同盟需好感≥70且战力达标，宿敌需好感≤30，附庸需战力碾压并战胜对方。
-            </p>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {otherSects.length === 0 ? (
+            <div className="py-8 text-center text-[12.5px] text-[var(--ink-400)]">暂无天下宗门情报</div>
+          ) : (
+            <div className="flex flex-col">
               {otherSects.map(sect => (
-                <WorldSectCard key={sect.id} sect={sect} ourCombatPower={ourCombatPower} />
+                <button
+                  key={sect.id}
+                  type="button"
+                  className="world-sect-row"
+                  onClick={() => setSelectedSectId(sect.id)}
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-1.5">
+                      <span className="truncate font-display text-[12.5px] text-[var(--gold-200)]">{sect.name}</span>
+                      <span className="shrink-0 text-[10.5px] text-[var(--ink-400)]">{SectLevelNames[sect.level]}</span>
+                      <span className={`shrink-0 text-[10.5px] relation-${sect.relation}`}>{SectRelationNames[sect.relation]}</span>
+                    </span>
+                    <span className="mt-0.5 block truncate text-[11px] text-[var(--ink-500)]">{sect.specialty}</span>
+                  </span>
+                  <span className="shrink-0 text-right">
+                    <span className="block font-mono text-[12px] text-[#e08a7d]">{sect.combatPower.toLocaleString()}</span>
+                    <span className="block text-[10.5px] text-[var(--ink-400)]">好感 {sect.favorability ?? 50}</span>
+                  </span>
+                  <span className="shrink-0 text-[13px] text-[var(--ink-500)]">›</span>
+                </button>
               ))}
             </div>
-
-            {otherSects.length === 0 && (
-              <div className="text-center py-8 text-sect-jade/40 text-sm">
-                暂无天下宗门情报
-              </div>
-            )}
-          </Card>
+          )}
         </>
       )}
+
+      {/* 宗门情报弹窗：完整属性 + 外交/赠礼操作都搬进来 */}
+      <Modal
+        isOpen={!!selectedSectId}
+        onClose={() => setSelectedSectId(null)}
+        title={otherSects.find(x => x.id === selectedSectId)?.name ?? '宗门情报'}
+        size="lg"
+      >
+        {(() => {
+          const sect = otherSects.find(x => x.id === selectedSectId);
+          return sect ? <WorldSectCard sect={sect} ourCombatPower={ourCombatPower} /> : null;
+        })()}
+      </Modal>
 
       {/* ===== 试炼页签 ===== */}
       {activeTab === 'trials' && (

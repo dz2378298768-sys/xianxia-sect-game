@@ -27,16 +27,16 @@ export const Card: React.FC<CardProps> = ({
       {...props}
     >
       {title && (
-        <div className="px-4 py-3 border-b border-sect-gold/10">
-          <h3 className="font-display text-sect-gold text-lg flex items-center gap-2">
+        <div className="card-head px-2 pb-2 mb-2 border-b border-[rgba(212,168,87,0.1)]">
+          <h3 className="font-display text-[13px] tracking-[0.5px] text-[var(--gold-300)] flex items-center gap-2">
             {icon && <span>{icon}</span>}
             {title}
           </h3>
         </div>
       )}
-      <div className="p-4">{children}</div>
+      <div className="card-body p-2">{children}</div>
       {footer && (
-        <div className="px-4 py-3 border-t border-sect-gold/10">{footer}</div>
+        <div className="card-foot px-2 py-2 mt-2 border-t border-[rgba(212,168,87,0.1)]">{footer}</div>
       )}
     </div>
   );

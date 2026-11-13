@@ -78,7 +78,7 @@ export const SectInfoDrawer: React.FC = () => {
   const netIncome = totalOutput - totalMaintenance;
 
   // 统一手机端：全屏覆盖（顶部让出「顶栏 + 常驻时间栏」的高度；侧栏已移除，左侧不再留空）
-  const containerClass = 'absolute top-[76px] left-0 right-0 bottom-0 z-[35] scroll-panel-dark flex flex-col slide-in-left';
+  const containerClass = 'absolute top-[var(--hud-h)] left-0 right-0 bottom-0 z-[35] scroll-panel-dark flex flex-col slide-in-left';
 
   return (
     <>

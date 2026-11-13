@@ -12,6 +12,8 @@ import type { PanelType } from '@/store/uiStore';
 
 interface Props {
   mobileMode?: boolean;
+  /** 密排模式：用于左侧状态栏的任务弹窗，一行一条 */
+  dense?: boolean;
 }
 
 type TabKey = 'main' | 'side' | 'monthly' | 'achievement';
@@ -53,7 +55,7 @@ const taskPanelTarget = (metric: TaskMetric): PanelType => {
   }
 };
 
-export const TasksPanel: React.FC<Props> = ({ mobileMode }) => {
+export const TasksPanel: React.FC<Props> = ({ mobileMode, dense = false }) => {
   const {
     disciples, buildings, reputation, spiritStones, sectLevel,
     otherSects, beastInventory, gameWon,
@@ -65,7 +67,7 @@ export const TasksPanel: React.FC<Props> = ({ mobileMode }) => {
   const [activeTab, setActiveTab] = useState<TabKey>('main');
   const [expanded, setExpanded] = useState(false);
   // 桌面端浮动任务栏默认收起为左侧竖条，避免长期遮挡山景
-  const [minimized, setMinimized] = useState(!mobileMode);
+  const [minimized, setMinimized] = useState(!mobileMode && !dense);
 
   const view: TaskStateView = {
     sectLevel,
@@ -102,7 +104,7 @@ export const TasksPanel: React.FC<Props> = ({ mobileMode }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, monthlyTaskIds, sectLevel, reputation, spiritStones, disciples, buildings, otherSects, beastInventory, gameWon, taskCounters, monthlyTaskCounters, claimedTasks]);
 
-  const visibleTasks = expanded ? tasks : tasks.slice(0, 6);
+  const visibleTasks = dense ? tasks : expanded ? tasks : tasks.slice(0, 6);
 
   const followedDisciples = followedDiscipleIds
     .map(id => disciples.find(d => d.id === id))
@@ -159,6 +161,62 @@ export const TasksPanel: React.FC<Props> = ({ mobileMode }) => {
     const percent = Math.min(100, (progress.current / task.target) * 100);
     const hidden = task.hidden && progress.current === 0 && !progress.claimed;
     const label = activeTab === 'achievement' ? '成就' : activeTab === 'monthly' ? '月度' : task.type === 'main' ? '主线' : '支线';
+
+    // 密排：一条任务一行，标题 + 进度 + 奖励 + 操作
+    if (dense) {
+      return (
+        <div
+          key={task.id}
+          className="flex items-start gap-2.5 py-2 border-b border-[rgba(212,168,87,0.08)] last:border-0"
+        >
+          <span className={`${activeTab === 'achievement' ? 'jade-badge' : 'seal-badge'} mt-0.5 shrink-0`}>{label}</span>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-baseline gap-2">
+              <span className="truncate font-display text-[13px] text-[var(--gold-200)]">
+                {hidden ? '？？？' : task.title}
+              </span>
+              {!hidden && (
+                <span className="ml-auto shrink-0 font-mono text-[11.5px] text-[var(--ink-400)]">
+                  {Math.min(progress.current, task.target)}/{task.target}
+                </span>
+              )}
+            </div>
+            {!hidden && (
+              <>
+                <div className="mt-1 h-1 overflow-hidden rounded-full bg-[rgba(255,255,255,0.08)]">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-[var(--gold-500)] to-[var(--gold-300)]"
+                    style={{ width: `${percent}%` }}
+                  />
+                </div>
+                <div className="mt-1 truncate">{renderRewards(task)}</div>
+              </>
+            )}
+          </div>
+          <div className="flex shrink-0 items-center">
+            {progress.claimed ? (
+              <span className="text-[11.5px] text-[var(--jade-light)]">已领取</span>
+            ) : claim.ok ? (
+              <button
+                onClick={() => claimTaskReward(task.id)}
+                className="rounded-full border border-[rgba(212,168,87,0.45)] bg-[rgba(212,168,87,0.16)] px-3 py-1 text-[11.5px] text-[var(--gold-200)]"
+              >
+                领取
+              </button>
+            ) : !unlocked ? (
+              <span className="text-[11.5px] text-[var(--ink-400)]">未解锁</span>
+            ) : (
+              <button
+                onClick={() => setActivePanel(taskPanelTarget(task.metric))}
+                className="rounded-full border border-[rgba(212,168,87,0.25)] px-3 py-1 text-[11.5px] text-[var(--gold-300)]"
+              >
+                前往
+              </button>
+            )}
+          </div>
+        </div>
+      );
+    }
 
     return (
       <div key={task.id} className="quest-item">
@@ -221,7 +279,7 @@ export const TasksPanel: React.FC<Props> = ({ mobileMode }) => {
         type="button"
         onClick={() => setMinimized(false)}
         title="展开任务栏"
-        className="absolute top-10 left-0 z-20 flex flex-col items-center gap-1 pr-1.5 pl-1 py-2.5 rounded-r-lg border border-l-0 border-[rgba(212,168,87,0.35)] bg-[rgba(18,22,26,0.92)] text-[var(--gold-200)] hover:text-[var(--gold-300)] btn-press"
+        className="absolute top-[calc(var(--hud-h)+8px)] left-0 z-20 flex flex-col items-center gap-1 pr-1.5 pl-1 py-2.5 rounded-r-lg border border-l-0 border-[rgba(212,168,87,0.35)] bg-[rgba(18,22,26,0.92)] text-[var(--gold-200)] hover:text-[var(--gold-300)] btn-press"
       >
         <SectIcon name="chevronUp" size={13} strokeWidth={2} />
         <span className="text-[10px] font-display [writing-mode:vertical-rl] tracking-widest">任务</span>
@@ -236,10 +294,12 @@ export const TasksPanel: React.FC<Props> = ({ mobileMode }) => {
     );
   }
 
-  const containerClass = mobileMode
-    ? 'w-full h-full flex flex-col'
-    : 'absolute top-10 left-2 w-80 max-h-[48vh] scroll-panel-dark slide-in-left flex flex-col overflow-hidden';
-  const containerStyle = mobileMode ? {} : { zIndex: 20 };
+  const containerClass = dense
+    ? 'w-full flex flex-col'
+    : mobileMode
+      ? 'w-full h-full flex flex-col'
+      : 'absolute top-[calc(var(--hud-h)+8px)] left-2 w-80 max-h-[48vh] scroll-panel-dark slide-in-left flex flex-col overflow-hidden';
+  const containerStyle = mobileMode || dense ? {} : { zIndex: 20 };
 
   return (
     <div className={containerClass} style={containerStyle}>
@@ -262,7 +322,7 @@ export const TasksPanel: React.FC<Props> = ({ mobileMode }) => {
             </button>
           );
         })}
-        {mobileMode ? (
+        {!dense && (mobileMode ? (
           <button className="text-[var(--ink-400)] hover:text-[var(--gold-300)] px-2 flex items-center"
             onClick={() => setMobileSidePanel('tasks')}
             title="关闭">
@@ -274,7 +334,7 @@ export const TasksPanel: React.FC<Props> = ({ mobileMode }) => {
             title="最小化">
             <SectIcon name="minus" size={16} strokeWidth={2} />
           </button>
-        )}
+        ))}
       </div>
 
       {/* 可领取提示 */}
@@ -284,13 +344,13 @@ export const TasksPanel: React.FC<Props> = ({ mobileMode }) => {
         </div>
       )}
 
-      <div className="p-3 overflow-y-auto flex-1 min-h-0">
+      <div className={dense ? 'flex-1 min-h-0 overflow-y-auto' : 'p-3 overflow-y-auto flex-1 min-h-0'}>
         {tasks.length === 0 ? (
           <div className="text-[10px] text-[var(--ink-400)] text-center py-2">暂无可显示的任务</div>
         ) : (
           <div className="space-y-2">
             {visibleTasks.map(renderTask)}
-            {tasks.length > 6 && (
+            {!dense && tasks.length > 6 && (
               <button
                 onClick={() => setExpanded(e => !e)}
                 className="w-full text-[10px] text-[var(--gold-300)] hover:text-[var(--gold-200)] py-1"
@@ -302,8 +362,8 @@ export const TasksPanel: React.FC<Props> = ({ mobileMode }) => {
         )}
       </div>
 
-      {/* 常驻：关注弟子（悬浮状态） */}
-      {!mobileMode && (
+      {/* 常驻：关注弟子（悬浮状态，密排弹窗里由左侧状态栏单独承载） */}
+      {!mobileMode && !dense && (
         <>
           <div className="scroll-title !mt-0 shrink-0 !py-2">
             <span className="text-base">星</span>

@@ -109,48 +109,43 @@ export const AllocationPanel: React.FC = () => {
   const selectedBuildingForManagerData = buildings.find(b => b.id === selectedBuildingForManager);
   
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div>
-          <h1 className="font-display text-2xl text-gold-gradient">弟子分配</h1>
-          <p className="text-sect-jade/60 text-sm mt-1">
-            已分配 {assignedDisciples.length} / 共 {disciples.length} 名弟子
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <Button 
-            variant="gold" 
-            size="sm"
-            onClick={handleAutoAssign}
-            disabled={unassignedDisciples.length === 0}
-          >
-            <Shuffle size={16} className="mr-1.5" />
-            自动分配 ({unassignedDisciples.length})
-          </Button>
-        </div>
+    <div className="panel-sheet">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <p className="text-[11px] text-[var(--ink-400)]">
+          已分配 {assignedDisciples.length} / 共 {disciples.length} 名弟子
+        </p>
+        <Button 
+          variant="gold" 
+          size="sm"
+          onClick={handleAutoAssign}
+          disabled={unassignedDisciples.length === 0}
+        >
+          <Shuffle size={16} className="mr-1" />
+          自动分配 ({unassignedDisciples.length})
+        </Button>
       </div>
       
-      <div className="flex gap-2">
+      <div className="flex gap-1.5">
         <button
           onClick={() => setViewMode('buildings')}
-          className={`px-4 py-2 rounded-lg font-display text-sm transition-all ${
+          className={`inline-flex items-center gap-1.5 px-3 min-h-[30px] rounded-full text-[11.5px] transition-colors ${
             viewMode === 'buildings'
-              ? 'bg-sect-gold/20 text-sect-gold border border-sect-gold/40'
-              : 'text-sect-jade/60 hover:text-sect-jade hover:bg-sect-jade/10'
+              ? 'bg-[rgba(212,168,87,0.18)] text-[var(--gold-200)] border border-[rgba(212,168,87,0.45)]'
+              : 'text-[var(--ink-300)] hover:text-[var(--ink-100)] border border-transparent'
           }`}
         >
-          <Building2 size={16} className="inline mr-1.5" />
+          <Building2 size={14} />
           按建筑查看
         </button>
         <button
           onClick={() => setViewMode('disciples')}
-          className={`px-4 py-2 rounded-lg font-display text-sm transition-all ${
+          className={`inline-flex items-center gap-1.5 px-3 min-h-[30px] rounded-full text-[11.5px] transition-colors ${
             viewMode === 'disciples'
-              ? 'bg-sect-gold/20 text-sect-gold border border-sect-gold/40'
-              : 'text-sect-jade/60 hover:text-sect-jade hover:bg-sect-jade/10'
+              ? 'bg-[rgba(212,168,87,0.18)] text-[var(--gold-200)] border border-[rgba(212,168,87,0.45)]'
+              : 'text-[var(--ink-300)] hover:text-[var(--ink-100)] border border-transparent'
           }`}
         >
-          <Users size={16} className="inline mr-1.5" />
+          <Users size={14} />
           按弟子查看
         </button>
       </div>
